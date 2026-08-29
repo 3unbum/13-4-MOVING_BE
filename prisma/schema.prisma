@@ -1,0 +1,12 @@
+// 무빙 Prisma 스키마
+// ERD 원본: docs/message.txt (DBML)
+// TODO: 12개 모델 + 7개 Enum 작성
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
