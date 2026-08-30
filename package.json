@@ -18,7 +18,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
-    "lint:fix": "eslint src --fix"
+    "lint:fix": "eslint src --fix",
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",
@@ -54,6 +55,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "@eslint/js": "^9.39.5",
     "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.10",
@@ -72,6 +75,7 @@
     "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
     "jest": "^30.5.0",
     "prettier": "^3.9.6",
     "prisma": "^6.19.3",
