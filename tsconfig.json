@@ -12,9 +12,8 @@
     "resolveJsonModule": true,
     "types": ["jest", "node"],
     "verbatimModuleSyntax": false,
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"],
