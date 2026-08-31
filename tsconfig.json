@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2016",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "module": "CommonJS",
+    "moduleResolution": "bundler",
     "outDir": "./dist",
     "rootDir": ".",
     "strict": true,
