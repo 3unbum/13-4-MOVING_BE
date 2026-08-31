@@ -6,10 +6,11 @@
 
 코드잇 스프린트 13기 · 파트4 고급 프로젝트 · 4팀
 
-[![Node.js](https://img.shields.io/badge/Node.js-20-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Express](https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white)](https://expressjs.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
-[![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io)
+[![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io)
 
 [Frontend Repository](https://github.com/3unbum/13-4-MOVING_FE)
 
@@ -27,13 +28,17 @@
 
 ## 🛠 기술 스택
 
-| 구분         | 기술                                     |
-| ------------ | ---------------------------------------- |
-| **Runtime**  | Node.js                                  |
-| **Language** | TypeScript                               |
-| **Database** | PostgreSQL                               |
-| **ORM**      | Prisma                                   |
-| **Auth**     | JWT · OAuth 2.0 (Google · Naver · Kakao) |
+| 구분           | 기술                                     |
+| -------------- | ---------------------------------------- |
+| **Runtime**    | Node.js 20+                              |
+| **Language**   | TypeScript 6                             |
+| **Framework**  | Express 5                                |
+| **Database**   | PostgreSQL 16                            |
+| **ORM**        | Prisma 6                                 |
+| **Auth**       | JWT · OAuth 2.0 (Google · Naver · Kakao) |
+| **Validation** | Zod 4                                    |
+| **Test**       | Jest 30                                  |
+| **Lint**       | ESLint 9 · Prettier 3                    |
 
 <br />
 
