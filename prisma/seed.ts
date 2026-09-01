@@ -39,6 +39,10 @@ async function clean() {
 }
 
 async function main() {
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error("운영 환경에서는 시드를 실행할 수 없습니다.");
+  }
+
   console.log("시드 데이터 생성 시작");
 
   await clean();
