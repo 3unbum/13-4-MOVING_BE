@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Express](https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white)](https://expressjs.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
-[![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io)
+[![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io)
 
 [Frontend Repository](https://github.com/3unbum/13-4-MOVING_FE)
 
@@ -34,7 +34,7 @@
 | **Language**   | TypeScript 6                             |
 | **Framework**  | Express 5                                |
 | **Database**   | PostgreSQL 16                            |
-| **ORM**        | Prisma 6                                 |
+| **ORM**        | Prisma 7                                 |
 | **Auth**       | JWT · OAuth 2.0 (Google · Naver · Kakao) |
 | **Validation** | Zod 4                                    |
 | **Test**       | Jest 30                                  |
