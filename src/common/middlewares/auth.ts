@@ -9,7 +9,7 @@ import jwtUtil from "../utils/jwt.util";
  */
 export const requireAuth: RequestHandler = (req, _res, next) => {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
 
   if (!token) {
     next(new AppError(401, ERROR_CODES.ACCESS_TOKEN_INVALID, "인증 토큰이 없습니다"));
