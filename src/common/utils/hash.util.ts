@@ -22,7 +22,9 @@ const hashPassword = async (password: string) => {
 };
 
 const verifyPassword = async (password: string, hashedPassword: string) => {
-  assertValidPasswordLength(password);
+  if (Buffer.byteLength(password, "utf8") > BCRYPT_MAX_BYTES) {
+    return false;
+  }
   return await bcrypt.compare(password, hashedPassword);
 };
 
