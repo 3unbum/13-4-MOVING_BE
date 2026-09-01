@@ -9,7 +9,10 @@ export const signupSchema = z.object({
   phoneNumber: z.string().regex(/^01[016789]\d{7,8}$/, "올바른 전화번호 형식이 아닙니다"),
   password: z
     .string()
-    .regex(PASSWORD_RULE, "비밀번호는 8자 이상이며 영문·숫자·특수문자를 포함해야 합니다"),
+    .regex(PASSWORD_RULE, "비밀번호는 8자 이상이며 영문·숫자·특수문자를 포함해야 합니다")
+    .refine((password) => Buffer.byteLength(password, "utf8") <= 72, {
+      message: "비밀번호는 72바이트를 초과할 수 없습니다",
+    }),
 });
 
 export const loginSchema = z.object({
