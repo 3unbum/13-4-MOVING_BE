@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import type { UserRole } from "../types/role";
+import type { UserRole } from "../../../generated/prisma/enums.ts";
 import { AppError } from "../errors/AppError";
 
 /**

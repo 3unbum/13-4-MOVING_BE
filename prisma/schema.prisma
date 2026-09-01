@@ -1,13 +1,347 @@
 // 무빙 Prisma 스키마
-// ERD 원본: docs/message.txt (DBML)
-// TODO: 12개 모델 + 7개 Enum 작성 (이슈 #20)
+// ERD 원본: docs/스키마/message.txt (DBML)
+//
+// 규칙
+//   - DB 컬럼/테이블은 snake_case, 코드에서는 camelCase (@map / @@map)
+//   - 8/31 회의 반영: user.refreshToken, moverProfile.reviewCount/confirmedCount
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
   moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ───────────────────────────── Enum ─────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  MOVER
+
+  @@map("user_role")
+}
+
+enum SocialProvider {
+  GOOGLE
+  NAVER
+  KAKAO
+  LOCAL
+
+  @@map("social_provider")
+}
+
+enum ServiceType {
+  SMALL  @map("소형이사")
+  HOME   @map("가정이사")
+  OFFICE @map("사무실이사")
+
+  @@map("service_type")
+}
+
+enum RegionType {
+  SEOUL     @map("서울")
+  GYEONGGI  @map("경기")
+  INCHEON   @map("인천")
+  GANGWON   @map("강원")
+  CHUNGBUK  @map("충북")
+  CHUNGNAM  @map("충남")
+  SEJONG    @map("세종")
+  DAEJEON   @map("대전")
+  JEONBUK   @map("전북")
+  JEONNAM   @map("전남")
+  GWANGJU   @map("광주")
+  GYEONGBUK @map("경북")
+  GYEONGNAM @map("경남")
+  DAEGU     @map("대구")
+  ULSAN     @map("울산")
+  BUSAN     @map("부산")
+  JEJU      @map("제주")
+
+  @@map("region_type")
+}
+
+/// PENDING·ASSIGNED = 활성 요청. 유저당 활성 1건만 허용(앱 레벨 검증)
+enum QuotationStatus {
+  PENDING /// 견적 대기 (활성)
+  ASSIGNED /// 기사님 확정, 이사 전 (활성)
+  COMPLETED /// 이사일 경과
+  EXPIRED /// 견적 없이 이사일 경과
+
+  @@map("quotation_status")
+}
+
+enum EstimateStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  COMPLETED
+
+  @@map("estimate_status")
+}
+
+enum ReviewStatus {
+  PENDING
+  CONFIRMED
+
+  @@map("review_status")
+}
+
+// ───────────────────────────── 유저 ─────────────────────────────
+
+/// 한 사람이 다른 역할로 가입하는 것을 허용합니다.
+/// provider_id가 NULL인 LOCAL 유저는 유니크에 걸리지 않습니다
+/// (Postgres는 NULL을 서로 다른 값으로 취급).
+model User {
+  id           Int             @id @default(autoincrement())
+  role         UserRole
+  name         String
+  email        String
+  phoneNumber  String          @map("phone_number")
+  /// 소셜 로그인 유저는 NULL
+  password     String?
+  /// 이메일 가입이면 LOCAL
+  provider     SocialProvider?
+  /// LOCAL이면 NULL
+  providerId   String?         @map("provider_id")
+  /// 8/31 회의 결정 — 로그아웃/재발급 시 무효화
+  refreshToken String?         @map("refresh_token")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  customerProfile   CustomerProfile?
+  moverProfile      MoverProfile?
+  customerServices  CustomerService[]
+  moverServices     MoverService[]
+  moverRegions      MoverRegion[]
+  quotationRequests QuotationRequest[]
+  targetedRequests  TargetedRequest[]
+  estimates         Estimate[]
+  reviews           Review[]
+  favorites         Favorite[]         @relation("FavoriteCustomer")
+  favoritedBy       Favorite[]         @relation("FavoriteMover")
+  notifications     Notification[]
+
+  @@unique([role, email])
+  @@unique([role, provider, providerId])
+  @@map("user")
+}
+
+/// row 존재 여부가 곧 "프로필 등록 완료" 여부입니다.
+/// 등록 전에는 전용 기능 접근 불가 — 앱에서 강제합니다.
+model CustomerProfile {
+  id        Int         @id @default(autoincrement())
+  userId    Int         @unique @map("user_id")
+  image     String?
+  /// "내가 사는 지역" — 단일 선택, 언제든 수정 가능
+  region    RegionType?
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("customer_profile")
+}
+
+model MoverProfile {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique @map("user_id")
+  /// 기사님도 사진만 optional, 나머지 전부 필수
+  image          String?
+  nickName       String   @map("nick_name")
+  career         Int
+  /// 한 줄 소개
+  bio            String
+  /// 상세 설명
+  description    String
+  /// 비정규화 — 평점 정렬용. review 작성/수정 시 갱신
+  avgRating      Decimal  @default(0) @map("avg_rating") @db.Decimal(2, 1)
+  /// 8/31 회의 결정 — 리뷰 작성(CONFIRMED) 시 갱신
+  reviewCount    Int      @default(0) @map("review_count")
+  /// 8/31 회의 결정 — 견적 확정 시 갱신
+  confirmedCount Int      @default(0) @map("confirmed_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mover_profile")
+}
+
+/// 일반 유저의 "이용 서비스" (중복 선택 가능)
+model CustomerService {
+  userId  Int         @map("user_id")
+  service ServiceType
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, service])
+  @@map("customer_service")
+}
+
+/// 기사님의 "제공 서비스" (필수, 1개 이상 — 앱 레벨 검증)
+model MoverService {
+  moverId Int         @map("mover_id")
+  service ServiceType
+
+  mover User @relation(fields: [moverId], references: [id], onDelete: Cascade)
+
+  @@id([moverId, service])
+  @@map("mover_service")
+}
+
+/// 기사님의 "서비스 가능 지역" (필수, 1개 이상 — 앱 레벨 검증)
+model MoverRegion {
+  moverId Int        @map("mover_id")
+  region  RegionType
+
+  mover User @relation(fields: [moverId], references: [id], onDelete: Cascade)
+
+  @@id([moverId, region])
+  @@map("mover_region")
+}
+
+// ───────────────────────────── 견적 ─────────────────────────────
+
+/// 활성 요청 = quotationStatus IN (PENDING, ASSIGNED).
+/// 유저당 1건만 허용 — MVP는 앱 레벨 검증, 이후 부분 유니크 인덱스로 승격.
+model QuotationRequest {
+  id                Int             @id @default(autoincrement())
+  /// 요청한 소비자 (role=CUSTOMER)
+  userId            Int             @map("user_id")
+  /// 이사 종류
+  category          ServiceType
+  /// 이사 예정일
+  movingDate        DateTime        @map("moving_date") @db.Date
+  fromPostalCode    String          @map("from_postal_code")
+  /// 출발지 시도 — 우편번호 응답에서 확정. 기사님 매칭용
+  fromRegion        RegionType      @map("from_region")
+  fromAddress       String          @map("from_address")
+  fromDetailAddress String          @map("from_detail_address")
+  toPostalCode      String          @map("to_postal_code")
+  /// 도착지 시도 — 우편번호 응답에서 확정
+  toRegion          RegionType      @map("to_region")
+  toAddress         String          @map("to_address")
+  toDetailAddress   String          @map("to_detail_address")
+  quotationStatus   QuotationStatus @map("quotation_status")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetedRequests TargetedRequest[]
+  estimates        Estimate[]
+  notifications    Notification[]
+
+  @@index([fromRegion, quotationStatus])
+  @@index([userId, quotationStatus])
+  @@index([movingDate, quotationStatus])
+  @@map("quotation_request")
+}
+
+/// 지정 견적 요청 — 요청 1건당 최대 3 row (앱 레벨 검증).
+/// row 존재 여부로 일반/지정을 구분합니다.
+/// 지정했으나 기사님이 아직 견적 미발송인 상태도 표현할 수 있습니다.
+model TargetedRequest {
+  id                 Int      @id @default(autoincrement())
+  quotationRequestId Int      @map("quotation_request_id")
+  /// 지정된 기사님 (role=MOVER)
+  moverId            Int      @map("mover_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  quotationRequest QuotationRequest @relation(fields: [quotationRequestId], references: [id], onDelete: Cascade)
+  mover            User             @relation(fields: [moverId], references: [id], onDelete: Cascade)
+
+  @@unique([quotationRequestId, moverId])
+  @@index([moverId])
+  @@map("targeted_request")
+}
+
+/// 한 요청에 기사님 1명당 견적 1건.
+/// 상한 8건(일반 5 + 지정 3) 계산의 전제입니다.
+model Estimate {
+  id                 Int            @id @default(autoincrement())
+  quotationRequestId Int            @map("quotation_request_id")
+  /// 견적을 보낸(혹은 반려한) 기사님 (role=MOVER)
+  moverId            Int            @map("mover_id")
+  /// REJECTED면 NULL
+  price              Int?
+  /// REJECTED면 필수 (앱 레벨 검증)
+  comment            String?
+  estimateStatus     EstimateStatus @map("estimate_status")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  quotationRequest QuotationRequest @relation(fields: [quotationRequestId], references: [id], onDelete: Cascade)
+  mover            User             @relation(fields: [moverId], references: [id], onDelete: Cascade)
+  review           Review?
+  notifications    Notification[]
+
+  @@unique([quotationRequestId, moverId])
+  @@index([moverId, estimateStatus])
+  @@map("estimate")
+}
+
+/// DB가 보장하지 못하므로 API에서 반드시 검증하세요.
+///   1) customerId == estimate → quotationRequest.userId (본인 견적인지)
+///   2) estimateStatus == COMPLETED (이사 완료 후인지)
+model Review {
+  id         Int          @id @default(autoincrement())
+  estimateId Int          @unique @map("estimate_id")
+  /// 작성한 소비자
+  customerId Int          @map("customer_id")
+  /// PENDING이면 NULL. 1~5
+  rating     Int?
+  /// PENDING이면 NULL
+  comment    String?
+  /// estimate가 COMPLETED가 되는 순간 PENDING으로 자동 생성, 작성하면 CONFIRMED
+  status     ReviewStatus @default(PENDING) @map("review_status")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  customer User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, status])
+  @@map("review")
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  /// 찜한 소비자
+  userId    Int      @map("user_id")
+  /// 찜 대상 기사님
+  moverId   Int      @map("mover_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User @relation("FavoriteCustomer", fields: [userId], references: [id], onDelete: Cascade)
+  mover User @relation("FavoriteMover", fields: [moverId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moverId])
+  @@index([moverId])
+  @@map("favorite")
+}
+
+/// type은 varchar 유지 (Enum 승격 여부는 팀 논의 중).
+/// 값은 notification.service.ts의 NotificationType과 맞춥니다.
+model Notification {
+  id                 Int      @id @default(autoincrement())
+  customerId         Int      @map("customer_id")
+  /// "새 견적 / 견적 확정" 알림일 때만
+  estimateId         Int?     @map("estimate_id")
+  /// "새 요청 / 이사 당일" 알림일 때만
+  quotationRequestId Int?     @map("quotation_request_id")
+  /// NEW_REQUEST | NEW_ESTIMATE | ESTIMATE_CONFIRMED | MOVING_DAY
+  type               String
+  message            String?
+  isRead             Boolean  @default(false) @map("is_read")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  customer         User              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  estimate         Estimate?         @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  quotationRequest QuotationRequest? @relation(fields: [quotationRequestId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, isRead])
+  @@map("notification")
 }
