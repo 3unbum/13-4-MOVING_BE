@@ -1,5 +1,5 @@
 import { User } from "../../../generated/prisma/client";
-import { UserRole } from "../../../generated/prisma/enums";
+import { UserRole, SocialProvider } from "../../../generated/prisma/enums";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { env } from "../../config/env";
@@ -10,6 +10,13 @@ const tokenPayloadSchema = z.object({
 });
 
 export type TokenPayload = z.infer<typeof tokenPayloadSchema>;
+
+const oauthSignupPayloadSchema = z.object({
+  provider: z.enum(SocialProvider),
+  role: z.enum(UserRole),
+});
+
+export type OAuthSignupTokenPayload = z.infer<typeof oauthSignupPayloadSchema>;
 
 const createToken = (userId: User["id"], role: User["role"], type: "access" | "refresh") => {
   const payload: TokenPayload = {
@@ -37,7 +44,28 @@ const verifyToken = (
   return tokenPayloadSchema.parse(decoded);
 };
 
+const createOAuthSignupToken = (payload: OAuthSignupTokenPayload): string => {
+  const token = jwt.sign(payload, env.OAUTH_SIGNUP_TOKEN_SECRET, {
+    expiresIn: env.OAUTH_SIGNUP_TOKEN_EXPIRES_IN as jwt.SignOptions["expiresIn"],
+  });
+  return token;
+};
+
+const verifyOAuthSignupToken = (
+  token: string,
+  options?: { ignoreExpiration?: boolean }
+): OAuthSignupTokenPayload => {
+  const decoded = jwt.verify(token, env.OAUTH_SIGNUP_TOKEN_SECRET, {
+    algorithms: ["HS256"],
+    ignoreExpiration: options?.ignoreExpiration,
+  });
+
+  return oauthSignupPayloadSchema.parse(decoded);
+};
+
 export default {
   createToken,
   verifyToken,
+  createOAuthSignupToken,
+  verifyOAuthSignupToken,
 };
