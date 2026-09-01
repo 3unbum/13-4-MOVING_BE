@@ -1,4 +1,4 @@
-import type { UserRole } from "../../common/types/role";
+import type { UserRole } from "../../../generated/prisma/enums.ts";
 
 export interface AuthUser {
   id: number;
