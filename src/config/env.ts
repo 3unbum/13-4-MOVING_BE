@@ -28,9 +28,6 @@ export const env = {
   JWT_EXPIRES_IN: optional("JWT_EXPIRES_IN", "1h"),
   JWT_REFRESH_EXPIRES_IN: optional("JWT_REFRESH_EXPIRES_IN", "14d"),
 
-  OAUTH_SIGNUP_TOKEN_SECRET: required("OAUTH_SIGNUP_TOKEN_SECRET"),
-  OAUTH_SIGNUP_TOKEN_EXPIRES_IN: optional("OAUTH_SIGNUP_TOKEN_EXPIRES_IN", "10m"),
-
   CLIENT_URL: optional("CLIENT_URL", "http://localhost:3000"),
 } as const;
 
