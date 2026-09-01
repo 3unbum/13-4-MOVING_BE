@@ -13,7 +13,7 @@ export const notFoundHandler: RequestHandler = (req, res) => {
 };
 
 export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
-  // expressjwt / passport-jwt 토큰 검증 실패
+  // jsonwebtoken 토큰 검증 실패 (expressjwt 등 사용 시)
   if (error.name === "UnauthorizedError") {
     res.status(401).json({
       error: { code: ERROR_CODES.INVALID_TOKEN, message: "유효하지 않은 토큰입니다" },
