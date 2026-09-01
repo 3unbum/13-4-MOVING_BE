@@ -8,7 +8,6 @@ router.get("/health", (_req, res) => {
 
 // 각 모듈의 route를 여기에 등록합니다.
 // router.use("/auth", authRouter);
-// router.use("/users", userRouter);
 // router.use("/profiles", profileRouter);
 // router.use("/quotation-requests", quotationRequestRouter);
 // router.use("/estimates", estimateRouter);
