@@ -23,9 +23,16 @@ const createToken = (userId: User["id"], role: User["role"], type: "access" | "r
   return token;
 };
 
-const verifyToken = (token: string, type: "access" | "refresh"): TokenPayload => {
+const verifyToken = (
+  token: string,
+  type: "access" | "refresh",
+  options?: { ignoreExpiration?: boolean }
+): TokenPayload => {
   const secret = type === "access" ? env.JWT_SECRET : env.JWT_REFRESH_SECRET;
-  const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] });
+  const decoded = jwt.verify(token, secret, {
+    algorithms: ["HS256"],
+    ignoreExpiration: options?.ignoreExpiration,
+  });
 
   return tokenPayloadSchema.parse(decoded);
 };
