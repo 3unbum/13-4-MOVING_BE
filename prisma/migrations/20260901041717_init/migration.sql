@@ -19,6 +19,9 @@ CREATE TYPE "estimate_status" AS ENUM ('PENDING', 'CONFIRMED', 'REJECTED', 'COMP
 -- CreateEnum
 CREATE TYPE "review_status" AS ENUM ('PENDING', 'CONFIRMED');
 
+-- CreateEnum
+CREATE TYPE "notification_type" AS ENUM ('NEW_REQUEST', 'NEW_ESTIMATE', 'ESTIMATE_CONFIRMED', 'MOVING_DAY');
+
 -- CreateTable
 CREATE TABLE "user" (
     "id" SERIAL NOT NULL,
@@ -60,6 +63,7 @@ CREATE TABLE "mover_profile" (
     "avg_rating" DECIMAL(2,1) NOT NULL DEFAULT 0,
     "review_count" INTEGER NOT NULL DEFAULT 0,
     "confirmed_count" INTEGER NOT NULL DEFAULT 0,
+    "favorite_count" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -162,10 +166,10 @@ CREATE TABLE "favorite" (
 -- CreateTable
 CREATE TABLE "notification" (
     "id" SERIAL NOT NULL,
-    "customer_id" INTEGER NOT NULL,
+    "user_id" INTEGER NOT NULL,
     "estimate_id" INTEGER,
     "quotation_request_id" INTEGER,
-    "type" TEXT NOT NULL,
+    "type" "notification_type" NOT NULL,
     "message" TEXT,
     "is_read" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -174,7 +178,7 @@ CREATE TABLE "notification" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "user_role_email_key" ON "user"("role", "email");
+CREATE INDEX "user_role_email_idx" ON "user"("role", "email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "user_role_provider_provider_id_key" ON "user"("role", "provider", "provider_id");
@@ -184,6 +188,24 @@ CREATE UNIQUE INDEX "customer_profile_user_id_key" ON "customer_profile"("user_i
 
 -- CreateIndex
 CREATE UNIQUE INDEX "mover_profile_user_id_key" ON "mover_profile"("user_id");
+
+-- CreateIndex
+CREATE INDEX "mover_profile_avg_rating_id_idx" ON "mover_profile"("avg_rating", "id");
+
+-- CreateIndex
+CREATE INDEX "mover_profile_review_count_id_idx" ON "mover_profile"("review_count", "id");
+
+-- CreateIndex
+CREATE INDEX "mover_profile_career_id_idx" ON "mover_profile"("career", "id");
+
+-- CreateIndex
+CREATE INDEX "mover_profile_confirmed_count_id_idx" ON "mover_profile"("confirmed_count", "id");
+
+-- CreateIndex
+CREATE INDEX "mover_service_service_mover_id_idx" ON "mover_service"("service", "mover_id");
+
+-- CreateIndex
+CREATE INDEX "mover_region_region_mover_id_idx" ON "mover_region"("region", "mover_id");
 
 -- CreateIndex
 CREATE INDEX "quotation_request_from_region_quotation_status_idx" ON "quotation_request"("from_region", "quotation_status");
@@ -219,7 +241,7 @@ CREATE INDEX "favorite_mover_id_idx" ON "favorite"("mover_id");
 CREATE UNIQUE INDEX "favorite_user_id_mover_id_key" ON "favorite"("user_id", "mover_id");
 
 -- CreateIndex
-CREATE INDEX "notification_customer_id_is_read_idx" ON "notification"("customer_id", "is_read");
+CREATE INDEX "notification_user_id_is_read_idx" ON "notification"("user_id", "is_read");
 
 -- AddForeignKey
 ALTER TABLE "customer_profile" ADD CONSTRAINT "customer_profile_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -264,10 +286,17 @@ ALTER TABLE "favorite" ADD CONSTRAINT "favorite_user_id_fkey" FOREIGN KEY ("user
 ALTER TABLE "favorite" ADD CONSTRAINT "favorite_mover_id_fkey" FOREIGN KEY ("mover_id") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "notification" ADD CONSTRAINT "notification_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "notification" ADD CONSTRAINT "notification_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "notification" ADD CONSTRAINT "notification_estimate_id_fkey" FOREIGN KEY ("estimate_id") REFERENCES "estimate"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "notification" ADD CONSTRAINT "notification_quotation_request_id_fkey" FOREIGN KEY ("quotation_request_id") REFERENCES "quotation_request"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- 이메일 가입(LOCAL) 계정만 (role, email) 유니크를 강제합니다.
+-- 소셜 계정은 (role, provider, provider_id)로 이미 중복을 막고 있어 제외합니다.
+-- Prisma 스키마 문법으로 WHERE 조건부 유니크를 표현할 수 없어 raw SQL로 정의합니다.
+CREATE UNIQUE INDEX "user_role_email_local_key"
+  ON "user" ("role", "email")
+  WHERE "provider" = 'LOCAL';

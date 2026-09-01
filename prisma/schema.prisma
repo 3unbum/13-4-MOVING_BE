@@ -89,11 +89,25 @@ enum ReviewStatus {
   @@map("review_status")
 }
 
+/// 알림 종류. notification.service.ts의 NotificationType과 값을 맞춥니다.
+enum NotificationType {
+  NEW_REQUEST /// 견적 요청 생성·지정 요청 → 해당 지역 기사님
+  NEW_ESTIMATE /// 기사님이 견적 발송 → 요청한 유저
+  ESTIMATE_CONFIRMED /// 유저가 견적 확정 → 해당 기사님
+  MOVING_DAY /// 이사 당일 배치 → 유저 + 기사님
+
+  @@map("notification_type")
+}
+
 // ───────────────────────────── 유저 ─────────────────────────────
 
 /// 한 사람이 다른 역할로 가입하는 것을 허용합니다.
-/// provider_id가 NULL인 LOCAL 유저는 유니크에 걸리지 않습니다
-/// (Postgres는 NULL을 서로 다른 값으로 취급).
+///
+/// 이메일 중복 방지는 두 갈래로 나뉩니다.
+///   - 소셜: (role, provider, providerId) 유니크로 방지
+///   - 이메일 가입(LOCAL): 부분 유니크 인덱스로 방지
+///     → migration.sql의 user_role_email_local_key 참조
+/// (role, email) 전체 유니크를 걸면 같은 이메일의 소셜 계정끼리도 막히므로 사용하지 않습니다.
 model User {
   id           Int             @id @default(autoincrement())
   role         UserRole
@@ -124,8 +138,9 @@ model User {
   favoritedBy       Favorite[]         @relation("FavoriteMover")
   notifications     Notification[]
 
-  @@unique([role, email])
   @@unique([role, provider, providerId])
+  /// 로그인 조회용 — 유니크를 뺐으므로 인덱스는 별도로 유지합니다
+  @@index([role, email])
   @@map("user")
 }
 
@@ -162,11 +177,19 @@ model MoverProfile {
   reviewCount    Int      @default(0) @map("review_count")
   /// 8/31 회의 결정 — 견적 확정 시 갱신
   confirmedCount Int      @default(0) @map("confirmed_count")
+  /// 반정규화 — 찜 추가/해제 시 갱신 (API 명세 #21·#22)
+  favoriteCount  Int      @default(0) @map("favorite_count")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  /// 무한 스크롤 커서 페이지네이션용 정렬 인덱스 (API 명세 #21)
+  /// id를 함께 넣어 정렬 키가 같을 때 순서가 흔들리지 않게 합니다
+  @@index([avgRating, id])
+  @@index([reviewCount, id])
+  @@index([career, id])
+  @@index([confirmedCount, id])
   @@map("mover_profile")
 }
 
@@ -189,6 +212,10 @@ model MoverService {
   mover User @relation(fields: [moverId], references: [id], onDelete: Cascade)
 
   @@id([moverId, service])
+  /// 역방향 조회 — "이 서비스 가능한 기사님 목록"
+  /// PK는 기사님→서비스 방향만 커버해 매칭 쿼리가 인덱스를 타지 못합니다.
+  /// 사용처: 기사님 찾기 유형 필터(#21), 견적 요청 매칭(#15)
+  @@index([service, moverId])
   @@map("mover_service")
 }
 
@@ -200,6 +227,9 @@ model MoverRegion {
   mover User @relation(fields: [moverId], references: [id], onDelete: Cascade)
 
   @@id([moverId, region])
+  /// 역방향 조회 — "이 지역 가능한 기사님 목록"
+  /// 사용처: 기사님 찾기 지역 필터(#21), 견적 요청 시 NEW_REQUEST 알림 대상 조회(#15)
+  @@index([region, moverId])
   @@map("mover_region")
 }
 
@@ -326,22 +356,22 @@ model Favorite {
 /// type은 varchar 유지 (Enum 승격 여부는 팀 논의 중).
 /// 값은 notification.service.ts의 NotificationType과 맞춥니다.
 model Notification {
-  id                 Int      @id @default(autoincrement())
-  customerId         Int      @map("customer_id")
+  id                 Int              @id @default(autoincrement())
+  /// 수신자. 소비자·기사님 양쪽 모두 수신하므로 userId입니다
+  userId             Int              @map("user_id")
   /// "새 견적 / 견적 확정" 알림일 때만
-  estimateId         Int?     @map("estimate_id")
+  estimateId         Int?             @map("estimate_id")
   /// "새 요청 / 이사 당일" 알림일 때만
-  quotationRequestId Int?     @map("quotation_request_id")
-  /// NEW_REQUEST | NEW_ESTIMATE | ESTIMATE_CONFIRMED | MOVING_DAY
-  type               String
+  quotationRequestId Int?             @map("quotation_request_id")
+  type               NotificationType
   message            String?
-  isRead             Boolean  @default(false) @map("is_read")
-  createdAt          DateTime @default(now()) @map("created_at")
+  isRead             Boolean          @default(false) @map("is_read")
+  createdAt          DateTime         @default(now()) @map("created_at")
 
-  customer         User              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   estimate         Estimate?         @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   quotationRequest QuotationRequest? @relation(fields: [quotationRequestId], references: [id], onDelete: Cascade)
 
-  @@index([customerId, isRead])
+  @@index([userId, isRead])
   @@map("notification")
 }

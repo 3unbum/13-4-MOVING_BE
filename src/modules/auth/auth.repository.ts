@@ -10,12 +10,15 @@ const withProfiles = {
 
 export const authRepository = {
   /**
-   * (role, email) 복합 유니크로 조회합니다.
+   * 이메일 가입(LOCAL) 계정을 (role, email)로 조회합니다.
    * 같은 이메일로 일반 유저·기사님 각각 가입할 수 있습니다.
+   *
+   * (role, email) 전체 유니크를 두지 않아 findUnique를 쓸 수 없습니다.
+   * 중복 방지는 부분 유니크 인덱스(user_role_email_local_key)가 담당합니다.
    */
   findByEmailAndRole(email: string, role: UserRole) {
-    return prisma.user.findUnique({
-      where: { role_email: { role, email } },
+    return prisma.user.findFirst({
+      where: { role, email, provider: "LOCAL" },
       include: withProfiles,
     });
   },

@@ -140,6 +140,12 @@ async function main() {
     ],
   });
 
+  // 반정규화 컬럼 동기화 — 찜을 넣었으면 카운트도 맞춰줍니다
+  await prisma.moverProfile.updateMany({
+    where: { userId: { in: [mover1.id, mover3.id] } },
+    data: { favoriteCount: { increment: 1 } },
+  });
+
   // ── 시나리오 1: 견적 대기 중인 활성 요청 (지정 2명) ────────
   const pendingRequest = await prisma.quotationRequest.create({
     data: {

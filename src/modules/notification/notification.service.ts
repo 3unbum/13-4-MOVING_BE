@@ -1,6 +1,7 @@
 import type { PrismaTransaction } from "../../config/prisma";
+import type { NotificationType } from "../../../generated/prisma/enums.ts";
 
-export type NotificationType = "NEW_REQUEST" | "NEW_ESTIMATE" | "ESTIMATE_CONFIRMED" | "MOVING_DAY";
+export type { NotificationType };
 
 export interface CreateNotificationParams {
   userId: number;
