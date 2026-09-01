@@ -1,11 +1,15 @@
 import { User } from "../../../generated/prisma/client";
+import { UserRole } from "../../../generated/prisma/enums";
 import jwt from "jsonwebtoken";
+import { z } from "zod";
 import { env } from "../../config/env";
 
-export interface TokenPayload {
-  userId: User["id"];
-  role: User["role"];
-}
+const tokenPayloadSchema = z.object({
+  userId: z.number(),
+  role: z.enum(UserRole),
+});
+
+export type TokenPayload = z.infer<typeof tokenPayloadSchema>;
 
 const createToken = (userId: User["id"], role: User["role"], type: "access" | "refresh") => {
   const payload: TokenPayload = {
@@ -19,11 +23,11 @@ const createToken = (userId: User["id"], role: User["role"], type: "access" | "r
   return token;
 };
 
-const verifyToken = (token: string, type: "access" | "refresh") => {
+const verifyToken = (token: string, type: "access" | "refresh"): TokenPayload => {
   const secret = type === "access" ? env.JWT_SECRET : env.JWT_REFRESH_SECRET;
   const decoded = jwt.verify(token, secret, { algorithms: ["HS256"] });
 
-  return decoded as TokenPayload;
+  return tokenPayloadSchema.parse(decoded);
 };
 
 export default {
