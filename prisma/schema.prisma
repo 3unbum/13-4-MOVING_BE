@@ -297,9 +297,9 @@ model Estimate {
   moverId            Int            @map("mover_id")
   /// REJECTED면 NULL
   price              Int?
-  /// REJECTED면 필수 (앱 레벨 검증)
-  comment            String?
-  estimateStatus     EstimateStatus @map("estimate_status")
+  /// 견적 요청 보낼 때 요청 반려 모두 필숫값
+  comment            String
+  estimateStatus     EstimateStatus @default(PENDING) @map("estimate_status")
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
