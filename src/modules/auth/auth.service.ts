@@ -70,4 +70,48 @@ export const authService = {
       hasProfile: !!(user.customerProfile || user.moverProfile),
     };
   },
+
+  /** 서명만 확인(만료 무시) — access token이 이미 만료된 상태에서도 로그아웃이 가능해야 함 */
+  async logout(refreshToken: string): Promise<void> {
+    let userId: number;
+    try {
+      userId = jwtUtil.verifyToken(refreshToken, "refresh", { ignoreExpiration: true }).userId;
+    } catch {
+      throw new AppError(401, ERROR_CODES.REFRESH_TOKEN_INVALID, "유효하지 않은 토큰입니다");
+    }
+
+    const user = await authRepository.findById(userId);
+    if (!user?.refreshToken || !hashUtil.compareRefreshToken(refreshToken, user.refreshToken)) {
+      throw new AppError(
+        401,
+        ERROR_CODES.REFRESH_TOKEN_INVALID,
+        "이미 로그아웃되었거나 유효하지 않은 토큰입니다"
+      );
+    }
+
+    await authRepository.updateRefreshToken(user.id, null);
+  },
+
+  /** 서명 + 만료 둘 다 확인, access token만 새로 발급 */
+  async refresh(refreshToken: string): Promise<{ accessToken: string }> {
+    let userId: number;
+    try {
+      userId = jwtUtil.verifyToken(refreshToken, "refresh").userId;
+    } catch (error) {
+      const isExpired = error instanceof Error && error.name === "TokenExpiredError";
+      throw new AppError(
+        401,
+        isExpired ? ERROR_CODES.REFRESH_TOKEN_EXPIRED : ERROR_CODES.REFRESH_TOKEN_INVALID,
+        isExpired ? "토큰이 만료되었습니다" : "유효하지 않은 토큰입니다"
+      );
+    }
+
+    const user = await authRepository.findById(userId);
+    if (!user?.refreshToken || !hashUtil.compareRefreshToken(refreshToken, user.refreshToken)) {
+      throw new AppError(401, ERROR_CODES.REFRESH_TOKEN_INVALID, "유효하지 않은 토큰입니다");
+    }
+
+    const accessToken = jwtUtil.createToken(user.id, user.role, "access");
+    return { accessToken };
+  },
 };
