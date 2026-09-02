@@ -1,4 +1,6 @@
+import z from "zod";
 import type { EstimateStatus } from "../../../generated/prisma/enums.ts";
+import { estimateListQuerySchema, moverRequestQuerySchema } from "./estimate.schema.ts";
 
 export interface EstimateInputField {
   moverId: number;
@@ -15,10 +17,16 @@ export interface EstimateRejectInput {
 export interface EstimateGetAllByMoverParams {
   moverId: number;
   cursor?: number;
+  estimateStatus?: EstimateStatus;
   take?: number;
 }
 
 export interface EstimateGetAllByQuotationRequestParams {
   quotationRequestId: number;
   estimateStatus?: EstimateStatus;
+  cursor?: number;
+  take?: number;
 }
+
+export type estimateListQuery = z.infer<typeof estimateListQuerySchema>;
+export type moverRequestQuery = z.infer<typeof moverRequestQuerySchema>;

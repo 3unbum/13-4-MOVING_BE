@@ -1,4 +1,5 @@
 import { prisma } from "@/config/prisma";
+import { createNotification } from "../notification/notification.service";
 import {
   EstimateGetAllByMoverParams,
   EstimateGetAllByQuotationRequestParams,
@@ -38,9 +39,14 @@ async function reject({ quotationRequestId, moverId, comment }: EstimateRejectIn
   });
 }
 // 기사님 기준 견적 조회
-async function getAllByMover({ moverId, cursor, take = 6 }: EstimateGetAllByMoverParams) {
+async function getAllByMover({
+  moverId,
+  estimateStatus,
+  cursor,
+  take = 6,
+}: EstimateGetAllByMoverParams) {
   return prisma.estimate.findMany({
-    where: { moverId },
+    where: { moverId, ...(estimateStatus && { estimateStatus }) },
     orderBy: { id: "desc" },
     take,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
@@ -51,10 +57,14 @@ async function getAllByMover({ moverId, cursor, take = 6 }: EstimateGetAllByMove
 async function getAllByQuotationRequest({
   quotationRequestId,
   estimateStatus,
+  cursor,
+  take = 4,
 }: EstimateGetAllByQuotationRequestParams) {
   return prisma.estimate.findMany({
     where: { quotationRequestId, ...(estimateStatus && { estimateStatus }) }, // 서비스 레이어에서 status 값으로 필터링 확정 견적
     orderBy: { id: "desc" },
+    take,
+    ...(cursor && { skip: 1, cursor: { id: cursor } }),
   });
 }
 
@@ -63,4 +73,25 @@ async function getById(id: number) {
   return prisma.estimate.findUnique({ where: { id } });
 }
 
-export { getAllByMover, getAllByQuotationRequest, getById, reject, save };
+// 견적 확정(배정) — estimate CONFIRMED, quotationRequest ASSIGNED, mover confirmedCount+1, notification 생성을 한 트랜잭션으로 처리
+// COMPLETED는 이사일 경과 후 expireRequests.job.ts가 처리 (여기서 건드리지 않음)
+async function confirm(estimateId: number, moverId: number) {
+  return prisma.$transaction(async (tx) => {
+    const estimate = await tx.estimate.update({
+      where: { id: estimateId },
+      data: { estimateStatus: "CONFIRMED" },
+    });
+    await tx.quotationRequest.update({
+      where: { id: estimate.quotationRequestId },
+      data: { quotationStatus: "ASSIGNED" },
+    });
+    await tx.moverProfile.update({
+      where: { userId: moverId },
+      data: { confirmedCount: { increment: 1 } },
+    });
+    await createNotification(tx, { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" });
+    return estimate;
+  });
+}
+
+export default { confirm, getAllByMover, getAllByQuotationRequest, getById, reject, save };
