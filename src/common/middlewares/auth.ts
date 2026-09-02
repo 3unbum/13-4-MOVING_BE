@@ -31,3 +31,25 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
     );
   }
 };
+
+/**
+ * 선택 인증. public API에서 로그인 유저만 추가 정보를 내려줄 때 사용합니다.
+ * 토큰이 없거나 만료/위조여도 요청은 통과시키고 req.user는 비워 둡니다.
+ */
+export const optionalAuth: RequestHandler = (req, _res, next) => {
+  const token = req.cookies?.[ACCESS_TOKEN_COOKIE];
+
+  if (!token) {
+    next();
+    return;
+  }
+
+  try {
+    const decoded = jwtUtil.verifyToken(token, "access");
+    req.user = { id: decoded.userId, role: decoded.role };
+  } catch {
+    // public API — 잘못된 토큰은 무시
+  }
+
+  next();
+};
