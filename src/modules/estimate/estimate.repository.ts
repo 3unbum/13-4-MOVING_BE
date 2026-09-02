@@ -21,9 +21,16 @@ async function save(estimate: EstimateInputField) {
 
 // 사용자가 요청한 지정 견적 요청에 대한 반려
 async function reject({ quotationRequestId, moverId, comment }: EstimateRejectInput) {
-  return prisma.estimate.update({
+  return prisma.estimate.upsert({
     where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
-    data: {
+    create: {
+      comment,
+      price: null,
+      estimateStatus: "REJECTED",
+      quotationRequest: { connect: { id: quotationRequestId } },
+      mover: { connect: { id: moverId } },
+    },
+    update: {
       comment,
       price: null,
       estimateStatus: "REJECTED",
