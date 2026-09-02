@@ -1,4 +1,5 @@
 import { Router } from "express";
+import estimateRouter from "../modules/estimate/estimate.route";
 
 const router = Router();
 
@@ -10,7 +11,8 @@ router.get("/health", (_req, res) => {
 // router.use("/auth", authRouter);
 // router.use("/profiles", profileRouter);
 // router.use("/quotation-requests", quotationRequestRouter);
-// router.use("/estimates", estimateRouter);
+// estimate.route.ts 안에 /estimates, /mover, /requests 경로가 섞여있어 prefix 없이 마운트
+router.use(estimateRouter);
 // router.use("/movers", moverRouter);
 // router.use("/reviews", reviewRouter);
 // router.use("/favorites", favoriteRouter);
