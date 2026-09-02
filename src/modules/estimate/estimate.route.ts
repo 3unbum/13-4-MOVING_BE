@@ -36,7 +36,7 @@ router
     requireRole("CUSTOMER"),
     requireProfile,
     validate(estimateListQuerySchema, "query"),
-    estimateController.getQuotationEstimates
+    estimateController.getPendingEstimates
   )
   /**
    * @swagger

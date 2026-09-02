@@ -35,6 +35,22 @@ async function getQuotationEstimates(
   });
 }
 
+// 대기 중인 견적 (#26) — quotationRequestId 없이, 유저의 활성 요청부터 찾아서 PENDING 견적만 조회
+async function getPendingEstimates(userId: number, query: estimateListQuery) {
+  const activeRequest = await prisma.quotationRequest.findFirst({
+    where: { userId, quotationStatus: { in: ["PENDING", "ASSIGNED"] } },
+    select: { id: true },
+  });
+  if (!activeRequest) return [];
+
+  return estimateRepository.getAllByQuotationRequest({
+    quotationRequestId: activeRequest.id,
+    estimateStatus: query.status ?? "PENDING",
+    cursor: query.cursor,
+    take: query.take,
+  });
+}
+
 // 견적 상세조회 — customer/mover 공용, role별 소유권 검증 본인이 보낸 견적만 조회 가능
 async function getById(estimateId: number, userId: number, role: UserRole) {
   const estimate = await estimateRepository.getById(estimateId);
@@ -80,6 +96,7 @@ async function reject(quotationRequestId: number, moverId: number, comment: stri
 }
 
 // 견적 제시 — mover만 가능. 지정견적이면 상한 체크 스킵, 일반견적이면 이 요청이 이미 받은 일반견적 5건 상한 체크
+// 상한 체크 + 실제 저장은 repository.save 안에서 트랜잭션으로 원자적 처리 (동시 제출 레이스 방지)
 async function save(quotationRequestId: number, moverId: number, price: number, comment: string) {
   await getActiveQuotationRequest(quotationRequestId);
 
@@ -87,26 +104,10 @@ async function save(quotationRequestId: number, moverId: number, price: number, 
     where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
   });
 
-  if (!targetedRequest) {
-    const targetedMovers = await prisma.targetedRequest.findMany({
-      where: { quotationRequestId },
-      select: { moverId: true },
-    });
-    const generalCount = await prisma.estimate.count({
-      where: {
-        quotationRequestId,
-        moverId: { notIn: targetedMovers.map((t) => t.moverId) },
-      },
-    });
-    if (generalCount >= 5) {
-      throw AppError.badRequest(
-        ERROR_CODES.ESTIMATE_LIMIT_EXCEEDED,
-        "이 견적 요청에 이미 일반 견적이 5건 도착했습니다"
-      );
-    }
-  }
-
-  return estimateRepository.save({ quotationRequestId, moverId, price, comment });
+  return estimateRepository.save(
+    { quotationRequestId, moverId, price, comment },
+    Boolean(targetedRequest)
+  );
 }
 
 // 견적 확정 — customer만 가능. 본인 요청 + 활성 상태 + PENDING 견적일 때만
@@ -133,6 +134,10 @@ async function confirm(estimateId: number, userId: number) {
 // mover 받은 요청 목록 — 기본은 전체 최신순, isServiceRegion/isTargeted/category 체크박스로 프론트에서 추가 필터
 // 이미 응답(견적/반려)한 건 항상 제외
 async function getMoverRequests(moverId: number, query: moverRequestQuery) {
+  const moverRegions = query.isServiceRegion
+    ? await prisma.moverRegion.findMany({ where: { moverId }, select: { region: true } })
+    : [];
+
   // 지정받은 시점순은 targetedRequest 기준으로 정렬해야 해서 조회 자체를 다르게 함
   if (query.sort === "targetedAt") {
     const targetedRequests = await prisma.targetedRequest.findMany({
@@ -142,6 +147,7 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
           quotationStatus: "PENDING",
           estimates: { none: { moverId } },
           ...(query.category && { category: query.category }),
+          ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
         },
       },
       include: { quotationRequest: true },
@@ -154,10 +160,6 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
     });
     return targetedRequests.map((t) => t.quotationRequest);
   }
-
-  const moverRegions = query.isServiceRegion
-    ? await prisma.moverRegion.findMany({ where: { moverId }, select: { region: true } })
-    : [];
 
   return prisma.quotationRequest.findMany({
     where: {
@@ -178,6 +180,7 @@ export {
   getById,
   getMoverEstimates,
   getMoverRequests,
+  getPendingEstimates,
   getQuotationEstimates,
   reject,
   save,

@@ -1,5 +1,4 @@
 import swaggerJsdoc from "swagger-jsdoc";
-import { env } from "./env";
 
 export const swaggerSpec = swaggerJsdoc({
   definition: {
@@ -9,7 +8,8 @@ export const swaggerSpec = swaggerJsdoc({
       version: "1.0.0",
       description: "이사 소비자와 이사 전문가를 연결하는 매칭 서비스 API 문서",
     },
-    servers: [{ url: `http://localhost:${env.PORT}/api` }],
+    // 상대경로 — swagger-ui가 문서 제공 호스트 기준으로 풀어서 씀, 배포 환경에서도 그대로 동작
+    servers: [{ url: "/api" }],
     components: {
       securitySchemes: {
         cookieAuth: { type: "apiKey", in: "cookie", name: "accessToken" },

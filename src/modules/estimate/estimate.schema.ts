@@ -27,11 +27,11 @@ export const estimateListQuerySchema = z.object({
 // mover 받은 요청 목록 — status 대신 프론트 체크박스 필터(서비스 가능 지역/지정 견적/이사 유형) + 정렬 옵션 추가
 export const moverRequestQuerySchema = estimateListQuerySchema.omit({ status: true }).extend({
   isServiceRegion: z
-    .string()
+    .enum(["true", "false"])
     .optional()
     .transform((v) => v === "true"),
   isTargeted: z
-    .string()
+    .enum(["true", "false"])
     .optional()
     .transform((v) => v === "true"),
   category: z.enum(ServiceType).optional(),

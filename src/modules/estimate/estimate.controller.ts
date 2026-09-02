@@ -22,7 +22,16 @@ export const estimateController = {
     res.json({ data: result });
   }),
 
-  // GET /estimates/pending, GET requests/:quotationRequestId/estimates (#26, #27)
+  // GET /estimates/pending (#26)
+  getPendingEstimates: wrap(async (req, res) => {
+    const result = await estimateService.getPendingEstimates(
+      req.user!.id,
+      req.query as unknown as estimateListQuery
+    );
+    res.json({ data: result });
+  }),
+
+  // GET requests/:quotationRequestId/estimates (#27)
   getQuotationEstimates: wrap(async (req, res) => {
     const result = await estimateService.getQuotationEstimates(
       req.user!.id,
