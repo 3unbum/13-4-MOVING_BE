@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { createHash } from "node:crypto";
 import { AppError } from "../errors/AppError";
 import { ERROR_CODES } from "../errors/errorCodes";
 
@@ -28,4 +29,15 @@ const verifyPassword = async (password: string, hashedPassword: string) => {
   return await bcrypt.compare(password, hashedPassword);
 };
 
-export default { hashPassword, verifyPassword };
+/**
+ * refresh token(JWT) 해싱 전용. hashPassword는 재사용 못 함 —
+ * hashPassword 안의 72바이트 길이 체크(assertValidPasswordLength)는 "비밀번호냐 아니냐"를
+ * 안 가리고 그냥 들어오는 문자열 길이만 보기 때문에, 이보다 훨씬 긴 JWT를 넣으면 그대로 걸려서 에러남.
+ * (bcrypt 자체가 에러를 던지는 게 아니라, 우리가 비밀번호용으로 추가한 이 길이 체크가 원인)
+ */
+const hashRefreshToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+const compareRefreshToken = (token: string, hashedToken: string) =>
+  hashRefreshToken(token) === hashedToken;
+
+export default { hashPassword, verifyPassword, hashRefreshToken, compareRefreshToken };
