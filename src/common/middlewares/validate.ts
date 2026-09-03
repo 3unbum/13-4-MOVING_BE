@@ -21,7 +21,12 @@ export function validate(schema: ZodType, target: Target = "body"): RequestHandl
       return;
     }
 
-    req[target] = result.data as never;
+    Object.defineProperty(req, target, {
+      value: result.data,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
     next();
   };
 }
