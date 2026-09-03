@@ -1,19 +1,16 @@
 import z from "zod";
 import { RegionType, ServiceType } from "../../../generated/prisma/enums";
 
-const regionValues = Object.values(RegionType) as [string, ...string[]];
-const serviceValues = Object.values(ServiceType) as [string, ...string[]];
-
 const addressSchema = z.object({
   postalCode: z.string().min(1, "우편번호를 입력해 주세요."),
-  region: z.enum(regionValues),
+  region: z.enum(RegionType),
   address: z.string().min(1, "주소를 입력해 주세요."),
   detailAddress: z.string().min(1, "상세 주소를 입력해 주세요."),
 });
 
 export const quotationRequestCreateSchema = z
   .object({
-    category: z.enum(serviceValues),
+    category: z.enum(ServiceType),
     movingDate: z.coerce.date(),
     from: addressSchema,
     to: addressSchema,
