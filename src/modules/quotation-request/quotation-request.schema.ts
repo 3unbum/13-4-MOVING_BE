@@ -40,4 +40,12 @@ export const quotationRequestCreateSchema = z
     }
   );
 
+/** GET /quotation-requests 쿼리. status=pending이면 활성 요청 1건만 조회합니다. */
+export const quotationRequestListQuerySchema = z.object({
+  status: z.literal("pending").optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+});
+
 export type QuotationRequestCreateDto = z.infer<typeof quotationRequestCreateSchema>;
+export type QuotationRequestListQuery = z.infer<typeof quotationRequestListQuerySchema>;

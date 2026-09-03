@@ -42,4 +42,47 @@ async function findMoverIdsByRegion(region: RegionType, tx: PrismaTransaction = 
   return rows.map((row) => row.moverId);
 }
 
-export { findActiveByUserId, findMoverIdsByRegion, save };
+/** 요청 상세. 지정 기사님 목록을 함께 가져옵니다. */
+async function findById(id: number) {
+  return prisma.quotationRequest.findUnique({
+    where: { id },
+    include: {
+      targetedRequests: {
+        select: {
+          moverId: true,
+          mover: {
+            select: {
+              id: true,
+              name: true,
+              moverProfile: { select: { nickName: true, image: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+/** 내 요청 이력 (최신순, 페이지네이션) */
+async function findManyByUserId(userId: number, page: number, limit: number) {
+  return prisma.quotationRequest.findMany({
+    where: { userId },
+    orderBy: { id: "desc" },
+    skip: (page - 1) * limit,
+    take: limit,
+  });
+}
+
+/** 페이지네이션 총 개수 */
+async function countByUserId(userId: number) {
+  return prisma.quotationRequest.count({ where: { userId } });
+}
+
+export {
+  countByUserId,
+  findActiveByUserId,
+  findById,
+  findManyByUserId,
+  findMoverIdsByRegion,
+  save,
+};

@@ -4,7 +4,10 @@ import { requireProfile } from "@/common/middlewares/profile";
 import { requireRole } from "@/common/middlewares/role";
 import { validate } from "@/common/middlewares/validate";
 import { quotationRequestController } from "@/modules/quotation-request/quotation-request.controller";
-import { quotationRequestCreateSchema } from "@/modules/quotation-request/quotation-request.schema";
+import {
+  quotationRequestCreateSchema,
+  quotationRequestListQuerySchema,
+} from "@/modules/quotation-request/quotation-request.schema";
 
 const router = Router();
 
@@ -18,13 +21,23 @@ router.post(
   quotationRequestController.create
 );
 
-// 활성 요청 조회 - 없으면 null
+// 목록 - ?status=pending이면 활성 요청 1건, 아니면 이력
 router.get(
   "/",
   requireAuth,
   requireRole("CUSTOMER"),
   requireProfile,
-  quotationRequestController.findActive
+  validate(quotationRequestListQuerySchema, "query"),
+  quotationRequestController.list
+);
+
+// 요청 상세
+router.get(
+  "/:id",
+  requireAuth,
+  requireRole("CUSTOMER"),
+  requireProfile,
+  quotationRequestController.findById
 );
 
 export default router;
