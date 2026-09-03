@@ -104,3 +104,18 @@ export interface MoverDetailResponse {
   /** 로그인 + 활성 견적 요청 보유 시 포함 */
   isTargeted?: boolean;
 }
+
+export interface MoverReviewItemResponse {
+  id: number;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  customerName: string;
+}
+
+export interface MoverReviewsResponse {
+  data: MoverReviewItemResponse[];
+  page: number;
+  totalPages: number;
+  totalCount: number;
+}

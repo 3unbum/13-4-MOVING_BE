@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import type { MoverIdParam, MoverListQuery } from "./mover.schema";
+import type { MoverIdParam, MoverListQuery, MoverReviewsQuery } from "./mover.schema";
 import { moverService } from "./mover.service";
 
 export const moverController = {
@@ -17,6 +17,16 @@ export const moverController = {
       const { id } = req.params as unknown as MoverIdParam;
       const data = await moverService.getById(id, req.user);
       res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  listReviews: (async (req, res, next) => {
+    try {
+      const { id } = req.params as unknown as MoverIdParam;
+      const result = await moverService.listReviews(id, req.query as unknown as MoverReviewsQuery);
+      res.json(result);
     } catch (error) {
       next(error);
     }

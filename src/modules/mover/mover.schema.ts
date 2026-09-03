@@ -52,5 +52,17 @@ export const moverListCursorSchema = z.object({
   confirmedCount: z.number().int(),
 });
 
+export const moverReviewsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1, "page는 1 이상이어야 합니다").optional().default(1),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1, "limit는 1 이상이어야 합니다")
+    .max(5, "limit는 최대 5입니다")
+    .optional()
+    .default(5),
+});
+
 export type MoverIdParam = z.infer<typeof moverIdParamSchema>;
 export type MoverListQuery = z.infer<typeof moverListQuerySchema>;
+export type MoverReviewsQuery = z.infer<typeof moverReviewsQuerySchema>;

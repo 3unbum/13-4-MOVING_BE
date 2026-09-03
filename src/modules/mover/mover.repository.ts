@@ -131,6 +131,38 @@ export const moverRepository = {
 
     return targeted !== null;
   },
+
+  async existsMover(moverId: number) {
+    const row = await prisma.user.findFirst({
+      where: { id: moverId, role: "MOVER", moverProfile: { isNot: null } },
+      select: { id: true },
+    });
+    return row !== null;
+  },
+
+  findConfirmedReviewsByMoverId(moverId: number, page: number, limit: number) {
+    const where = {
+      status: "CONFIRMED" as const,
+      estimate: { moverId },
+    };
+
+    return prisma.$transaction([
+      prisma.review.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          rating: true,
+          comment: true,
+          createdAt: true,
+          customer: { select: { name: true } },
+        },
+      }),
+      prisma.review.count({ where }),
+    ]);
+  },
 };
 
 export type MoverListProfile = Awaited<ReturnType<typeof moverRepository.findList>>[number];

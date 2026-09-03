@@ -1,7 +1,7 @@
 import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { moverRepository, type MoverListProfile } from "./mover.repository";
-import type { MoverListQuery } from "./mover.schema";
+import type { MoverListQuery, MoverReviewsQuery } from "./mover.schema";
 import { moverListCursorSchema } from "./mover.schema";
 import {
   parseRegionLabel,
@@ -13,6 +13,8 @@ import {
   type MoverListCursor,
   type MoverListItemResponse,
   type MoverListResponse,
+  type MoverReviewItemResponse,
+  type MoverReviewsResponse,
 } from "./mover.type";
 
 /** 커서 인코딩 */
@@ -124,5 +126,35 @@ export const moverService = {
     ]);
 
     return { ...detail, isFavorited, isTargeted };
+  },
+
+  async listReviews(moverId: number, query: MoverReviewsQuery): Promise<MoverReviewsResponse> {
+    const exists = await moverRepository.existsMover(moverId);
+    if (!exists) {
+      throw AppError.notFound("기사님을 찾을 수 없습니다");
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 5;
+    const [rows, totalCount] = await moverRepository.findConfirmedReviewsByMoverId(
+      moverId,
+      page,
+      limit
+    );
+
+    const data: MoverReviewItemResponse[] = rows.map((row) => ({
+      id: row.id,
+      rating: row.rating ?? 0,
+      comment: row.comment ?? "",
+      createdAt: row.createdAt.toISOString(),
+      customerName: row.customer.name,
+    }));
+
+    return {
+      data,
+      page,
+      totalPages: totalCount === 0 ? 0 : Math.ceil(totalCount / limit),
+      totalCount,
+    };
   },
 };
