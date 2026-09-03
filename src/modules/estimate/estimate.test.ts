@@ -176,11 +176,13 @@ describe("reject", () => {
 
 describe("save", () => {
   test("요청이 활성 상태가 아니면 400을 던진다", async () => {
-    mockedPrisma.quotationRequest.findUnique.mockResolvedValue(null as never);
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({
+      quotationStatus: "ASSIGNED",
+    } as never);
 
     await expect(
       estimateService.save(27, 10, 50000, "친절히 도와드리겠습니다")
-    ).rejects.toMatchObject({ statusCode: 404 });
+    ).rejects.toMatchObject({ statusCode: 400, code: ERROR_CODES.NO_ACTIVE_REQUEST });
   });
 
   test("지정견적이면 isTargeted=true로 넘긴다", async () => {
