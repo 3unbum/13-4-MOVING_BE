@@ -21,7 +21,17 @@ export function validate(schema: ZodType, target: Target = "body"): RequestHandl
       return;
     }
 
-    req[target] = result.data as never;
+    // Express 5의 req.query는 getter라 재할당할 수 없습니다.
+    if (target === "query") {
+      Object.defineProperty(req, "query", {
+        value: result.data,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    } else {
+      req[target] = result.data as never;
+    }
     next();
   };
 }

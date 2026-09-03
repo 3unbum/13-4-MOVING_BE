@@ -1,6 +1,7 @@
 import { Router } from "express";
 import authRouter from "../modules/auth/auth.route";
 import estimateRouter from "../modules/estimate/estimate.route";
+import favoriteRouter from "../modules/favorite/favorite.route";
 import quotationRequestRouter from "../modules/quotation-request/quotation-request.route";
 
 const router = Router();
@@ -17,7 +18,7 @@ router.use("/quotation-requests", quotationRequestRouter);
 router.use(estimateRouter);
 // router.use("/movers", moverRouter);
 // router.use("/reviews", reviewRouter);
-// router.use("/favorites", favoriteRouter);
+router.use("/favorites", favoriteRouter);
 // router.use("/notifications", notificationRouter);
 
 export default router;
