@@ -1,5 +1,8 @@
+import { AppError } from "../../common/errors/AppError";
+import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { prisma } from "../../config/prisma";
 import type { PrismaTransaction } from "../../config/prisma";
+import { Prisma } from "../../../generated/prisma/client.ts";
 
 const moverCardInclude = {
   mover: {
@@ -60,11 +63,18 @@ export const favoriteRepository = {
   },
 
   async createOwned(userId: number, moverId: number) {
-    return prisma.$transaction(async (tx) => {
-      const row = await favoriteRepository.create(userId, moverId, tx);
-      await favoriteRepository.incrementFavoriteCount(moverId, tx);
-      return row;
-    });
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const row = await favoriteRepository.create(userId, moverId, tx);
+        await favoriteRepository.incrementFavoriteCount(moverId, tx);
+        return row;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw AppError.conflict(ERROR_CODES.ALREADY_FAVORITED, "이미 찜한 기사님입니다");
+      }
+      throw error;
+    }
   },
 
   findOwnedMoverIds(userId: number, moverIds: number[], tx: PrismaTransaction = prisma) {
