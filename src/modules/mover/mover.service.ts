@@ -162,4 +162,8 @@ export const moverService = {
   createFavorite(userId: number, moverId: number) {
     return favoriteService.create(userId, moverId);
   },
+
+  deleteFavorite(userId: number, moverId: number) {
+    return favoriteService.delete(userId, moverId);
+  },
 };

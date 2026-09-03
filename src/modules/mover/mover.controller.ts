@@ -49,4 +49,14 @@ export const moverController = {
       next(error);
     }
   }) as RequestHandler,
+
+  deleteFavorite: (async (req, res, next) => {
+    try {
+      const { id } = req.params as unknown as MoverIdParam;
+      const data = await moverService.deleteFavorite(getUserId(req), id);
+      res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
 };

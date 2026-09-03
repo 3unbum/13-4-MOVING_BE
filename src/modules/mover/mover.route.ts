@@ -21,6 +21,13 @@ router.post(
   validate(moverIdParamSchema, "params"),
   moverController.createFavorite
 );
+router.delete(
+  "/:id/favorite",
+  requireAuth,
+  requireRole("CUSTOMER"),
+  validate(moverIdParamSchema, "params"),
+  moverController.deleteFavorite
+);
 router.get("/:id", validate(moverIdParamSchema, "params"), optionalAuth, moverController.getById);
 
 export default router;
