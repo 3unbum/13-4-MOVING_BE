@@ -21,6 +21,7 @@ export function validate(schema: ZodType, target: Target = "body"): RequestHandl
       return;
     }
 
+    // Express 5에서 req.query는 getter라 재할당할 수 없습니다.
     Object.defineProperty(req, target, {
       value: result.data,
       writable: true,
