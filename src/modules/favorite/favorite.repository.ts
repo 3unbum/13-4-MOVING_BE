@@ -77,19 +77,6 @@ export const favoriteRepository = {
     }
   },
 
-  findOwnedMoverIds(userId: number, moverIds: number[], tx: PrismaTransaction = prisma) {
-    return tx.favorite.findMany({
-      where: { userId, moverId: { in: moverIds } },
-      select: { moverId: true },
-    });
-  },
-
-  deleteMany(userId: number, moverIds: number[], tx: PrismaTransaction = prisma) {
-    return tx.favorite.deleteMany({
-      where: { userId, moverId: { in: moverIds } },
-    });
-  },
-
   decrementFavoriteCounts(moverIds: number[], tx: PrismaTransaction = prisma) {
     return tx.moverProfile.updateMany({
       where: { userId: { in: moverIds } },
@@ -98,18 +85,26 @@ export const favoriteRepository = {
   },
 
   async deleteOwned(userId: number, moverIds: number[]) {
-    return prisma.$transaction(async (tx) => {
-      const owned = await favoriteRepository.findOwnedMoverIds(userId, moverIds, tx);
-      const ownedMoverIds = owned.map((row) => row.moverId);
+    if (moverIds.length === 0) {
+      return { deletedCount: 0, deletedMoverIds: [] as number[] };
+    }
 
-      if (ownedMoverIds.length === 0) {
+    return prisma.$transaction(async (tx) => {
+      const deleted = await tx.$queryRaw<{ mover_id: number }[]>`
+        DELETE FROM favorite
+        WHERE user_id = ${userId}
+          AND mover_id IN (${Prisma.join(moverIds)})
+        RETURNING mover_id
+      `;
+      const deletedMoverIds = deleted.map((row) => row.mover_id);
+
+      if (deletedMoverIds.length === 0) {
         return { deletedCount: 0, deletedMoverIds: [] as number[] };
       }
 
-      await favoriteRepository.deleteMany(userId, ownedMoverIds, tx);
-      await favoriteRepository.decrementFavoriteCounts(ownedMoverIds, tx);
+      await favoriteRepository.decrementFavoriteCounts(deletedMoverIds, tx);
 
-      return { deletedCount: ownedMoverIds.length, deletedMoverIds: ownedMoverIds };
+      return { deletedCount: deletedMoverIds.length, deletedMoverIds };
     });
   },
 };
