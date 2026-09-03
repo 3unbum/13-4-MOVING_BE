@@ -21,5 +21,11 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const checkEmailSchema = z.object({
+  role: z.enum(["CUSTOMER", "MOVER"]),
+  email: z.email("올바른 이메일 형식이 아닙니다"),
+});
+
 export type SignupDto = z.infer<typeof signupSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
+export type CheckEmailDto = z.infer<typeof checkEmailSchema>;

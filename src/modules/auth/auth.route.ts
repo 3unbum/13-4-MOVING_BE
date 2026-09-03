@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { validate } from "../../common/middlewares/validate";
-import { signupSchema, loginSchema } from "./auth.schema";
+import { signupSchema, loginSchema, checkEmailSchema } from "./auth.schema";
 import { authController } from "./auth.controller";
 
 const router = Router();
@@ -101,5 +101,7 @@ router.post("/logout", authController.logout);
  *         description: refreshToken이 없거나 만료(REFRESH_TOKEN_EXPIRED) / 유효하지 않음(REFRESH_TOKEN_INVALID)
  */
 router.post("/refresh", authController.refresh);
+
+router.post("/check-email", validate(checkEmailSchema), authController.checkEmail);
 
 export default router;
