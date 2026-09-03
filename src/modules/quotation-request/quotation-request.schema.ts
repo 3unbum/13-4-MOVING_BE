@@ -34,6 +34,7 @@ export const quotationRequestCreateSchema = z
     (data) =>
       !(
         data.from.postalCode === data.to.postalCode &&
+        data.from.address === data.to.address &&
         data.from.detailAddress === data.to.detailAddress
       ),
     {

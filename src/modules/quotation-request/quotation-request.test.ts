@@ -63,6 +63,14 @@ describe("quotationRequestCreateSchema", () => {
       });
       expect(result.success).toBe(true);
     });
+
+    it("우편번호·상세주소가 같아도 건물이 다르면 통과한다", () => {
+      const result = quotationRequestCreateSchema.safeParse({
+        ...valid,
+        to: { ...valid.from, address: "서울 강남구 테헤란로 456" },
+      });
+      expect(result.success).toBe(true);
+    });
   });
 
   describe("이사 유형", () => {
