@@ -1,4 +1,4 @@
-import type { User } from "../../../generated/prisma/client";
+import { Prisma, type User } from "../../../generated/prisma/client";
 import { authRepository } from "./auth.repository";
 import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
@@ -55,14 +55,23 @@ export const authService = {
     }
 
     const hashedPassword = await hashUtil.hashPassword(dto.password);
-    const user = await authRepository.create({
-      role: dto.role,
-      name: dto.name,
-      email: dto.email,
-      phoneNumber: dto.phoneNumber,
-      password: hashedPassword,
-      provider: "LOCAL",
-    });
+    let user: User;
+    try {
+      user = await authRepository.create({
+        role: dto.role,
+        name: dto.name,
+        email: dto.email,
+        phoneNumber: dto.phoneNumber,
+        password: hashedPassword,
+        provider: "LOCAL",
+      });
+    } catch (error) {
+      // 사전 조회 이후 동시 요청이 먼저 저장하면 user_role_email_local_key가 막고 P2002를 던짐
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw AppError.conflict(ERROR_CODES.EMAIL_ALREADY_EXISTS, "이미 가입된 이메일입니다");
+      }
+      throw error;
+    }
 
     const { accessToken, refreshToken } = await createAuthTokens(user.id, user.role);
 
