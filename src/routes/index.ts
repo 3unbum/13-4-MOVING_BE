@@ -1,5 +1,6 @@
 import { Router } from "express";
 import estimateRouter from "../modules/estimate/estimate.route";
+import favoriteRouter from "../modules/favorite/favorite.route";
 
 const router = Router();
 
@@ -15,7 +16,7 @@ router.get("/health", (_req, res) => {
 router.use(estimateRouter);
 // router.use("/movers", moverRouter);
 // router.use("/reviews", reviewRouter);
-// router.use("/favorites", favoriteRouter);
+router.use("/favorites", favoriteRouter);
 // router.use("/notifications", notificationRouter);
 
 export default router;
