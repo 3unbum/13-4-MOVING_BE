@@ -108,7 +108,7 @@ router.post("/refresh", authController.refresh);
  *   post:
  *     tags: [Auth]
  *     summary: 이메일 중복 확인
- *     description: (email, role) 조합 기준으로 회원가입 폼에서 실시간 중복 확인. authRepository.findByEmailAndRole 재사용.
+ *     description: (email, role) 조합의 LOCAL(일반) 가입 여부를 확인합니다. 소셜 로그인 계정은 별도 계정으로 취급되어 이 확인에 포함되지 않습니다.
  *     security: []
  *     requestBody:
  *       required: true
