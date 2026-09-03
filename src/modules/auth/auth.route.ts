@@ -102,6 +102,39 @@ router.post("/logout", authController.logout);
  */
 router.post("/refresh", authController.refresh);
 
+/**
+ * @swagger
+ * /auth/check-email:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 이메일 중복 확인
+ *     description: (email, role) 조합 기준으로 회원가입 폼에서 실시간 중복 확인. authRepository.findByEmailAndRole 재사용.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email }
+ *     responses:
+ *       200:
+ *         description: 확인 완료 — available이 false면 해당 (email, role) 조합으로 이미 가입됨
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     available: { type: boolean }
+ *       400:
+ *         description: 유효성 검사 실패
+ */
 router.post("/check-email", validate(checkEmailSchema), authController.checkEmail);
 
 export default router;
