@@ -129,7 +129,7 @@ export const authService = {
   },
 
   async checkEmail(dto: CheckEmailDto): Promise<{ available: boolean }> {
-    const existing = await authRepository.findByEmailAndRole(dto.email, dto.role);
+    const existing = await authRepository.existsByEmailAndRole(dto.email, dto.role);
     return { available: !existing };
   },
 };

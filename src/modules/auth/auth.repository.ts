@@ -60,4 +60,11 @@ export const authRepository = {
       data: { refreshToken },
     });
   },
+
+  existsByEmailAndRole(email: string, role: UserRole) {
+    return prisma.user.findFirst({
+      where: { role, email, provider: "LOCAL" },
+      select: { id: true },
+    });
+  },
 };
