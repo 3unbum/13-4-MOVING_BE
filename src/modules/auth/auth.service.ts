@@ -112,7 +112,10 @@ export const authService = {
     };
   },
 
-  /** access token이 이미 만료된 상태에서도 로그아웃이 가능해야 하므로 만료는 무시 */
+  /**
+   * refreshToken 자체가 이미 만료됐어도 로그아웃(DB 정리)은 허용하기 위해 exp 검증을 무시함.
+   * accessToken 만료는 애초에 무관 — logout 라우트엔 requireAuth가 안 붙어 있어서 accessToken을 아예 안 봄.
+   */
   async logout(refreshToken: string): Promise<void> {
     const user = await verifyRefreshTokenOwner(refreshToken, { ignoreExpiration: true });
     await authRepository.updateRefreshToken(user.id, null);
