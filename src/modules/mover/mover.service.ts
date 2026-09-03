@@ -1,5 +1,6 @@
 import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
+import { favoriteService } from "@/modules/favorite/favorite.service";
 import { moverRepository, type MoverListProfile } from "./mover.repository";
 import type { MoverListQuery, MoverReviewsQuery } from "./mover.schema";
 import { moverListCursorSchema } from "./mover.schema";
@@ -156,5 +157,9 @@ export const moverService = {
       totalPages: totalCount === 0 ? 0 : Math.ceil(totalCount / limit),
       totalCount,
     };
+  },
+
+  createFavorite(userId: number, moverId: number) {
+    return favoriteService.create(userId, moverId);
   },
 };
