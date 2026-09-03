@@ -1,5 +1,8 @@
 import type { RequestHandler } from "express";
-import type { QuotationRequestListQuery } from "./quotation-request.schema";
+import type {
+  QuotationRequestIdParam,
+  QuotationRequestListQuery,
+} from "./quotation-request.schema";
 import * as service from "./quotation-request.service";
 
 export const quotationRequestController = {
@@ -35,7 +38,7 @@ export const quotationRequestController = {
   findById: (async (req, res, next) => {
     try {
       const userId = req.user!.id;
-      const id = Number(req.params.id);
+      const { id } = req.params as unknown as QuotationRequestIdParam;
       const found = await service.findById(id, userId);
       res.json({ data: found });
     } catch (error) {

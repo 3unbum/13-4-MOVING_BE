@@ -47,5 +47,11 @@ export const quotationRequestListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
+/** 경로 파라미터 :id 검증 */
+export const quotationRequestIdParamsSchema = z.object({
+  id: z.coerce.number().int().positive(),
+});
+
 export type QuotationRequestCreateDto = z.infer<typeof quotationRequestCreateSchema>;
 export type QuotationRequestListQuery = z.infer<typeof quotationRequestListQuerySchema>;
+export type QuotationRequestIdParam = z.infer<typeof quotationRequestIdParamsSchema>;

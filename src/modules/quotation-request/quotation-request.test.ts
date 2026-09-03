@@ -1,6 +1,7 @@
 import {
   quotationRequestCreateSchema,
   quotationRequestListQuerySchema,
+  quotationRequestIdParamsSchema,
 } from "./quotation-request.schema";
 
 describe("quotationRequestCreateSchema", () => {
@@ -150,5 +151,26 @@ describe("quotationRequestListQuerySchema", () => {
 
   it("page가 0 이하면 실패한다", () => {
     expect(quotationRequestListQuerySchema.safeParse({ page: "0" }).success).toBe(false);
+  });
+});
+
+describe("quotationRequestIdParamsSchema", () => {
+  it("양의 정수 문자열을 number로 변환한다", () => {
+    const result = quotationRequestIdParamsSchema.safeParse({ id: "5" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.id).toBe(5);
+  });
+
+  it("숫자가 아니면 실패한다", () => {
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "abc" }).success).toBe(false);
+  });
+
+  it("소수면 실패한다", () => {
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "1.5" }).success).toBe(false);
+  });
+
+  it("0 이하면 실패한다", () => {
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "0" }).success).toBe(false);
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "-1" }).success).toBe(false);
   });
 });
