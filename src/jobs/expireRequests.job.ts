@@ -21,48 +21,58 @@ import { getExpireBaseDate } from "@/jobs/expireRequests.util";
 export async function expireRequests(): Promise<void> {
   const today = getExpireBaseDate();
 
+  // 대상 id만 추립니다. 확정 견적 조회는 경쟁 조건을 피하려고 트랜잭션 안에서 다시 합니다.
   const targets = await prisma.quotationRequest.findMany({
     where: {
       movingDate: { lt: today },
       quotationStatus: { in: ["PENDING", "ASSIGNED"] },
     },
-    select: {
-      id: true,
-      userId: true,
-      estimates: {
-        where: { estimateStatus: "CONFIRMED" },
-        select: { id: true },
-      },
-    },
+    select: { id: true, userId: true },
   });
 
   if (targets.length === 0) return;
 
   let completed = 0;
   let expired = 0;
+  let skipped = 0;
 
   for (const target of targets) {
-    const confirmed = target.estimates[0];
-
     try {
       await prisma.$transaction(async (tx) => {
+        // 위 findMany 이후 유저가 견적을 확정했을 수 있으므로 트랜잭션 안에서 다시 읽습니다.
+        // 밖에서 읽은 값을 쓰면 낡은 !confirmed로 EXPIRED 처리돼
+        // 견적이 COMPLETED가 되지 않고 review도 생성되지 않습니다.
+        const confirmed = await tx.estimate.findFirst({
+          where: { quotationRequestId: target.id, estimateStatus: "CONFIRMED" },
+          select: { id: true },
+        });
+
         if (!confirmed) {
           // 견적을 못 받았거나 확정하지 않은 채 이사일이 지난 요청
-          await tx.quotationRequest.update({
-            where: { id: target.id },
+          // 조건부 갱신 — 그사이 상태가 바뀌었으면 건너뜁니다 (estimate.repository.confirm과 같은 패턴)
+          const expireUpdate = await tx.quotationRequest.updateMany({
+            where: { id: target.id, quotationStatus: { in: ["PENDING", "ASSIGNED"] } },
             data: { quotationStatus: "EXPIRED" },
           });
+          if (expireUpdate.count !== 1) {
+            skipped += 1;
+            return;
+          }
           expired += 1;
           return;
         }
 
-        await tx.quotationRequest.update({
-          where: { id: target.id },
+        const requestUpdate = await tx.quotationRequest.updateMany({
+          where: { id: target.id, quotationStatus: { in: ["PENDING", "ASSIGNED"] } },
           data: { quotationStatus: "COMPLETED" },
         });
+        if (requestUpdate.count !== 1) {
+          skipped += 1;
+          return;
+        }
 
-        await tx.estimate.update({
-          where: { id: confirmed.id },
+        await tx.estimate.updateMany({
+          where: { id: confirmed.id, estimateStatus: "CONFIRMED" },
           data: { estimateStatus: "COMPLETED" },
         });
 
@@ -82,11 +92,14 @@ export async function expireRequests(): Promise<void> {
       });
     } catch (error) {
       // 한 건이 실패해도 나머지는 계속 처리합니다.
-      console.error(`[expireRequests] 오청 ${target.id} 처리 실패`, error);
+      console.error(`[expireRequests] 요청 ${target.id} 처리 실패`, error);
     }
   }
 
-  console.log(`[expireRequests] 완료 ${completed}건 / 만료 ${expired}건`);
+  console.log(
+    `[expireRequests] 완료 ${completed}건 / 만료 ${expired}건` +
+      (skipped > 0 ? ` / 건너뜀 ${skipped}건` : "")
+  );
 }
 
 export function scheduleExpireRequests() {
