@@ -23,6 +23,11 @@ export const env = {
 
   DATABASE_URL: required("DATABASE_URL"),
 
+  AWS_REGION: required("AWS_REGION"),
+  AWS_ACCESS_KEY_ID: required("AWS_ACCESS_KEY_ID"),
+  AWS_SECRET_ACCESS_KEY: required("AWS_SECRET_ACCESS_KEY"),
+  AWS_PUBLIC_BUCKET_NAME: required("AWS_PUBLIC_BUCKET_NAME"),
+
   JWT_SECRET: required("JWT_SECRET"),
   JWT_REFRESH_SECRET: required("JWT_REFRESH_SECRET"),
   JWT_EXPIRES_IN: optional("JWT_EXPIRES_IN", "1h"),
