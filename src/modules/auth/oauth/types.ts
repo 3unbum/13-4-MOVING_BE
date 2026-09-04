@@ -2,7 +2,7 @@
 export type OAuthProviderProfile = {
   providerId: string;
   email: string;
-  /** 카카오/네이버는 동의 항목에 따라 빈 문자열일 수 있음 */
+  /** 콘솔에서 필수 동의 항목으로 걸어둬도 외부 API 응답이라 방어적으로 빈 문자열 fallback을 둠 */
   name: string;
   profileImage: string | null;
 };
