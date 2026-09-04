@@ -5,6 +5,7 @@ import moverRouter from "../modules/mover/mover.route";
 import favoriteRouter from "../modules/favorite/favorite.route";
 import quotationRequestRouter from "../modules/quotation-request/quotation-request.route";
 import profileRouter from "../modules/profile/profile.route";
+import reviewRouter from "../modules/review/review.route";
 
 const router = Router();
 
@@ -18,9 +19,8 @@ router.use("/profiles", profileRouter);
 router.use("/quotation-requests", quotationRequestRouter);
 // estimate.route.ts 안에 /estimates, /mover, /requests 경로가 섞여있어 prefix 없이 마운트
 router.use(estimateRouter);
-// router.use("/estimates", estimateRouter);
+router.use(reviewRouter);
 router.use("/movers", moverRouter);
-// router.use("/reviews", reviewRouter);
 router.use("/favorites", favoriteRouter);
 // router.use("/notifications", notificationRouter);
 
