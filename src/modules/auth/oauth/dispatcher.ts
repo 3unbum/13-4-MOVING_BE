@@ -1,7 +1,7 @@
 import { AppError } from "../../../common/errors/AppError";
 import { ERROR_CODES } from "../../../common/errors/errorCodes";
 import type { SocialProvider } from "../../../../generated/prisma/enums";
-import type { OAuthProviderProfile } from "./types";
+import type { OAuthProviderProfile } from "./oauth.type";
 import { googleOAuthProvider } from "./google.provider";
 import { kakaoOAuthProvider } from "./kakao.provider";
 import { naverOAuthProvider } from "./naver.provider";

@@ -1,7 +1,7 @@
 import { env } from "../../../config/env";
 import { AppError } from "../../../common/errors/AppError";
 import { ERROR_CODES } from "../../../common/errors/errorCodes";
-import type { OAuthProviderProfile } from "./types";
+import type { OAuthProviderProfile } from "./oauth.type";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const PROFILE_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
