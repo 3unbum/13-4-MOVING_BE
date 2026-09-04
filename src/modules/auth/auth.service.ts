@@ -4,7 +4,7 @@ import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
-import type { SignupDto, LoginDto } from "./auth.schema";
+import type { SignupDto, LoginDto, CheckEmailDto } from "./auth.schema";
 import type { AuthResult } from "./auth.type";
 
 /** access/refresh 토큰을 발급하고, refreshToken 해시를 DB에 저장 */
@@ -126,5 +126,10 @@ export const authService = {
     const user = await verifyRefreshTokenOwner(refreshToken);
     const accessToken = jwtUtil.createToken(user.id, user.role, "access");
     return { accessToken };
+  },
+
+  async checkEmail(dto: CheckEmailDto): Promise<{ available: boolean }> {
+    const existing = await authRepository.existsByEmailAndRole(dto.email, dto.role);
+    return { available: !existing };
   },
 };

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { validate } from "../../common/middlewares/validate";
-import { signupSchema, loginSchema } from "./auth.schema";
+import { signupSchema, loginSchema, checkEmailSchema } from "./auth.schema";
 import { authController } from "./auth.controller";
 
 const router = Router();
@@ -101,5 +101,40 @@ router.post("/logout", authController.logout);
  *         description: refreshToken이 없거나 만료(REFRESH_TOKEN_EXPIRED) / 유효하지 않음(REFRESH_TOKEN_INVALID)
  */
 router.post("/refresh", authController.refresh);
+
+/**
+ * @swagger
+ * /auth/check-email:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 이메일 중복 확인
+ *     description: (email, role) 조합의 LOCAL(일반) 가입 여부를 확인합니다. 소셜 로그인 계정은 별도 계정으로 취급되어 이 확인에 포함되지 않습니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email }
+ *     responses:
+ *       200:
+ *         description: 확인 완료 — available이 false면 해당 (email, role) 조합으로 이미 가입됨
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     available: { type: boolean }
+ *       400:
+ *         description: 유효성 검사 실패
+ */
+router.post("/check-email", validate(checkEmailSchema), authController.checkEmail);
 
 export default router;

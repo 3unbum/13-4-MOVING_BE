@@ -57,4 +57,13 @@ export const authController = {
       next(error);
     }
   }) as RequestHandler,
+
+  checkEmail: (async (req, res, next) => {
+    try {
+      const result = await authService.checkEmail(req.body);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
 };
