@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Prisma, type User } from "../../../generated/prisma/client";
 import { authRepository } from "./auth.repository";
 import hashUtil from "../../common/utils/hash.util";
@@ -142,11 +143,11 @@ export const authService = {
    */
   async oauthLogin(provider: OAuthProviderName, dto: OAuthLoginDto): Promise<OAuthLoginResult> {
     const socialProvider = toSocialProvider(provider);
-    const profile = await exchangeOAuthCode(provider, dto.code, dto.redirectUri);
+    const oauthProfile = await exchangeOAuthCode(provider, dto.code, dto.redirectUri);
 
     const existing = await authRepository.findBySocialAndRole(
       socialProvider,
-      profile.providerId,
+      oauthProfile.providerId,
       dto.role
     );
 
@@ -161,11 +162,20 @@ export const authService = {
       };
     }
 
+    // 이메일 동의가 없는 계정을 그대로 만들면(email: "") 이후 이메일 기반 기능에서 식별이 안 됨 — 가입 자체를 막는다
+    if (!z.email().safeParse(oauthProfile.email).success) {
+      throw new AppError(
+        400,
+        ERROR_CODES.OAUTH_EMAIL_REQUIRED,
+        "이메일 제공에 동의해야 가입할 수 있습니다. provider 설정에서 이메일 제공에 동의한 뒤 다시 시도해주세요"
+      );
+    }
+
     const oauthSignupToken = oauthSignupTokenUtil.create({
       provider: socialProvider,
-      providerId: profile.providerId,
-      email: profile.email,
-      name: profile.name,
+      providerId: oauthProfile.providerId,
+      email: oauthProfile.email,
+      name: oauthProfile.name,
       role: dto.role,
     });
 
@@ -174,9 +184,9 @@ export const authService = {
       oauthSignupToken,
       providerProfile: {
         provider: socialProvider,
-        email: profile.email,
-        name: profile.name,
-        profileImage: profile.profileImage,
+        email: oauthProfile.email,
+        name: oauthProfile.name,
+        profileImage: oauthProfile.profileImage,
       },
     };
   },

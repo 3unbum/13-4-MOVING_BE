@@ -9,7 +9,8 @@ import { env } from "../../../config/env";
 const payloadSchema = z.object({
   provider: z.enum(["GOOGLE", "KAKAO", "NAVER"]),
   providerId: z.string(),
-  email: z.string(),
+  // authService.oauthLogin이 발급 전에 이미 검증하지만, 서명된 토큰 자체도 방어적으로 재검증
+  email: z.email(),
   name: z.string(),
   role: z.enum(["CUSTOMER", "MOVER"]),
 });

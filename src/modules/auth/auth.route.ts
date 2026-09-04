@@ -205,7 +205,7 @@ router.post("/oauth/signup", validate(oauthSignupSchema), authController.oauthSi
  *       200:
  *         description: 기존 회원(isNewUser false) 또는 신규 회원(isNewUser true, oauthSignupToken 발급) 응답
  *       400:
- *         description: 유효성 검사 실패
+ *         description: 유효성 검사 실패, 또는 신규 회원인데 provider가 이메일을 제공하지 않음 (OAUTH_EMAIL_REQUIRED)
  *       401:
  *         description: provider 인가 코드가 유효하지 않음 (INVALID_OAUTH_CODE)
  *       502:
