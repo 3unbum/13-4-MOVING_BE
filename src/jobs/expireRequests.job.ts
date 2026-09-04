@@ -50,8 +50,9 @@ export async function expireRequests(): Promise<void> {
         if (!confirmed) {
           // 견적을 못 받았거나 확정하지 않은 채 이사일이 지난 요청
           // 조건부 갱신 — 그사이 상태가 바뀌었으면 건너뜁니다 (estimate.repository.confirm과 같은 패턴)
+          // ASSIGNED 제외 - 조회 직후 확정된 요청을 EXPIRED로 덮어쓰지 않도록 (은진님 리뷰)
           const expireUpdate = await tx.quotationRequest.updateMany({
-            where: { id: target.id, quotationStatus: { in: ["PENDING", "ASSIGNED"] } },
+            where: { id: target.id, quotationStatus: "PENDING" },
             data: { quotationStatus: "EXPIRED" },
           });
           if (expireUpdate.count !== 1) {
