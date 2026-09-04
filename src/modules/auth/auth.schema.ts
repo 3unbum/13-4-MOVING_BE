@@ -26,6 +26,24 @@ export const checkEmailSchema = z.object({
   email: z.email("올바른 이메일 형식이 아닙니다"),
 });
 
+export const oauthProviderParamSchema = z.object({
+  provider: z.enum(["google", "kakao", "naver"]),
+});
+
+export const oauthLoginSchema = z.object({
+  code: z.string().min(1, "code가 필요합니다"),
+  redirectUri: z.string().min(1, "redirectUri가 필요합니다"),
+  role: z.enum(["CUSTOMER", "MOVER"]),
+});
+
+export const oauthSignupSchema = z.object({
+  oauthSignupToken: z.string().min(1, "oauthSignupToken이 필요합니다"),
+  phoneNumber: z.string().regex(/^01[016789]\d{7,8}$/, "올바른 전화번호 형식이 아닙니다"),
+});
+
 export type SignupDto = z.infer<typeof signupSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
 export type CheckEmailDto = z.infer<typeof checkEmailSchema>;
+export type OAuthProviderParam = z.infer<typeof oauthProviderParamSchema>;
+export type OAuthLoginDto = z.infer<typeof oauthLoginSchema>;
+export type OAuthSignupDto = z.infer<typeof oauthSignupSchema>;

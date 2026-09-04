@@ -34,6 +34,22 @@ export const env = {
   JWT_REFRESH_EXPIRES_IN: optional("JWT_REFRESH_EXPIRES_IN", "14d"),
 
   CLIENT_URL: optional("CLIENT_URL", "http://localhost:3000"),
+
+  /** OAuth 신규가입 2단계 임시 토큰. 세 provider 공용이라 JWT_SECRET급으로 필수 취급합니다. */
+  OAUTH_SIGNUP_TOKEN_SECRET: required("OAUTH_SIGNUP_TOKEN_SECRET"),
+  OAUTH_SIGNUP_TOKEN_EXPIRES_IN: optional("OAUTH_SIGNUP_TOKEN_EXPIRES_IN", "10m"),
+
+  /**
+   * provider별 자격증명은 optional로 둡니다 — 필수로 두면 하나라도 콘솔 등록 전엔
+   * 다른 도메인 담당자의 서버 기동까지 막혀버립니다. 값이 비어있으면 해당 provider
+   * 라우트 호출 시점에 자연스럽게 실패합니다(빈 client_id로 provider가 토큰 교환 거부).
+   */
+  GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID", ""),
+  GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET", ""),
+  NAVER_CLIENT_ID: optional("NAVER_CLIENT_ID", ""),
+  NAVER_CLIENT_SECRET: optional("NAVER_CLIENT_SECRET", ""),
+  KAKAO_CLIENT_ID: optional("KAKAO_CLIENT_ID", ""),
+  KAKAO_CLIENT_SECRET: optional("KAKAO_CLIENT_SECRET", ""),
 } as const;
 
 export const isProduction = env.NODE_ENV === "production";

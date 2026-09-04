@@ -1,6 +1,13 @@
 import { Router } from "express";
 import { validate } from "../../common/middlewares/validate";
-import { signupSchema, loginSchema, checkEmailSchema } from "./auth.schema";
+import {
+  signupSchema,
+  loginSchema,
+  checkEmailSchema,
+  oauthProviderParamSchema,
+  oauthLoginSchema,
+  oauthSignupSchema,
+} from "./auth.schema";
 import { authController } from "./auth.controller";
 
 const router = Router();
@@ -136,5 +143,79 @@ router.post("/refresh", authController.refresh);
  *         description: 유효성 검사 실패
  */
 router.post("/check-email", validate(checkEmailSchema), authController.checkEmail);
+
+/**
+ * @swagger
+ * /auth/oauth/signup:
+ *   post:
+ *     tags: [Auth]
+ *     summary: OAuth 회원가입 완료
+ *     description: 소셜 로그인 콜백에서 신규 회원으로 판별된(isNewUser true) 뒤 발급받은 oauthSignupToken과 전화번호로 계정 생성을 완료한다. role은 토큰에 이미 담겨 있어 따로 받지 않는다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [oauthSignupToken, phoneNumber]
+ *             properties:
+ *               oauthSignupToken: { type: string }
+ *               phoneNumber: { type: string, description: "01[016789]XXXXXXX(X) 형식" }
+ *     responses:
+ *       201:
+ *         description: 회원가입 성공 — user 정보와 hasProfile(false) 반환
+ *       400:
+ *         description: 유효성 검사 실패
+ *       401:
+ *         description: oauthSignupToken이 만료되었거나 유효하지 않음 (INVALID_OR_EXPIRED_SIGNUP_TOKEN)
+ *       409:
+ *         description: 이미 가입된 (provider, providerId, role) 조합 (PROVIDER_ACCOUNT_ALREADY_LINKED)
+ */
+// "/oauth/:provider"보다 반드시 먼저 등록해야 함 — 아니면 이 요청이 provider="signup"으로 매칭되어 버림
+router.post("/oauth/signup", validate(oauthSignupSchema), authController.oauthSignup);
+
+/**
+ * @swagger
+ * /auth/oauth/{provider}:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 소셜 로그인 진입/콜백
+ *     description: |
+ *       프론트가 provider 인가 URL로 브라우저를 직접 리다이렉트하고, provider가 프론트 콜백 페이지로 돌려준 code를 이 엔드포인트에 전달한다.
+ *       기존 회원이면 accessToken/refreshToken을 httpOnly 쿠키로 내려주며 바로 로그인 처리하고, 신규 회원이면 계정을 만들지 않고 oauthSignupToken만 발급한다.
+ *     security: []
+ *     parameters:
+ *       - in: path
+ *         name: provider
+ *         required: true
+ *         schema: { type: string, enum: [google, kakao, naver] }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code, redirectUri, role]
+ *             properties:
+ *               code: { type: string }
+ *               redirectUri: { type: string, description: "provider 콘솔에 등록한 프론트 콜백 주소" }
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *     responses:
+ *       200:
+ *         description: 기존 회원(isNewUser false) 또는 신규 회원(isNewUser true, oauthSignupToken 발급) 응답
+ *       400:
+ *         description: 유효성 검사 실패, 또는 신규 회원인데 provider가 준 이메일이 없거나 유효하지 않음 (OAUTH_EMAIL_REQUIRED)
+ *       401:
+ *         description: provider 인가 코드가 유효하지 않음 (INVALID_OAUTH_CODE)
+ *       502:
+ *         description: provider 응답 처리 실패 (OAUTH_PROVIDER_ERROR)
+ */
+router.post(
+  "/oauth/:provider",
+  validate(oauthProviderParamSchema, "params"),
+  validate(oauthLoginSchema),
+  authController.oauthLogin
+);
 
 export default router;

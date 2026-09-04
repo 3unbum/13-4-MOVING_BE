@@ -1,4 +1,4 @@
-import type { UserRole } from "../../../generated/prisma/enums.ts";
+import type { SocialProvider, UserRole } from "../../../generated/prisma/enums.ts";
 
 export interface AuthUser {
   id: number;
@@ -18,3 +18,27 @@ export interface AuthResult {
   user: AuthUser;
   hasProfile: boolean;
 }
+
+/**
+ * POST /auth/oauth/{provider} 응답.
+ * 기존 회원이면 바로 로그인 처리, 신규 회원이면 oauthSignupToken을 발급해
+ * 프론트가 전화번호 입력 화면으로 이동시키도록 한다.
+ */
+export type OAuthLoginResult =
+  | {
+      isNewUser: false;
+      accessToken: string;
+      refreshToken: string;
+      user: AuthUser;
+      hasProfile: boolean;
+    }
+  | {
+      isNewUser: true;
+      oauthSignupToken: string;
+      providerProfile: {
+        provider: SocialProvider;
+        email: string;
+        name: string;
+        profileImage: string | null;
+      };
+    };
