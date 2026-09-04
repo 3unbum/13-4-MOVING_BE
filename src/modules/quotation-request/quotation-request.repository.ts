@@ -109,6 +109,22 @@ async function saveTargetedRequest(
     try {
       return await prisma.$transaction(
         async (tx) => {
+          // service의 상태 검증은 트랜잭션 밖이라, 그 사이 배치가 요청을 만료시켰을 수 있습니다.
+          // Serializable이 순서를 보장하므로 재조회만으로 충분합니다 (FOR UPDATE 불필요.)
+          const target = await tx.quotationRequest.findUnique({
+            where: { id: quotationRequestId },
+            select: { quotationStatus: true },
+          });
+          if (
+            !target ||
+            (target.quotationStatus !== "PENDING" && target.quotationStatus !== "ASSIGNED")
+          ) {
+            throw AppError.badRequest(
+              ERROR_CODES.NO_ACTIVE_REQUEST,
+              "이미 종료된 견적 요청입니다."
+            );
+          }
+
           const count = await tx.targetedRequest.count({ where: { quotationRequestId } });
           if (count >= TARGET_LIMIT) {
             throw AppError.badRequest(
@@ -129,14 +145,24 @@ async function saveTargetedRequest(
         if (error.code === "P2002") {
           throw AppError.conflict(ERROR_CODES.ALREADY_TARGETED, "이미 지정한 기사님입니다.");
         }
-        if (error.code === "P2034" && attempt < TARGET_MAX_RETRIES) continue;
+        if (error.code === "P2034") {
+          // 마지막 시도까지 실패하면 raw Prisma 에러가 500으로 나가므로 여기서 변환합니다
+          if (attempt < TARGET_MAX_RETRIES) continue;
+          throw AppError.conflict(
+            ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
+            "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+          );
+        }
       }
       throw error;
     }
   }
+
+  // for 루프는 위에서 반드시 return하거나 throw하므로 여기 도달하지 않습니다.
+  // TypeScript 반환 타입을 만족시키기 위한 방어 코드입니다.
   throw AppError.conflict(
-    ERROR_CODES.TARGET_LIMIT_EXCEEDED,
-    "요청이 몰려 처리하지 못했습니다. 다시 시도해 주세요."
+    ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
+    "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
   );
 }
 

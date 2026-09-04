@@ -181,8 +181,12 @@ describe("targetedRequestCreateSchema", () => {
     expect(targetedRequestCreateSchema.safeParse({ moverId: 5 }).success).toBe(true);
   });
 
-  it("숫자 문자열도 통과시킨다 (coerce)", () => {
-    expect(targetedRequestCreateSchema.safeParse({ moverId: "5" }).success).toBe(true);
+  it("숫자 문자열은 거부한다 (body는 coerce 안 함)", () => {
+    expect(targetedRequestCreateSchema.safeParse({ moverId: "5" }).success).toBe(false);
+  });
+
+  it("boolean은 거부한다 — coerce면 true가 1로 통과하던 케이스", () => {
+    expect(targetedRequestCreateSchema.safeParse({ moverId: true }).success).toBe(false);
   });
 
   it("0 이하면 실패한다", () => {

@@ -33,6 +33,8 @@ export const ERROR_CODES = {
   VALIDATION_ERROR: "VALIDATION_ERROR",
   NOT_FOUND: "NOT_FOUND",
   INTERNAL_ERROR: "INTERNAL_ERROR",
+  /** Serializable 트랜잭션 재시도를 모두 소진했을 때. 잠시 후 재시도하면 됩니다 */
+  CONCURRENT_REQUEST_CONFLICT: "CONCURRENT_REQUEST_CONFLICT",
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];

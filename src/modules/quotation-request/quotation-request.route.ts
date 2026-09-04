@@ -150,6 +150,7 @@ router.get(
  *             properties:
  *               moverId:
  *                 type: integer
+ *                 minimum: 1
  *                 description: 지정할 기사님의 user id
  *     responses:
  *       201:
@@ -163,7 +164,9 @@ router.get(
  *       404:
  *         description: 요청 또는 기사님을 찾을 수 없음 (NOT_FOUND)
  *       409:
- *         description: 이미 지정한 기사님 (ALREADY_TARGETED)
+ *         description: |
+ *           이미 지정한 기사님(ALREADY_TARGETED),
+ *           동시 요청이 몰려 처리 실패(CONCURRENT_REQUEST_CONFLICT)
  */
 router.post(
   "/:id/targeted-requests",
