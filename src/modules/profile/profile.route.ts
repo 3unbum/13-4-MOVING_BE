@@ -1,27 +1,17 @@
 import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
-import multerS3 from "multer-s3";
-import { randomUUID } from "crypto";
 import { requireAuth } from "../../common/middlewares/auth";
-import { s3Client, S3_BUCKET_NAME } from "../../config/s3";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
-import { PROFILE_IMAGE_MAX_SIZE_BYTES, isAllowedImageMimeType } from "./profile.schema";
+import { PROFILE_IMAGE_MAX_SIZE_BYTES, isAllowedImageMimeType } from "./profile.constants";
 import { profileController } from "./profile.controller";
 
 const router = Router();
 
+// 매직 넘버 검증 전까지는 S3에 바로 스트리밍하지 않고 메모리에 담아 검사합니다.
 const upload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: S3_BUCKET_NAME,
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (_req, file, cb) => {
-      const ext = file.originalname.split(".").pop();
-      cb(null, `profile/${randomUUID()}.${ext}`);
-    },
-  }),
-  limits: { fileSize: PROFILE_IMAGE_MAX_SIZE_BYTES },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: PROFILE_IMAGE_MAX_SIZE_BYTES, fields: 0, parts: 2 },
   fileFilter: (_req, file, cb) => {
     if (!isAllowedImageMimeType(file.mimetype)) {
       cb(new Error("INVALID_FILE_TYPE"));
