@@ -6,11 +6,11 @@ import type { OAuthProviderProfile } from "./types";
 const TOKEN_URL = "https://nid.naver.com/oauth2.0/token";
 const PROFILE_URL = "https://openapi.naver.com/v1/nid/me";
 
-interface NaverTokenResponse {
+type NaverTokenResponse = {
   access_token: string;
-}
+};
 
-interface NaverProfileResponse {
+type NaverProfileResponse = {
   resultcode: string;
   message: string;
   response?: {
@@ -19,7 +19,7 @@ interface NaverProfileResponse {
     name?: string;
     profile_image?: string;
   };
-}
+};
 
 /** 네이버는 토큰 교환 시 redirect_uri가 필요 없습니다 (client_id/secret/code만) */
 const exchangeCode = async (code: string): Promise<string> => {

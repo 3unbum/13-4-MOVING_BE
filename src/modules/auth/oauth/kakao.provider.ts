@@ -6,11 +6,11 @@ import type { OAuthProviderProfile } from "./types";
 const TOKEN_URL = "https://kauth.kakao.com/oauth/token";
 const PROFILE_URL = "https://kapi.kakao.com/v2/user/me";
 
-interface KakaoTokenResponse {
+type KakaoTokenResponse = {
   access_token: string;
-}
+};
 
-interface KakaoProfileResponse {
+type KakaoProfileResponse = {
   id: number;
   kakao_account?: {
     email?: string;
@@ -19,7 +19,7 @@ interface KakaoProfileResponse {
       profile_image_url?: string;
     };
   };
-}
+};
 
 const exchangeCode = async (code: string, redirectUri: string): Promise<string> => {
   const response = await fetch(TOKEN_URL, {

@@ -6,16 +6,16 @@ import type { OAuthProviderProfile } from "./types";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const PROFILE_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
 
-interface GoogleTokenResponse {
+type GoogleTokenResponse = {
   access_token: string;
-}
+};
 
-interface GoogleProfileResponse {
+type GoogleProfileResponse = {
   sub: string;
   email: string;
   name?: string;
   picture?: string;
-}
+};
 
 const exchangeCode = async (code: string, redirectUri: string): Promise<string> => {
   const response = await fetch(TOKEN_URL, {
