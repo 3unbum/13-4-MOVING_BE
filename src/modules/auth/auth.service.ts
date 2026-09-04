@@ -167,7 +167,7 @@ export const authService = {
       throw new AppError(
         400,
         ERROR_CODES.OAUTH_EMAIL_REQUIRED,
-        "이메일 제공에 동의해야 가입할 수 있습니다. provider 설정에서 이메일 제공에 동의한 뒤 다시 시도해주세요"
+        "이메일이 없거나 유효하지 않습니다. provider 설정에서 이메일 제공에 동의한 뒤 다시 시도해주세요"
       );
     }
 
