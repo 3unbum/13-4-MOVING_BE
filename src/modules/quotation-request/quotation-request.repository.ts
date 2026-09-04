@@ -1,7 +1,13 @@
+import { AppError } from "@/common/errors/AppError";
+import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import type { PrismaTransaction } from "@/config/prisma";
+import { Prisma } from "../../../generated/prisma/client";
 import type { RegionType } from "../../../generated/prisma/enums";
 import type { QuotationRequestCreateInput } from "./quotation-request.type";
+
+const TARGET_LIMIT = 3;
+const TARGET_MAX_RETRIES = 3;
 
 /** 활성 요청 = PENDING.ASSIGNED. 유저당 1건만 허용됩니다. */
 async function findActiveByUserId(userId: number) {
@@ -78,11 +84,69 @@ async function countByUserId(userId: number) {
   return prisma.quotationRequest.count({ where: { userId } });
 }
 
+/** 지정 대상이 실제 기사님인지 확인 - 없는 id면 FK 오류가 500으로 나갑니다 */
+async function findMoverById(moverId: number) {
+  return prisma.user.findFirst({
+    where: { id: moverId, role: "MOVER" },
+    select: { id: true },
+  });
+}
+
+/**
+ * 지정 견적 요청 생성.
+ *
+ * 3명 상한은 count 후 create라 그냥 두면 동시 요청 시 초과합니다.
+ * Serializable로 묶어 원자적으로 처리하고 직렬화 충돌(P2034)은 재시도합니다.
+ * (estimate.repository.save와 같은 패턴)
+ * 중복 지정은 (quotation_request_id, mover_id) 유니크가 P2002로 막습니다.
+ */
+async function saveTargetedRequest(
+  quotationRequestId: number,
+  moverId: number,
+  onCreated: (tx: PrismaTransaction, targetedRequestId: number) => Promise<void>
+) {
+  for (let attempt = 1; attempt <= TARGET_MAX_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const count = await tx.targetedRequest.count({ where: { quotationRequestId } });
+          if (count >= TARGET_LIMIT) {
+            throw AppError.badRequest(
+              ERROR_CODES.TARGET_LIMIT_EXCEEDED,
+              `지정 견적 요청은 최대 ${TARGET_LIMIT}명까지 가능합니다.`
+            );
+          }
+          const created = await tx.targetedRequest.create({
+            data: { quotationRequestId, moverId },
+          });
+          await onCreated(tx, created.id); // 알림도 같은 트랜잭션
+          return created;
+        },
+        { isolationLevel: "Serializable" }
+      );
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === "P2002") {
+          throw AppError.conflict(ERROR_CODES.ALREADY_TARGETED, "이미 지정한 기사님입니다.");
+        }
+        if (error.code === "P2034" && attempt < TARGET_MAX_RETRIES) continue;
+      }
+      throw error;
+    }
+  }
+  throw AppError.conflict(
+    ERROR_CODES.TARGET_LIMIT_EXCEEDED,
+    "요청이 몰려 처리하지 못했습니다. 다시 시도해 주세요."
+  );
+}
+
 export {
   countByUserId,
   findActiveByUserId,
   findById,
   findManyByUserId,
+  findMoverById,
   findMoverIdsByRegion,
   save,
+  saveTargetedRequest,
 };

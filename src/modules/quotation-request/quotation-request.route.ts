@@ -8,6 +8,7 @@ import {
   quotationRequestCreateSchema,
   quotationRequestIdParamsSchema,
   quotationRequestListQuerySchema,
+  targetedRequestCreateSchema,
 } from "@/modules/quotation-request/quotation-request.schema";
 
 const router = Router();
@@ -121,6 +122,57 @@ router.get(
   requireProfile,
   validate(quotationRequestIdParamsSchema, "params"),
   quotationRequestController.findById
+);
+
+/**
+ * @swagger
+ * /quotation-requests/{id}/targeted-requests:
+ *   post:
+ *     tags: [QuotationRequests]
+ *     summary: 지정 견적 요청 (#19)
+ *     description: |
+ *       활성 요청 1건당 기사님 최대 3명까지 지정할 수 있습니다.
+ *       지정 후 해당 기사님에게 NEW_REQUEST 알림이 발송됩니다.
+ *       지정 취소는 MVP 범위에서 제외되었습니다.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
+ *         description: 견적 요청 id
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [moverId]
+ *             properties:
+ *               moverId:
+ *                 type: integer
+ *                 description: 지정할 기사님의 user id
+ *     responses:
+ *       201:
+ *         description: 생성된 지정 견적 요청
+ *       400:
+ *         description: |
+ *           유효성 검사 실패, 이미 종료된 요청(NO_ACTIVE_REQUEST),
+ *           지정 3명 초과(TARGET_LIMIT_EXCEEDED)
+ *       403:
+ *         description: 본인 요청이 아님 (FORBIDDEN)
+ *       404:
+ *         description: 요청 또는 기사님을 찾을 수 없음 (NOT_FOUND)
+ *       409:
+ *         description: 이미 지정한 기사님 (ALREADY_TARGETED)
+ */
+router.post(
+  "/:id/targeted-requests",
+  requireAuth,
+  requireRole("CUSTOMER"),
+  requireProfile,
+  validate(quotationRequestIdParamsSchema, "params"),
+  validate(targetedRequestCreateSchema),
+  quotationRequestController.createTargeted
 );
 
 export default router;

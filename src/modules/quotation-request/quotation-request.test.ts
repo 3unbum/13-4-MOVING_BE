@@ -2,6 +2,7 @@ import {
   quotationRequestCreateSchema,
   quotationRequestListQuerySchema,
   quotationRequestIdParamsSchema,
+  targetedRequestCreateSchema,
 } from "./quotation-request.schema";
 
 describe("quotationRequestCreateSchema", () => {
@@ -172,5 +173,23 @@ describe("quotationRequestIdParamsSchema", () => {
   it("0 이하면 실패한다", () => {
     expect(quotationRequestIdParamsSchema.safeParse({ id: "0" }).success).toBe(false);
     expect(quotationRequestIdParamsSchema.safeParse({ id: "-1" }).success).toBe(false);
+  });
+});
+
+describe("targetedRequestCreateSchema", () => {
+  it("양의 정수를 통과시킨다", () => {
+    expect(targetedRequestCreateSchema.safeParse({ moverId: 5 }).success).toBe(true);
+  });
+
+  it("숫자 문자열도 통과시킨다 (coerce)", () => {
+    expect(targetedRequestCreateSchema.safeParse({ moverId: "5" }).success).toBe(true);
+  });
+
+  it("0 이하면 실패한다", () => {
+    expect(targetedRequestCreateSchema.safeParse({ moverId: 0 }).success).toBe(false);
+  });
+
+  it("moverId가 없으면 실패한다", () => {
+    expect(targetedRequestCreateSchema.safeParse({}).success).toBe(false);
   });
 });

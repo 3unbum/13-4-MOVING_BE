@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import type {
   QuotationRequestIdParam,
   QuotationRequestListQuery,
+  TargetedRequestCreateDto,
 } from "./quotation-request.schema";
 import * as service from "./quotation-request.service";
 
@@ -41,6 +42,18 @@ export const quotationRequestController = {
       const { id } = req.params as unknown as QuotationRequestIdParam;
       const found = await service.findById(id, userId);
       res.json({ data: found });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  createTargeted: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const { id } = req.params as unknown as QuotationRequestIdParam;
+      const { moverId } = req.body as TargetedRequestCreateDto;
+      const created = await service.createTargetedRequest(id, userId, moverId);
+      res.status(201).json({ data: created });
     } catch (error) {
       next(error);
     }
