@@ -4,8 +4,10 @@ import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
-import type { SignupDto, LoginDto, CheckEmailDto } from "./auth.schema";
-import type { AuthResult } from "./auth.type";
+import { exchangeOAuthCode, toSocialProvider, type OAuthProviderName } from "./oauth/dispatcher";
+import oauthSignupTokenUtil from "./oauth/oauthSignupToken.util";
+import type { SignupDto, LoginDto, CheckEmailDto, OAuthLoginDto, OAuthSignupDto } from "./auth.schema";
+import type { AuthResult, OAuthLoginResult } from "./auth.type";
 
 /** access/refresh 토큰을 발급하고, refreshToken 해시를 DB에 저장 */
 const createAuthTokens = async (userId: User["id"], role: User["role"]) => {
@@ -131,5 +133,101 @@ export const authService = {
   async checkEmail(dto: CheckEmailDto): Promise<{ available: boolean }> {
     const existing = await authRepository.existsByEmailAndRole(dto.email, dto.role);
     return { available: !existing };
+  },
+
+  /**
+   * code→token 교환·프로필 조회 후 (role, provider, providerId)로 기존 회원 여부를 판별한다.
+   * 기존 회원이면 바로 로그인 처리, 신규 회원이면 oauthSignupToken만 발급하고
+   * 계정 생성은 하지 않는다 (전화번호를 받아야 oauthSignup에서 생성됨).
+   */
+  async oauthLogin(provider: OAuthProviderName, dto: OAuthLoginDto): Promise<OAuthLoginResult> {
+    const socialProvider = toSocialProvider(provider);
+    const profile = await exchangeOAuthCode(provider, dto.code, dto.redirectUri);
+
+    const existing = await authRepository.findBySocialAndRole(
+      socialProvider,
+      profile.providerId,
+      dto.role
+    );
+
+    if (existing) {
+      const { accessToken, refreshToken } = await createAuthTokens(existing.id, existing.role);
+      return {
+        isNewUser: false,
+        accessToken,
+        refreshToken,
+        user: { id: existing.id, role: existing.role, name: existing.name, email: existing.email },
+        hasProfile: !!(existing.customerProfile || existing.moverProfile),
+      };
+    }
+
+    const oauthSignupToken = oauthSignupTokenUtil.create({
+      provider: socialProvider,
+      providerId: profile.providerId,
+      email: profile.email,
+      name: profile.name,
+      role: dto.role,
+    });
+
+    return {
+      isNewUser: true,
+      oauthSignupToken,
+      providerProfile: {
+        provider: socialProvider,
+        email: profile.email,
+        name: profile.name,
+        profileImage: profile.profileImage,
+      },
+    };
+  },
+
+  /** oauthLogin에서 신규 회원으로 판별된 뒤, 전화번호를 받아 계정 생성을 완료한다. */
+  async oauthSignup(dto: OAuthSignupDto): Promise<AuthResult> {
+    let payload;
+    try {
+      payload = oauthSignupTokenUtil.verify(dto.oauthSignupToken);
+    } catch {
+      throw new AppError(
+        401,
+        ERROR_CODES.INVALID_OR_EXPIRED_SIGNUP_TOKEN,
+        "인증 정보가 만료되었습니다. 처음부터 다시 시도해주세요"
+      );
+    }
+
+    const existing = await authRepository.findBySocialAndRole(
+      payload.provider,
+      payload.providerId,
+      payload.role
+    );
+    if (existing) {
+      throw AppError.conflict(ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED, "이미 가입된 계정입니다");
+    }
+
+    let user: User;
+    try {
+      user = await authRepository.create({
+        role: payload.role,
+        name: payload.name,
+        email: payload.email,
+        phoneNumber: dto.phoneNumber,
+        provider: payload.provider,
+        providerId: payload.providerId,
+      });
+    } catch (error) {
+      // findBySocialAndRole 조회 이후 동시 요청이 먼저 저장하면 (role, provider, providerId) 유니크가 막고 P2002를 던짐
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw AppError.conflict(ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED, "이미 가입된 계정입니다");
+      }
+      throw error;
+    }
+
+    const { accessToken, refreshToken } = await createAuthTokens(user.id, user.role);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: { id: user.id, role: user.role, name: user.name, email: user.email },
+      hasProfile: false,
+    };
   },
 };
