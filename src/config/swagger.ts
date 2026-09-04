@@ -11,6 +11,39 @@ export const swaggerSpec = swaggerJsdoc({
     // 상대경로 — swagger-ui가 문서 제공 호스트 기준으로 풀어서 씀, 배포 환경에서도 그대로 동작
     servers: [{ url: "/api" }],
     components: {
+      schemas: {
+        Address: {
+          type: "object",
+          required: ["postalCode", "region", "address", "detailAddress"],
+          properties: {
+            postalCode: { type: "string", example: "06234" },
+            region: {
+              type: "string",
+              enum: [
+                "SEOUL",
+                "GYEONGGI",
+                "INCHEON",
+                "GANGWON",
+                "CHUNGBUK",
+                "CHUNGNAM",
+                "SEJONG",
+                "DAEJEON",
+                "JEONBUK",
+                "JEONNAM",
+                "GWANGJU",
+                "GYEONGBUK",
+                "GYEONGNAM",
+                "DAEGU",
+                "ULSAN",
+                "BUSAN",
+                "JEJU",
+              ],
+            },
+            address: { type: "string", example: "서울 강남구 테헤란로 123" },
+            detailAddress: { type: "string", example: "101동 1001호" },
+          },
+        },
+      },
       securitySchemes: {
         cookieAuth: { type: "apiKey", in: "cookie", name: "accessToken" },
         refreshTokenAuth: { type: "apiKey", in: "cookie", name: "refreshToken" },

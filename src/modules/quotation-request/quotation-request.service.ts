@@ -42,4 +42,33 @@ async function findActive(userId: number) {
   return repository.findActiveByUserId(userId);
 }
 
-export { create, findActive };
+/** 요청 상세 조회. 본인 요청이 아니면 403입니다. */
+async function findById(id: number, userId: number) {
+  const found = await repository.findById(id);
+
+  if (!found) {
+    throw AppError.notFound("견적 요청을 찾을 수 없습니다.");
+  }
+  if (found.userId !== userId) {
+    throw AppError.forbidden("본인의 견적 요청만 조회할 수 있습니다.");
+  }
+
+  return found;
+}
+
+/** 내 요청 이력 (페이지네이션) */
+async function findMany(userId: number, page: number, limit: number) {
+  const [items, totalCount] = await Promise.all([
+    repository.findManyByUserId(userId, page, limit),
+    repository.countByUserId(userId),
+  ]);
+
+  return {
+    data: items,
+    page,
+    totalPages: Math.ceil(totalCount / limit),
+    totalCount,
+  };
+}
+
+export { create, findActive, findById, findMany };
