@@ -64,6 +64,14 @@ export const favoriteService = {
     return card;
   },
 
+  async delete(userId: number, moverId: number) {
+    const result = await favoriteRepository.deleteOwned(userId, [moverId]);
+    if (result.deletedCount === 0) {
+      throw AppError.notFound("찜한 기사님이 아닙니다");
+    }
+    return result;
+  },
+
   async bulkDelete(userId: number, moverIds: number[]) {
     const uniqueMoverIds = [...new Set(moverIds)];
     return favoriteRepository.deleteOwned(userId, uniqueMoverIds);

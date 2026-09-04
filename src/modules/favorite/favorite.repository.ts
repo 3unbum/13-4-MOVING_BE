@@ -65,9 +65,8 @@ export const favoriteRepository = {
   async createOwned(userId: number, moverId: number) {
     try {
       return await prisma.$transaction(async (tx) => {
-        const row = await favoriteRepository.create(userId, moverId, tx);
         await favoriteRepository.incrementFavoriteCount(moverId, tx);
-        return row;
+        return favoriteRepository.create(userId, moverId, tx);
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
