@@ -47,6 +47,16 @@ export const quotationRequestListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 
+/**
+ * POST /quotation-requests/:id/targeted-requests 본문
+ *
+ * body는 JSON이라 coerce를 쓰지 않습니다.
+ * z.coerce.number()는 Number(true)=1이라 `{"moverId":true}`가 통과합니다.
+ */
+export const targetedRequestCreateSchema = z.object({
+  moverId: z.number().int().positive(),
+});
+
 /** 경로 파라미터 :id 검증 */
 export const quotationRequestIdParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -55,3 +65,4 @@ export const quotationRequestIdParamsSchema = z.object({
 export type QuotationRequestCreateDto = z.infer<typeof quotationRequestCreateSchema>;
 export type QuotationRequestListQuery = z.infer<typeof quotationRequestListQuerySchema>;
 export type QuotationRequestIdParam = z.infer<typeof quotationRequestIdParamsSchema>;
+export type TargetedRequestCreateDto = z.infer<typeof targetedRequestCreateSchema>;

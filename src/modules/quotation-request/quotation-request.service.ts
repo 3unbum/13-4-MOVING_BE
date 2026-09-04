@@ -71,4 +71,23 @@ async function findMany(userId: number, page: number, limit: number) {
   };
 }
 
-export { create, findActive, findById, findMany };
+async function createTargetedRequest(quotationRequestId: number, userId: number, moverId: number) {
+  const found = await repository.findById(quotationRequestId);
+
+  if (!found) throw AppError.notFound("견적 요청을 찾을 수 없습니다.");
+  if (found.userId !== userId) {
+    throw AppError.forbidden("본인의 견적 요청에만 기사님을 지정할 수 있습니다.");
+  }
+  if (found.quotationStatus !== "PENDING" && found.quotationStatus !== "ASSIGNED") {
+    throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 견적 요청입니다.");
+  }
+
+  const mover = await repository.findMoverById(moverId);
+  if (!mover) throw AppError.notFound("기사님을 찾을 수 없습니다.");
+
+  return repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
+    await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
+  });
+}
+
+export { create, createTargetedRequest, findActive, findById, findMany };
