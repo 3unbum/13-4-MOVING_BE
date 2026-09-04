@@ -1,6 +1,7 @@
 import { env } from "../../../config/env";
 import { AppError } from "../../../common/errors/AppError";
 import { ERROR_CODES } from "../../../common/errors/errorCodes";
+import { classifyTokenExchangeError } from "./oauthTokenError.util";
 import type { OAuthProviderProfile } from "./oauth.type";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -31,7 +32,7 @@ const exchangeCode = async (code: string, redirectUri: string): Promise<string> 
   });
 
   if (!response.ok) {
-    throw new AppError(401, ERROR_CODES.INVALID_OAUTH_CODE, "구글 인가 코드가 유효하지 않습니다");
+    throw await classifyTokenExchangeError(response, "구글");
   }
 
   const data = (await response.json()) as GoogleTokenResponse;
