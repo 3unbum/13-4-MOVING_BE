@@ -1,4 +1,8 @@
-import { quotationRequestCreateSchema } from "./quotation-request.schema";
+import {
+  quotationRequestCreateSchema,
+  quotationRequestListQuerySchema,
+  quotationRequestIdParamsSchema,
+} from "./quotation-request.schema";
 
 describe("quotationRequestCreateSchema", () => {
   /** n일 뒤 날짜를 YYYY-MM-DD로 반환합니다. 스키마가 로컬 날짜 기분이라 UTC 변환을 피합니다. */
@@ -109,5 +113,64 @@ describe("quotationRequestCreateSchema", () => {
       const { to: _to, ...withoutTo } = valid;
       expect(quotationRequestCreateSchema.safeParse(withoutTo).success).toBe(false);
     });
+  });
+});
+
+describe("quotationRequestListQuerySchema", () => {
+  it("쿼리가 없으면 기본값을 채운다", () => {
+    const result = quotationRequestListQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.page).toBe(1);
+      expect(result.data.limit).toBe(10);
+      expect(result.data.status).toBeUndefined();
+    }
+  });
+
+  it("문자열 숫자를 number로 변환한다", () => {
+    const result = quotationRequestListQuerySchema.safeParse({ page: "3", limit: "20" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.page).toBe(3);
+      expect(result.data.limit).toBe(20);
+    }
+  });
+
+  it("status=pending을 허용한다", () => {
+    const result = quotationRequestListQuerySchema.safeParse({ status: "pending" });
+    expect(result.success).toBe(true);
+  });
+
+  it("정의되지 않은 status는 거부한다", () => {
+    expect(quotationRequestListQuerySchema.safeParse({ status: "done" }).success).toBe(false);
+  });
+
+  it("limit이 50을 넘으면 실패한다", () => {
+    expect(quotationRequestListQuerySchema.safeParse({ limit: "51" }).success).toBe(false);
+  });
+
+  it("page가 0 이하면 실패한다", () => {
+    expect(quotationRequestListQuerySchema.safeParse({ page: "0" }).success).toBe(false);
+  });
+});
+
+describe("quotationRequestIdParamsSchema", () => {
+  it("양의 정수 문자열을 number로 변환한다", () => {
+    const result = quotationRequestIdParamsSchema.safeParse({ id: "5" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.id).toBe(5);
+  });
+
+  it("숫자가 아니면 실패한다", () => {
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "abc" }).success).toBe(false);
+  });
+
+  it("소수면 실패한다", () => {
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "1.5" }).success).toBe(false);
+  });
+
+  it("0 이하면 실패한다", () => {
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "0" }).success).toBe(false);
+    expect(quotationRequestIdParamsSchema.safeParse({ id: "-1" }).success).toBe(false);
   });
 });
