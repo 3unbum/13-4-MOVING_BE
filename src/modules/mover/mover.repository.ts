@@ -107,29 +107,16 @@ export const moverRepository = {
   },
 
   async isTargetedInActiveRequest(customerId: number, moverId: number) {
-    const activeRequest = await prisma.quotationRequest.findFirst({
+    const activeTargeted = await prisma.quotationRequest.findFirst({
       where: {
         userId: customerId,
         quotationStatus: { in: ["PENDING", "ASSIGNED"] },
+        targetedRequests: { some: { moverId } },
       },
       select: { id: true },
     });
 
-    if (!activeRequest) {
-      return false;
-    }
-
-    const targeted = await prisma.targetedRequest.findUnique({
-      where: {
-        quotationRequestId_moverId: {
-          quotationRequestId: activeRequest.id,
-          moverId,
-        },
-      },
-      select: { id: true },
-    });
-
-    return targeted !== null;
+    return activeTargeted !== null;
   },
 
   async existsMover(moverId: number) {
