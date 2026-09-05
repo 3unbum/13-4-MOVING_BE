@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, S3_BUCKET_NAME } from "../../config/s3";
 import { env } from "../../config/env";
+import { Prisma } from "../../../generated/prisma/client";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import type { DetectedImageType } from "../../common/utils/fileSignature.util";
@@ -42,7 +43,13 @@ export const profileService = {
       throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
     }
 
-    const profile = await profileRepository.createCustomerProfile(userId, dto);
+    // 위 조회 이후 동시 요청이 먼저 저장하면 userId 유니크가 막고 P2002를 던짐
+    const profile = await profileRepository.createCustomerProfile(userId, dto).catch((error) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
+      }
+      throw error;
+    });
 
     return {
       id: profile.id,
@@ -62,7 +69,13 @@ export const profileService = {
       throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
     }
 
-    const profile = await profileRepository.createMoverProfile(userId, dto);
+    // 위 조회 이후 동시 요청이 먼저 저장하면 userId 유니크가 막고 P2002를 던짐
+    const profile = await profileRepository.createMoverProfile(userId, dto).catch((error) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
+      }
+      throw error;
+    });
 
     return {
       id: profile.id,
