@@ -1,9 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { requireAuth } from "../../common/middlewares/auth";
+import { requireRole } from "../../common/middlewares/role";
+import { validate } from "../../common/middlewares/validate";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { PROFILE_IMAGE_MAX_SIZE_BYTES, isAllowedImageMimeType } from "./profile.constants";
+import { customerProfileCreateSchema, moverProfileCreateSchema } from "./profile.schema";
 import { profileController } from "./profile.controller";
 
 const router = Router();
@@ -50,5 +53,21 @@ function uploadSingleImage(req: Request, res: Response, next: NextFunction) {
 }
 
 router.post("/image", requireAuth, uploadSingleImage, profileController.uploadImage);
+
+router.post(
+  "/customer",
+  requireAuth,
+  requireRole("CUSTOMER"),
+  validate(customerProfileCreateSchema),
+  profileController.registerCustomer
+);
+
+router.post(
+  "/mover",
+  requireAuth,
+  requireRole("MOVER"),
+  validate(moverProfileCreateSchema),
+  profileController.registerMover
+);
 
 export default router;
