@@ -48,6 +48,7 @@ describe("googleOAuthProvider.exchangeCodeForProfile", () => {
     const [tokenUrl, tokenOptions] = mockedFetch().mock.calls[0];
     expect(tokenUrl).toBe("https://oauth2.googleapis.com/token");
     expect(tokenOptions.method).toBe("POST");
+    expect(tokenOptions.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
     expect(Object.fromEntries(tokenOptions.body as URLSearchParams)).toEqual({
       code: "auth-code",
       client_id: "test-client-id",
