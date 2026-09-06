@@ -1,9 +1,13 @@
 import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { requireAuth } from "../../common/middlewares/auth";
+import { requireRole } from "../../common/middlewares/role";
+import { requireProfile } from "../../common/middlewares/profile";
+import { validate } from "../../common/middlewares/validate";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { PROFILE_IMAGE_MAX_SIZE_BYTES, isAllowedImageMimeType } from "./profile.constants";
+import { customerProfileUpdateSchema, moverProfileUpdateSchema } from "./profile.schema";
 import { profileController } from "./profile.controller";
 
 const router = Router();
@@ -50,5 +54,24 @@ function uploadSingleImage(req: Request, res: Response, next: NextFunction) {
 }
 
 router.post("/image", requireAuth, uploadSingleImage, profileController.uploadImage);
+
+// 프로필이 아직 없는 상태에서 수정은 의미가 없으므로 requireProfile로 등록 완료를 강제합니다.
+router.patch(
+  "/customer",
+  requireAuth,
+  requireRole("CUSTOMER"),
+  requireProfile,
+  validate(customerProfileUpdateSchema),
+  profileController.updateCustomerAccount
+);
+
+router.patch(
+  "/mover",
+  requireAuth,
+  requireRole("MOVER"),
+  requireProfile,
+  validate(moverProfileUpdateSchema),
+  profileController.updateMoverAccount
+);
 
 export default router;

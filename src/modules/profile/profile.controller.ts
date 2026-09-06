@@ -3,6 +3,7 @@ import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { detectImageType } from "../../common/utils/fileSignature.util";
 import { profileService } from "./profile.service";
+import type { CustomerProfileUpdateDto, MoverProfileUpdateDto } from "./profile.schema";
 
 export const profileController = {
   uploadImage: (async (req, res, next) => {
@@ -24,6 +25,28 @@ export const profileController = {
 
       const result = await profileService.uploadProfileImage(file.buffer, detected);
       res.status(201).json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  updateCustomerAccount: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const dto = req.body as CustomerProfileUpdateDto;
+      const result = await profileService.updateCustomerAccount(userId, dto);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  updateMoverAccount: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const dto = req.body as MoverProfileUpdateDto;
+      const result = await profileService.updateMoverAccount(userId, dto);
+      res.json({ data: result });
     } catch (error) {
       next(error);
     }
