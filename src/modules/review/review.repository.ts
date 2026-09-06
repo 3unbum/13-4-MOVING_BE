@@ -1,3 +1,5 @@
+import { AppError } from "../../common/errors/AppError";
+import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { prisma } from "../../config/prisma";
 import type { PrismaTransaction } from "../../config/prisma";
 import { Prisma } from "../../../generated/prisma/client.ts";
@@ -122,17 +124,21 @@ export const reviewRepository = {
           { isolationLevel: "Serializable" }
         );
       } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2034" &&
-          attempt < CONFIRM_MAX_RETRIES
-        ) {
-          continue;
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+          // 마지막 시도까지 실패하면 raw Prisma 에러가 500으로 나가므로 여기서 변환합니다
+          if (attempt < CONFIRM_MAX_RETRIES) continue;
+          throw AppError.conflict(
+            ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
+            "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+          );
         }
         throw error;
       }
     }
 
-    return null;
+    throw AppError.conflict(
+      ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
+      "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+    );
   },
 };
