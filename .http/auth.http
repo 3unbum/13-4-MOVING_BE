@@ -1,0 +1,82 @@
+@baseUrl = http://localhost:3001/api
+
+### 회원가입 - CUSTOMER
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "김고객",
+  "email": "customer1@test.com",
+  "phoneNumber": "01012345678",
+  "password": "Password1!"
+}
+
+### 회원가입 - MOVER
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "role": "MOVER",
+  "name": "이기사",
+  "email": "mover1@test.com",
+  "phoneNumber": "01087654321",
+  "password": "Password1!"
+}
+
+### 로그인 - CUSTOMER
+# @name loginCustomer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "customer1@test.com",
+  "password": "Password1!"
+}
+
+### 로그인 - MOVER
+# @name loginMover
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "role": "MOVER",
+  "email": "mover1@test.com",
+  "password": "Password1!"
+}
+
+### 이메일 중복 확인
+POST {{baseUrl}}/auth/check-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "customer1@test.com"
+}
+
+### 토큰 갱신 (refreshToken 쿠키 필요 - 로그인 후 쿠키 자동 첨부)
+POST {{baseUrl}}/auth/refresh
+
+### 로그아웃 (refreshToken 쿠키 필요)
+POST {{baseUrl}}/auth/logout
+
+### 소셜 로그인 진입/콜백 (provider: google | kakao | naver)
+# 프론트가 provider 인가 URL로 리다이렉트 후 받은 code/redirectUri 필요 - 실제 code 없이는 401
+POST {{baseUrl}}/auth/oauth/google
+Content-Type: application/json
+
+{
+  "code": "PROVIDER_AUTH_CODE",
+  "redirectUri": "http://localhost:3000/oauth/callback/google",
+  "role": "CUSTOMER"
+}
+
+### OAuth 회원가입 완료 (신규회원 판별 시 발급되는 oauthSignupToken 필요)
+POST {{baseUrl}}/auth/oauth/signup
+Content-Type: application/json
+
+{
+  "oauthSignupToken": "OAUTH_SIGNUP_TOKEN",
+  "phoneNumber": "01012345678"
+}

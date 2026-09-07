@@ -1,0 +1,74 @@
+@baseUrl = http://localhost:3001/api
+
+### 프로필 이미지 업로드 (accessToken 쿠키 필요 - auth.http에서 먼저 로그인)
+# jpeg/png/webp만 허용, 최대 5MB, 매직 넘버로 실제 형식 재검증됨
+# 응답의 imageUrl을 아래 등록/수정 API의 image 필드에 그대로 사용
+POST {{baseUrl}}/profiles/image
+Content-Type: multipart/form-data; boundary=----boundary
+
+------boundary
+Content-Disposition: form-data; name="image"; filename="profile.jpg"
+Content-Type: image/jpeg
+
+# 실행 전 .http/sample.jpg 준비 필요 (이 파일과 같은 디렉터리, jpeg/png/webp 아무 이미지나 복사해 이름만 맞추면 됨)
+< ./sample.jpg
+------boundary--
+
+### [CUSTOMER] 프로필 등록
+POST {{baseUrl}}/profiles/customer
+Content-Type: application/json
+
+{
+  "region": "SEOUL",
+  "services": ["HOME", "OFFICE"]
+}
+
+### [MOVER] 프로필 등록
+POST {{baseUrl}}/profiles/mover
+Content-Type: application/json
+
+{
+  "nickName": "이기사",
+  "career": 5,
+  "bio": "빠르고 안전한 이사 전문가입니다.",
+  "description": "가정이사/사무실이사 5년 경력, 파손 0건.",
+  "services": ["HOME", "OFFICE"],
+  "regions": ["SEOUL", "GYEONGGI"]
+}
+
+### [CUSTOMER] 내 계정+프로필 정보 조회 (프로필 미등록 상태에서도 조회 가능)
+GET {{baseUrl}}/profiles/customer
+
+### [MOVER] 내 계정+프로필 정보 조회 (프로필 미등록 상태에서도 조회 가능)
+GET {{baseUrl}}/profiles/mover
+
+### [CUSTOMER] 내 정보 수정 (전부 optional, 부분 수정)
+PATCH {{baseUrl}}/profiles/customer
+Content-Type: application/json
+
+{
+  "name": "김고객2",
+  "region": "GYEONGGI",
+  "services": ["SMALL"]
+}
+
+### [CUSTOMER] 비밀번호 변경 (newPassword 보낼 때 currentPassword 필수)
+PATCH {{baseUrl}}/profiles/customer
+Content-Type: application/json
+
+{
+  "currentPassword": "Password1!",
+  "newPassword": "NewPassword1!"
+}
+
+### [MOVER] 내 정보 수정 (전부 optional, 부분 수정)
+PATCH {{baseUrl}}/profiles/mover
+Content-Type: application/json
+
+{
+  "nickName": "이기사(수정)",
+  "career": 6,
+  "bio": "친절하고 꼼꼼한 이사 전문가입니다.",
+  "services": ["HOME"],
+  "regions": ["SEOUL"]
+}
