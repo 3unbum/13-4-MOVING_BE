@@ -1,3 +1,5 @@
+import type { RegionType, ServiceType } from "../../../generated/prisma/enums";
+
 export interface ProfileImageUploadResult {
   /** 프로필 등록/수정 API의 image 필드에 그대로 전달할 S3 URL */
   imageUrl: string;
@@ -51,4 +53,24 @@ export interface MoverAccountResponse {
   avgRating: number | null;
   services: string[];
   regions: string[];
+}
+
+export interface CustomerAccountUpdateInput {
+  account: Partial<{ name: string; phoneNumber: string; password: string }>;
+  profile: Partial<{ image: string; region: RegionType }>;
+  /** undefined면 서비스 목록은 건드리지 않습니다 */
+  services?: ServiceType[];
+}
+
+export interface MoverAccountUpdateInput {
+  account: Partial<{ name: string; phoneNumber: string; password: string }>;
+  profile: Partial<{
+    image: string;
+    nickName: string;
+    career: number;
+    bio: string;
+    description: string;
+  }>;
+  services?: ServiceType[];
+  regions?: RegionType[];
 }

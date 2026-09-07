@@ -3,7 +3,12 @@ import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { detectImageType } from "../../common/utils/fileSignature.util";
 import { profileService } from "./profile.service";
-import type { CustomerProfileCreateDto, MoverProfileCreateDto } from "./profile.schema";
+import type {
+  CustomerProfileCreateDto,
+  MoverProfileCreateDto,
+  CustomerProfileUpdateDto,
+  MoverProfileUpdateDto,
+} from "./profile.schema";
 
 export const profileController = {
   uploadImage: (async (req, res, next) => {
@@ -66,6 +71,28 @@ export const profileController = {
     try {
       const userId = req.user!.id;
       const result = await profileService.getMoverAccount(userId);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  updateCustomerAccount: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const dto = req.body as CustomerProfileUpdateDto;
+      const result = await profileService.updateCustomerAccount(userId, dto);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  updateMoverAccount: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const dto = req.body as MoverProfileUpdateDto;
+      const result = await profileService.updateMoverAccount(userId, dto);
       res.json({ data: result });
     } catch (error) {
       next(error);
