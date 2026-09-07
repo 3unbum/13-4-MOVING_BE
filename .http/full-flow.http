@@ -167,7 +167,7 @@ POST {{baseUrl}}/estimates/{{createEstimate.response.body.$.data.id}}/confirm
 GET {{baseUrl}}/reviews/writable?take=10
 
 ### 24. [CUSTOMER] 리뷰 작성 (23번 응답의 첫 리뷰 id 사용)
-PATCH {{baseUrl}}/reviews/{{writableReviews.response.body.$.data[0].id}}
+PATCH {{baseUrl}}/reviews/{{writableReviews.response.body.$.data.items[0].id}}
 Content-Type: application/json
 
 {

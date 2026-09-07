@@ -1,13 +1,14 @@
 @baseUrl = http://localhost:3001/api
 
 ### [CUSTOMER] 작성 가능한 리뷰 목록 (확정된 견적 중 리뷰 미작성 건)
+# @name writableReviews
 GET {{baseUrl}}/reviews/writable?take=10
 
 ### [CUSTOMER] 내가 작성한 리뷰 목록
 GET {{baseUrl}}/reviews/my?take=10
 
-### [CUSTOMER] 리뷰 작성/확정 (rating 1~5, comment 10~200자)
-PATCH {{baseUrl}}/reviews/1
+### [CUSTOMER] 리뷰 작성/확정 (rating 1~5, comment 10~200자, 위 writable 목록의 첫 항목 id 사용)
+PATCH {{baseUrl}}/reviews/{{writableReviews.response.body.$.data.items[0].id}}
 Content-Type: application/json
 
 {

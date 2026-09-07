@@ -10,6 +10,7 @@ Content-Type: multipart/form-data; boundary=----boundary
 Content-Disposition: form-data; name="image"; filename="profile.jpg"
 Content-Type: image/jpeg
 
+# 실행 전 .http/sample.jpg 준비 필요 (이 파일과 같은 디렉터리, jpeg/png/webp 아무 이미지나 복사해 이름만 맞추면 됨)
 < ./sample.jpg
 ------boundary--
 

@@ -28,11 +28,11 @@ GET {{baseUrl}}/quotation-requests?status=pending
 ### 내 요청 이력 조회 (페이지네이션)
 GET {{baseUrl}}/quotation-requests?page=1&limit=10
 
-### 견적 요청 상세 조회
-GET {{baseUrl}}/quotation-requests/1
+### 견적 요청 상세 조회 (위 createRequest 응답의 id 사용)
+GET {{baseUrl}}/quotation-requests/{{createRequest.response.body.$.data.id}}
 
 ### 지정 견적 요청 (moverId로 기사님 지정, 활성 요청 1건당 최대 3명)
-POST {{baseUrl}}/quotation-requests/1/targeted-requests
+POST {{baseUrl}}/quotation-requests/{{createRequest.response.body.$.data.id}}/targeted-requests
 Content-Type: application/json
 
 {
