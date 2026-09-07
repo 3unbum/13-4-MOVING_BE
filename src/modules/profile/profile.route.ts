@@ -115,6 +115,10 @@ router.post(
   profileController.registerMover
 );
 
+// 가입 직후(프로필 미등록) 상태에서도 계정 정보를 봐야 해서 requireProfile은 걸지 않습니다.
+router.get("/customer", requireAuth, requireRole("CUSTOMER"), profileController.getCustomerAccount);
+router.get("/mover", requireAuth, requireRole("MOVER"), profileController.getMoverAccount);
+
 /**
  * @swagger
  * /profiles/customer:

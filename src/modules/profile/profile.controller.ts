@@ -57,6 +57,26 @@ export const profileController = {
     }
   }) as RequestHandler,
 
+  getCustomerAccount: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const result = await profileService.getCustomerAccount(userId);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  getMoverAccount: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const result = await profileService.getMoverAccount(userId);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
   updateCustomerAccount: (async (req, res, next) => {
     try {
       const userId = req.user!.id;

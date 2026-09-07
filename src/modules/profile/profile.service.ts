@@ -125,6 +125,53 @@ export const profileService = {
     };
   },
 
+  async getCustomerAccount(userId: number): Promise<CustomerAccountResponse> {
+    const user = await profileRepository.findCustomerAccount(userId);
+    if (!user) {
+      throw AppError.notFound("유저를 찾을 수 없습니다.");
+    }
+
+    const profile = user.customerProfile;
+
+    return {
+      userId: user.id,
+      role: "CUSTOMER",
+      name: user.name,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      hasProfile: !!profile,
+      image: profile?.image ?? null,
+      region: profile?.region ?? null,
+      services: user.customerServices.map((row) => row.service),
+    };
+  },
+
+  async getMoverAccount(userId: number): Promise<MoverAccountResponse> {
+    const user = await profileRepository.findMoverAccount(userId);
+    if (!user) {
+      throw AppError.notFound("유저를 찾을 수 없습니다.");
+    }
+
+    const profile = user.moverProfile;
+
+    return {
+      userId: user.id,
+      role: "MOVER",
+      name: user.name,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      hasProfile: !!profile,
+      image: profile?.image ?? null,
+      nickName: profile?.nickName ?? null,
+      career: profile?.career ?? null,
+      bio: profile?.bio ?? null,
+      description: profile?.description ?? null,
+      avgRating: profile ? Number(profile.avgRating) : null,
+      services: user.moverServices.map((row) => row.service),
+      regions: user.moverRegions.map((row) => row.region),
+    };
+  },
+
   async updateCustomerAccount(
     userId: number,
     dto: CustomerProfileUpdateDto
