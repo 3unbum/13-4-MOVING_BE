@@ -2,13 +2,21 @@ import { randomUUID } from "crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, S3_BUCKET_NAME } from "../../config/s3";
 import { env } from "../../config/env";
+import { Prisma } from "../../../generated/prisma/client";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import hashUtil from "../../common/utils/hash.util";
 import type { DetectedImageType } from "../../common/utils/fileSignature.util";
 import { profileRepository } from "./profile.repository";
-import type { CustomerProfileUpdateDto, MoverProfileUpdateDto } from "./profile.schema";
 import type {
+  CustomerProfileCreateDto,
+  MoverProfileCreateDto,
+  CustomerProfileUpdateDto,
+  MoverProfileUpdateDto,
+} from "./profile.schema";
+import type {
+  CustomerProfileResponse,
+  MoverProfileResponse,
   CustomerAccountResponse,
   MoverAccountResponse,
   ProfileImageUploadResult,
@@ -59,6 +67,62 @@ export const profileService = {
     );
 
     return { imageUrl: `https://${S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com/${key}` };
+  },
+
+  async registerCustomerProfile(
+    userId: number,
+    dto: CustomerProfileCreateDto
+  ): Promise<CustomerProfileResponse> {
+    const alreadyExists = await profileRepository.exists(userId, "CUSTOMER");
+    if (alreadyExists) {
+      throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
+    }
+
+    // 위 조회 이후 동시 요청이 먼저 저장하면 userId 유니크가 막고 P2002를 던짐
+    const profile = await profileRepository.createCustomerProfile(userId, dto).catch((error) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
+      }
+      throw error;
+    });
+
+    return {
+      id: profile.id,
+      userId: profile.userId,
+      image: profile.image,
+      region: dto.region,
+      services: dto.services,
+    };
+  },
+
+  async registerMoverProfile(
+    userId: number,
+    dto: MoverProfileCreateDto
+  ): Promise<MoverProfileResponse> {
+    const alreadyExists = await profileRepository.exists(userId, "MOVER");
+    if (alreadyExists) {
+      throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
+    }
+
+    // 위 조회 이후 동시 요청이 먼저 저장하면 userId 유니크가 막고 P2002를 던짐
+    const profile = await profileRepository.createMoverProfile(userId, dto).catch((error) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw AppError.conflict(ERROR_CODES.PROFILE_ALREADY_EXISTS, "이미 등록된 프로필입니다.");
+      }
+      throw error;
+    });
+
+    return {
+      id: profile.id,
+      userId: profile.userId,
+      image: profile.image,
+      nickName: profile.nickName,
+      career: profile.career,
+      bio: profile.bio,
+      description: profile.description,
+      services: dto.services,
+      regions: dto.regions,
+    };
   },
 
   async updateCustomerAccount(

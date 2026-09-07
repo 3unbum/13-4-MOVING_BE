@@ -7,7 +7,12 @@ import { validate } from "../../common/middlewares/validate";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { PROFILE_IMAGE_MAX_SIZE_BYTES, isAllowedImageMimeType } from "./profile.constants";
-import { customerProfileUpdateSchema, moverProfileUpdateSchema } from "./profile.schema";
+import {
+  customerProfileCreateSchema,
+  moverProfileCreateSchema,
+  customerProfileUpdateSchema,
+  moverProfileUpdateSchema,
+} from "./profile.schema";
 import { profileController } from "./profile.controller";
 
 const router = Router();
@@ -93,6 +98,22 @@ function uploadSingleImage(req: Request, res: Response, next: NextFunction) {
  *         description: 인증되지 않음
  */
 router.post("/image", requireAuth, uploadSingleImage, profileController.uploadImage);
+
+router.post(
+  "/customer",
+  requireAuth,
+  requireRole("CUSTOMER"),
+  validate(customerProfileCreateSchema),
+  profileController.registerCustomer
+);
+
+router.post(
+  "/mover",
+  requireAuth,
+  requireRole("MOVER"),
+  validate(moverProfileCreateSchema),
+  profileController.registerMover
+);
 
 /**
  * @swagger
