@@ -1,0 +1,19 @@
+@baseUrl = http://localhost:3001/api
+
+### [CUSTOMER] 작성 가능한 리뷰 목록 (확정된 견적 중 리뷰 미작성 건)
+GET {{baseUrl}}/reviews/writable?take=10
+
+### [CUSTOMER] 내가 작성한 리뷰 목록
+GET {{baseUrl}}/reviews/my?take=10
+
+### [CUSTOMER] 리뷰 작성/확정 (rating 1~5, comment 10~200자)
+PATCH {{baseUrl}}/reviews/1
+Content-Type: application/json
+
+{
+  "rating": 5,
+  "comment": "친절하고 꼼꼼하게 이사 도와주셔서 감사했습니다."
+}
+
+### [MOVER] 내가 받은 리뷰 목록
+GET {{baseUrl}}/mover/reviews?take=10

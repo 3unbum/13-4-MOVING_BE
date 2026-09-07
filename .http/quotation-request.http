@@ -1,0 +1,40 @@
+@baseUrl = http://localhost:3001/api
+
+### 견적 요청 생성 (CUSTOMER, 프로필 등록 필요, 활성 요청 없어야 함)
+# @name createRequest
+POST {{baseUrl}}/quotation-requests
+Content-Type: application/json
+
+{
+  "category": "HOME",
+  "movingDate": "2026-12-25",
+  "from": {
+    "postalCode": "06134",
+    "region": "SEOUL",
+    "address": "서울특별시 강남구 테헤란로 123",
+    "detailAddress": "101동 202호"
+  },
+  "to": {
+    "postalCode": "13529",
+    "region": "GYEONGGI",
+    "address": "경기도 성남시 분당구 판교역로 235",
+    "detailAddress": "303동 404호"
+  }
+}
+
+### 활성 요청 1건 조회 (status=pending)
+GET {{baseUrl}}/quotation-requests?status=pending
+
+### 내 요청 이력 조회 (페이지네이션)
+GET {{baseUrl}}/quotation-requests?page=1&limit=10
+
+### 견적 요청 상세 조회
+GET {{baseUrl}}/quotation-requests/1
+
+### 지정 견적 요청 (moverId로 기사님 지정, 활성 요청 1건당 최대 3명)
+POST {{baseUrl}}/quotation-requests/1/targeted-requests
+Content-Type: application/json
+
+{
+  "moverId": 2
+}

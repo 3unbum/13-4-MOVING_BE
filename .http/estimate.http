@@ -1,0 +1,42 @@
+@baseUrl = http://localhost:3001/api
+
+### [CUSTOMER] 대기 중인 견적 조회
+GET {{baseUrl}}/estimates/pending?take=10
+
+### [CUSTOMER] 특정 요청에 받은 견적 조회
+GET {{baseUrl}}/requests/1/estimates?take=10
+
+### [CUSTOMER] 견적 상세 조회
+GET {{baseUrl}}/estimates/1
+
+### [CUSTOMER] 견적 확정
+POST {{baseUrl}}/estimates/1/confirm
+
+### [MOVER] 요청에 견적 보내기
+POST {{baseUrl}}/mover/requests/1/estimates
+Content-Type: application/json
+
+{
+  "price": 350000,
+  "comment": "안전하게 빠른 시간 내 이사 도와드리겠습니다."
+}
+
+### [MOVER] 지정견적 요청 반려
+POST {{baseUrl}}/mover/requests/1/reject
+Content-Type: application/json
+
+{
+  "comment": "해당 일정에는 이미 예약이 차 있어 진행이 어렵습니다."
+}
+
+### [MOVER] 받은 요청 목록 (필터/정렬)
+GET {{baseUrl}}/mover/requests?isServiceRegion=true&isTargeted=false&category=HOME&sort=latest
+
+### [MOVER] 내 견적 관리 (전체)
+GET {{baseUrl}}/mover/estimates?take=10
+
+### [MOVER] 내 견적 관리 (상태 필터)
+GET {{baseUrl}}/mover/estimates?status=CONFIRMED&take=10
+
+### [MOVER] 견적 상세 조회
+GET {{baseUrl}}/mover/estimates/1

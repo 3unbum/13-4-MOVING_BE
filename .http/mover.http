@@ -1,0 +1,19 @@
+@baseUrl = http://localhost:3001/api
+
+### 기사님 목록 조회 (인증 불필요)
+GET {{baseUrl}}/movers?sort=review&limit=10
+
+### 기사님 목록 - 키워드/지역/서비스 필터
+GET {{baseUrl}}/movers?keyword=이기사&region=서울&service=가정이사&sort=rating&limit=10
+
+### 기사님 상세 조회 (인증 없이도 조회, 로그인 CUSTOMER면 isFavorited/isTargeted 포함)
+GET {{baseUrl}}/movers/2
+
+### 기사님 리뷰 목록 조회
+GET {{baseUrl}}/movers/2/reviews?page=1&limit=5
+
+### 기사님 찜하기 (CUSTOMER 전용)
+POST {{baseUrl}}/movers/2/favorite
+
+### 기사님 찜 해제 (CUSTOMER 전용)
+DELETE {{baseUrl}}/movers/2/favorite
