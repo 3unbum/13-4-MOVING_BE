@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireAuth } from "../../common/middlewares/auth";
 import { validate } from "../../common/middlewares/validate";
 import {
   signupSchema,
@@ -143,6 +144,63 @@ router.post("/refresh", authController.refresh);
  *         description: 유효성 검사 실패
  */
 router.post("/check-email", validate(checkEmailSchema), authController.checkEmail);
+
+/**
+ * @swagger
+ * /auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: 내 계정 정보 조회 (role 무관)
+ *     description: |
+ *       accessToken 쿠키만으로 호출할 수 있는, role을 미리 몰라도 되는 유일한 계정 조회 엔드포인트입니다.
+ *       서버가 토큰에 담긴 role을 보고 CUSTOMER/MOVER 응답 중 알맞은 쪽을 골라 내려주므로,
+ *       GNB처럼 어느 페이지에서든 마운트되는 전역 로그인 상태 확인에 사용합니다.
+ *       응답 본문은 GET /profiles/customer · GET /profiles/mover와 완전히 동일합니다.
+ *       가입 직후 계정 정보를 봐야 해서 requireProfile은 걸지 않습니다 — hasProfile이 false여도 200입니다.
+ *       requireRole도 걸지 않으므로 403은 발생하지 않습니다(프론트는 401만 비로그인으로 해석하면 됩니다).
+ *     responses:
+ *       200:
+ *         description: role 필드로 판별하는 계정+프로필 정보
+ *         content:
+ *           application/json:
+ *             examples:
+ *               customer:
+ *                 summary: role이 CUSTOMER인 경우
+ *                 value:
+ *                   data:
+ *                     userId: 1
+ *                     role: CUSTOMER
+ *                     name: 김고객
+ *                     email: customer1@test.com
+ *                     phoneNumber: "01012345678"
+ *                     hasProfile: true
+ *                     image: null
+ *                     region: SEOUL
+ *                     services: [HOME, OFFICE]
+ *               mover:
+ *                 summary: role이 MOVER인 경우
+ *                 value:
+ *                   data:
+ *                     userId: 2
+ *                     role: MOVER
+ *                     name: 이기사
+ *                     email: mover1@test.com
+ *                     phoneNumber: "01087654321"
+ *                     hasProfile: true
+ *                     image: null
+ *                     nickName: 믿음이사
+ *                     career: 7
+ *                     bio: 꼼꼼한 이사를 도와드립니다.
+ *                     description: 안녕하세요...
+ *                     avgRating: 4.8
+ *                     services: [HOME]
+ *                     regions: [SEOUL, GYEONGGI]
+ *       401:
+ *         description: accessToken 쿠키가 없거나 위조됨(ACCESS_TOKEN_INVALID) / 만료됨(ACCESS_TOKEN_EXPIRED)
+ *       404:
+ *         description: 토큰의 유저가 더 이상 존재하지 않음 (NOT_FOUND)
+ */
+router.get("/me", requireAuth, authController.me);
 
 /**
  * @swagger

@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import { authService } from "./auth.service";
+import { profileService } from "../profile/profile.service";
 import {
   setAuthCookies,
   setAccessTokenCookie,
@@ -62,6 +63,23 @@ export const authController = {
   checkEmail: (async (req, res, next) => {
     try {
       const result = await authService.checkEmail(req.body);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  /**
+   * role을 모른 채 부를 수 있는 유일한 계정 조회.
+   * requireAuth가 채워준 req.user.role로 분기만 하고, 응답 본문은 GET /profiles/{role}과 동일합니다.
+   */
+  me: (async (req, res, next) => {
+    try {
+      const { id, role } = req.user!;
+      const result =
+        role === "MOVER"
+          ? await profileService.getMoverAccount(id)
+          : await profileService.getCustomerAccount(id);
       res.json({ data: result });
     } catch (error) {
       next(error);

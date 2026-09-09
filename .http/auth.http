@@ -46,6 +46,10 @@ Content-Type: application/json
   "password": "Password1!"
 }
 
+### 내 계정 정보 조회 (accessToken 쿠키 필요 - 바로 위에서 로그인한 role에 맞는 응답이 내려옴)
+# role을 몰라도 호출 가능. 프로필 미등록(hasProfile false)이어도 200, 쿠키 없으면 401(403 아님)
+GET {{baseUrl}}/auth/me
+
 ### 이메일 중복 확인
 POST {{baseUrl}}/auth/check-email
 Content-Type: application/json
