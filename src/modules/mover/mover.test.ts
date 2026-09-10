@@ -11,6 +11,7 @@ jest.mock("./mover.repository", () => ({
     isTargetedInActiveRequest: jest.fn(),
     existsMover: jest.fn(),
     findConfirmedReviewsByMoverId: jest.fn(),
+    getRatingDistribution: jest.fn(),
   },
 }));
 
@@ -489,6 +490,41 @@ describe("moverService.listReviews", () => {
 
     // Assertion
     expect(mockedRepository.findConfirmedReviewsByMoverId).toHaveBeenCalledWith(10, 1, 5);
+  });
+});
+
+describe("moverService.getRatingDistribution", () => {
+  test("없는 별점은 0으로 채우고 totalCount를 합산한다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(true);
+    mockedRepository.getRatingDistribution.mockResolvedValue([
+      { rating: 5, _count: { _all: 30 } },
+      { rating: 4, _count: { _all: 10 } },
+      { rating: 3, _count: { _all: 2 } },
+    ] as never);
+
+    const result = await moverService.getRatingDistribution(12);
+
+    expect(mockedRepository.getRatingDistribution).toHaveBeenCalledWith(12);
+    expect(result).toEqual({ 1: 0, 2: 0, 3: 2, 4: 10, 5: 30, totalCount: 42 });
+  });
+
+  test("리뷰가 없으면 전부 0이다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(true);
+    mockedRepository.getRatingDistribution.mockResolvedValue([] as never);
+
+    const result = await moverService.getRatingDistribution(12);
+
+    expect(result).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, totalCount: 0 });
+  });
+
+  test("기사님이 없으면 404를 던진다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(false);
+
+    await expect(moverService.getRatingDistribution(999)).rejects.toMatchObject({
+      statusCode: 404,
+      code: ERROR_CODES.NOT_FOUND,
+    });
+    expect(mockedRepository.getRatingDistribution).not.toHaveBeenCalled();
   });
 });
 
