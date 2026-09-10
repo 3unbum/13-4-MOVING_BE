@@ -150,6 +150,14 @@ export const moverRepository = {
       prisma.review.count({ where }),
     ]);
   },
+
+  getRatingDistribution(moverId: number) {
+    return prisma.review.groupBy({
+      by: ["rating"],
+      where: { status: "CONFIRMED" as const, estimate: { moverId } },
+      _count: { _all: true },
+    });
+  },
 };
 
 export type MoverListProfile = Awaited<ReturnType<typeof moverRepository.findList>>[number];

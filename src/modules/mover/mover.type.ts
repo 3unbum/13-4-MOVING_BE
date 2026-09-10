@@ -119,3 +119,12 @@ export interface MoverReviewsResponse {
   totalPages: number;
   totalCount: number;
 }
+
+export interface MoverRatingDistributionResponse {
+  1: number;
+  2: number;
+  3: number;
+  4: number;
+  5: number;
+  totalCount: number;
+}

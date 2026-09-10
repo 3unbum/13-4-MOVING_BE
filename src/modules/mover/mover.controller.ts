@@ -40,6 +40,16 @@ export const moverController = {
     }
   }) as RequestHandler,
 
+  getRatingDistribution: (async (req, res, next) => {
+    try {
+      const { id } = req.params as unknown as MoverIdParam;
+      const data = await moverService.getRatingDistribution(id);
+      res.json({ data });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
   createFavorite: (async (req, res, next) => {
     try {
       const { id } = req.params as unknown as MoverIdParam;

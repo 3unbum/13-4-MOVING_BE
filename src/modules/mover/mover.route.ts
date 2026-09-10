@@ -128,6 +128,46 @@ router.get(
 
 /**
  * @swagger
+ * /movers/{id}/reviews/distribution:
+ *   get:
+ *     tags: [Movers]
+ *     summary: 기사님 별점 분포 조회
+ *     description: CONFIRMED 리뷰를 1~5점 기준으로 집계합니다. 인증 없이 조회 가능합니다.
+ *     security: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: 기사님 userId
+ *     responses:
+ *       200:
+ *         description: 별점 분포
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     1: { type: integer }
+ *                     2: { type: integer }
+ *                     3: { type: integer }
+ *                     4: { type: integer }
+ *                     5: { type: integer }
+ *                     totalCount: { type: integer }
+ *       404:
+ *         description: 기사님 없음
+ */
+router.get(
+  "/:id/reviews/distribution",
+  validate(moverIdParamSchema, "params"),
+  moverController.getRatingDistribution
+);
+
+/**
+ * @swagger
  * /movers/{id}/favorite:
  *   post:
  *     tags: [Movers]
