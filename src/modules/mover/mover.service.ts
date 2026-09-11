@@ -171,17 +171,17 @@ export const moverService = {
     let totalCount = 0;
 
     for (const row of rows) {
-      if (
-        row.rating !== 1 &&
-        row.rating !== 2 &&
-        row.rating !== 3 &&
-        row.rating !== 4 &&
-        row.rating !== 5
-      ) {
-        continue;
-      }
-      distribution[row.rating] = row._count._all;
+      // CONFIRMED인데 rating이 null인 그룹도 totalCount에는 포함합니다
       totalCount += row._count._all;
+      if (
+        row.rating === 1 ||
+        row.rating === 2 ||
+        row.rating === 3 ||
+        row.rating === 4 ||
+        row.rating === 5
+      ) {
+        distribution[row.rating] = row._count._all;
+      }
     }
 
     return { ...distribution, totalCount };

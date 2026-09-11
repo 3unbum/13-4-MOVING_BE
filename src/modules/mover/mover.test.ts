@@ -517,6 +517,18 @@ describe("moverService.getRatingDistribution", () => {
     expect(result).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, totalCount: 0 });
   });
 
+  test("rating이 null인 CONFIRMED도 totalCount에 포함한다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(true);
+    mockedRepository.getRatingDistribution.mockResolvedValue([
+      { rating: 5, _count: { _all: 30 } },
+      { rating: null, _count: { _all: 2 } },
+    ] as never);
+
+    const result = await moverService.getRatingDistribution(12);
+
+    expect(result).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 30, totalCount: 32 });
+  });
+
   test("기사님이 없으면 404를 던진다", async () => {
     mockedRepository.existsMover.mockResolvedValue(false);
 
