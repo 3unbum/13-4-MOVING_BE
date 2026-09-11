@@ -14,6 +14,7 @@ import {
   type MoverListCursor,
   type MoverListItemResponse,
   type MoverListResponse,
+  type MoverRatingDistributionResponse,
   type MoverReviewItemResponse,
   type MoverReviewsResponse,
 } from "./mover.type";
@@ -157,6 +158,33 @@ export const moverService = {
       totalPages: totalCount === 0 ? 0 : Math.ceil(totalCount / limit),
       totalCount,
     };
+  },
+
+  async getRatingDistribution(moverId: number): Promise<MoverRatingDistributionResponse> {
+    const exists = await moverRepository.existsMover(moverId);
+    if (!exists) {
+      throw AppError.notFound("기사님을 찾을 수 없습니다");
+    }
+
+    const rows = await moverRepository.getRatingDistribution(moverId);
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let totalCount = 0;
+
+    for (const row of rows) {
+      // CONFIRMED인데 rating이 null인 그룹도 totalCount에는 포함합니다
+      totalCount += row._count._all;
+      if (
+        row.rating === 1 ||
+        row.rating === 2 ||
+        row.rating === 3 ||
+        row.rating === 4 ||
+        row.rating === 5
+      ) {
+        distribution[row.rating] = row._count._all;
+      }
+    }
+
+    return { ...distribution, totalCount };
   },
 
   createFavorite(userId: number, moverId: number) {
