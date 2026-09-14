@@ -56,10 +56,11 @@ npm run dev
 | 용도                   | 포트 | 언제                                    |
 | ---------------------- | ---- | --------------------------------------- |
 | **Transaction pooler** | 6543 | 평소 앱 실행 — `.env`에 이걸 넣어둡니다 |
-| **Direct**             | 5432 | `prisma migrate` 명령을 쓸 때만         |
+| **Session pooler**     | 5432 | `prisma migrate` 명령을 쓸 때만         |
 
-pooler는 커넥션을 아껴주지만 **DDL(테이블 생성/변경)에 제약**이 있어 마이그레이션이 실패할 수 있습니다.
-마이그레이션할 때만 잠깐 Direct URL로 바꿔서 돌리고 되돌리세요.
+**호스트는 둘 다 `pooler.supabase.com`으로 같고 포트만 다릅니다.**
+Transaction pooler(6543)는 커넥션을 쿼리 단위로 돌려써서 DDL에 제약이 있으니,
+마이그레이션할 때만 잠깐 Session pooler(5432)로 바꿔서 돌리고 되돌리세요.
 
 ---
 
@@ -89,7 +90,7 @@ npx prisma migrate dev --name add_something
 
 # 2) prisma/migrations/ 에 생긴 파일을 커밋 → PR
 
-# 3) 머지 후, 팀장이 Direct URL로 공용 DB에 반영
+# 3) 머지 후, 팀장이 Session pooler URL(5432)로 공용 DB에 반영
 npx prisma migrate deploy
 ```
 
@@ -146,5 +147,6 @@ npm run prisma:seed
 **`prepared statement "s0" already exists`**
 → pooler 환경에서 나는 증상입니다. URL 끝에 `?pgbouncer=true`를 붙이세요.
 
-**마이그레이션이 pooler에서 실패**
-→ 정상입니다. Direct URL(5432)로 바꿔서 돌리세요.
+**마이그레이션이 Transaction pooler(6543)에서 실패**
+→ 정상입니다. 같은 호스트의 Session pooler(5432)로 바꿔서 돌리세요.
+Direct(`db.<프로젝트ID>.supabase.co`)는 IPv6 전용이라 쓰지 않습니다.

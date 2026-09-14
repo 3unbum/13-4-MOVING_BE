@@ -5,7 +5,9 @@ import { prisma } from "../src/config/prisma";
  * 개발용 시드 데이터.
  *
  * 실행: npm run prisma:seed
- * 여러 번 실행해도 같은 결과가 되도록 전부 지우고 다시 넣습니다.
+ * 전부 지우고 다시 넣습니다. 난수는 고정 시드라 같은 날 재실행하면 같은 결과입니다.
+ * 단 movingDate는 "오늘 기준 ±N일"로 잡으므로 실행일이 바뀌면 날짜도 함께 밀립니다
+ * (이사 시나리오가 항상 현재 기준으로 유효해야 하므로 의도한 동작입니다).
  *
  * 계정 비밀번호는 전부 `test1234!` 입니다.
  *
@@ -14,7 +16,7 @@ import { prisma } from "../src/config/prisma";
  *                     customer@ / newbie@(프로필 미등록) / mover1~3@
  *   대량 계정       — 일반 유저 20명(user01~20@moving.test)
  *                     기사님 40명(mover01~40@moving.test)
- *   견적 요청 20건  — 일반 유저 20명이 각 1건. 상태를 아래처럼 나눠둡니다.
+ *   견적 요청       — 요청 있는 일반 유저 17명 각 1건 + 고정 계정 2건 = 19건
  *
  * ── 일반 유저 20명의 상태 분포 ───────────────────────────────
  *   user01~03  요청 없음        빈 화면 / "견적 요청하러 가기" CTA
@@ -412,7 +414,6 @@ async function seedBulk(password: string, fixedMoverIds: number[]) {
             avgRating,
             reviewCount,
             confirmedCount: pickInt(0, 80),
-            favoriteCount: pickInt(0, 50),
           },
         },
         moverRegions: { create: regions.map((region) => ({ region })) },
@@ -544,7 +545,11 @@ async function seedBulk(password: string, fixedMoverIds: number[]) {
     }
   }
 
-  // 찜 카운트를 실제 row 수와 맞춥니다 — 위에서 임의값을 넣었으므로 재계산합니다
+  // 찜 카운트를 실제 row 수와 맞춥니다 — 위에서 임의값을 넣었으므로 재계산합니다.
+  // groupBy는 찜이 1건 이상인 기사님만 돌려주므로, 0건인 기사님까지 덮으려면
+  // 전체를 0으로 초기화한 뒤 실제 수를 올려줘야 합니다.
+  await prisma.moverProfile.updateMany({ data: { favoriteCount: 0 } });
+
   const favoriteCounts = await prisma.favorite.groupBy({
     by: ["moverId"],
     _count: { moverId: true },
