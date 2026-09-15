@@ -29,6 +29,43 @@ const mockedPrisma = prisma as unknown as {
 
 beforeEach(() => jest.clearAllMocks());
 
+/**
+ * repository가 estimateInclude로 함께 실어오는 mover·quotationRequest까지 갖춘 견적 목.
+ * 서비스가 DTO(toEstimateResponse)로 평탄화하므로 이 두 관계가 없으면 응답을 만들 수 없습니다.
+ */
+function mockEstimate(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    quotationRequestId: 27,
+    moverId: 1,
+    price: 180000,
+    comment: "견적 코멘트",
+    estimateStatus: "PENDING",
+    mover: {
+      id: 1,
+      name: "김코드",
+      moverProfile: {
+        image: null,
+        nickName: "김코드",
+        career: 7,
+        bio: "한 줄 소개",
+        avgRating: 5,
+        reviewCount: 178,
+        confirmedCount: 334,
+        favoriteCount: 136,
+      },
+    },
+    quotationRequest: {
+      id: 27,
+      category: "SMALL",
+      movingDate: new Date("2026-07-01"),
+      createdAt: new Date("2026-06-24"),
+      targetedRequests: [],
+    },
+    ...overrides,
+  };
+}
+
 describe("getQuotationEstimates", () => {
   test("요청이 없으면 404를 던진다", async () => {
     mockedPrisma.quotationRequest.findUnique.mockResolvedValue(null as never);
@@ -105,12 +142,64 @@ describe("getById", () => {
   });
 
   test("mover 본인 견적이면 반환한다", async () => {
-    const estimate = { moverId: 1 };
-    mockedRepository.getById.mockResolvedValue(estimate as never);
+    mockedRepository.getById.mockResolvedValue(mockEstimate({ moverId: 1 }) as never);
 
     const result = await estimateService.getById(1, 1, "MOVER");
 
-    expect(result).toBe(estimate);
+    expect(result).toMatchObject({ moverId: 1, price: 180000 });
+  });
+
+  test("응답에 기사님 정보가 평탄화되어 들어간다", async () => {
+    mockedRepository.getById.mockResolvedValue(mockEstimate({ moverId: 1 }) as never);
+
+    const result = await estimateService.getById(1, 1, "MOVER");
+
+    expect(result.mover).toMatchObject({
+      nickName: "김코드",
+      career: 7,
+      avgRating: 5,
+      reviewCount: 178,
+      confirmedCount: 334,
+      favoriteCount: 136,
+    });
+  });
+
+  test("지정 목록에 있는 기사님이면 isTargeted가 true다", async () => {
+    mockedRepository.getById.mockResolvedValue(
+      mockEstimate({
+        moverId: 1,
+        quotationRequest: {
+          id: 27,
+          category: "SMALL",
+          movingDate: new Date("2026-07-01"),
+          createdAt: new Date("2026-06-24"),
+          targetedRequests: [{ moverId: 1 }],
+        },
+      }) as never
+    );
+
+    const result = await estimateService.getById(1, 1, "MOVER");
+
+    expect(result.isTargeted).toBe(true);
+  });
+
+  test("지정 목록에 없는 기사님이면 isTargeted가 false다", async () => {
+    mockedRepository.getById.mockResolvedValue(
+      mockEstimate({
+        moverId: 1,
+        quotationRequest: {
+          id: 27,
+          category: "SMALL",
+          movingDate: new Date("2026-07-01"),
+          createdAt: new Date("2026-06-24"),
+          targetedRequests: [{ moverId: 99 }],
+        },
+      }) as never
+    );
+
+    const result = await estimateService.getById(1, 1, "MOVER");
+
+    expect(result.isTargeted).toBe(false);
   });
 
   test("customer 본인 요청이 아니면 403을 던진다", async () => {
@@ -123,13 +212,14 @@ describe("getById", () => {
   });
 
   test("customer 본인 요청이면 반환한다", async () => {
-    const estimate = { moverId: 2, quotationRequestId: 27 };
-    mockedRepository.getById.mockResolvedValue(estimate as never);
+    mockedRepository.getById.mockResolvedValue(
+      mockEstimate({ moverId: 2, quotationRequestId: 27 }) as never
+    );
     mockedPrisma.quotationRequest.findUnique.mockResolvedValue({ userId: 1 } as never);
 
     const result = await estimateService.getById(1, 1, "CUSTOMER");
 
-    expect(result).toBe(estimate);
+    expect(result).toMatchObject({ moverId: 2, quotationRequestId: 27 });
   });
 });
 

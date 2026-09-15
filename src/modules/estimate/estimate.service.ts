@@ -2,16 +2,19 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import type { UserRole } from "../../../generated/prisma/enums.ts";
+import { toEstimateListResponse, toEstimateResponse } from "./estimate.dto";
 import estimateRepository from "./estimate.repository";
 import { estimateListQuery, moverRequestQuery } from "./estimate.type";
 
 async function getMoverEstimates(moverId: number, query: estimateListQuery) {
-  return estimateRepository.getAllByMover({
+  const estimates = await estimateRepository.getAllByMover({
     moverId,
     estimateStatus: query.status,
     cursor: query.cursor,
     take: query.take,
   });
+
+  return toEstimateListResponse(estimates);
 }
 
 async function getQuotationEstimates(
@@ -27,12 +30,14 @@ async function getQuotationEstimates(
   if (!quotationRequest) throw AppError.notFound("요청하신 견적을 찾을 수 없습니다");
   if (quotationRequest.userId !== userId) throw AppError.forbidden();
 
-  return estimateRepository.getAllByQuotationRequest({
+  const estimates = await estimateRepository.getAllByQuotationRequest({
     quotationRequestId,
     estimateStatus: query.status,
     cursor: query.cursor,
     take: query.take,
   });
+
+  return toEstimateListResponse(estimates);
 }
 
 // 대기 중인 견적 (#26) — quotationRequestId 없이, 유저의 활성 요청부터 찾아서 PENDING 견적만 조회
@@ -43,12 +48,14 @@ async function getPendingEstimates(userId: number, query: estimateListQuery) {
   });
   if (!activeRequest) return [];
 
-  return estimateRepository.getAllByQuotationRequest({
+  const estimates = await estimateRepository.getAllByQuotationRequest({
     quotationRequestId: activeRequest.id,
     estimateStatus: query.status ?? "PENDING",
     cursor: query.cursor,
     take: query.take,
   });
+
+  return toEstimateListResponse(estimates);
 }
 
 // 견적 상세조회 — customer/mover 공용, role별 소유권 검증 본인이 보낸 견적만 조회 가능
@@ -58,7 +65,7 @@ async function getById(estimateId: number, userId: number, role: UserRole) {
 
   if (role === "MOVER") {
     if (estimate.moverId !== userId) throw AppError.forbidden();
-    return estimate;
+    return toEstimateResponse(estimate);
   }
 
   const quotationRequest = await prisma.quotationRequest.findUnique({
@@ -67,7 +74,7 @@ async function getById(estimateId: number, userId: number, role: UserRole) {
   });
   if (quotationRequest?.userId !== userId) throw AppError.forbidden();
 
-  return estimate;
+  return toEstimateResponse(estimate);
 }
 
 // reject/save 공통 — 요청 존재 + 활성(PENDING) 상태 검증
