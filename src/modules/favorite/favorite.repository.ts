@@ -13,6 +13,7 @@ const moverCardInclude = {
           nickName: true,
           bio: true,
           image: true,
+          career: true,
           avgRating: true,
           reviewCount: true,
           confirmedCount: true,
