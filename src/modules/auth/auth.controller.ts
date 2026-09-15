@@ -5,7 +5,10 @@ import {
   setAuthCookies,
   setAccessTokenCookie,
   clearAuthCookies,
+  setOAuthSignupTokenCookie,
+  clearOAuthSignupTokenCookie,
   REFRESH_TOKEN_COOKIE,
+  OAUTH_SIGNUP_TOKEN_COOKIE,
 } from "../../common/utils/cookie.util";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
@@ -17,6 +20,18 @@ const getRefreshTokenOrThrow = (req: Request): string => {
     throw new AppError(401, ERROR_CODES.REFRESH_TOKEN_INVALID, "인증 토큰이 없습니다");
   }
   return refreshToken;
+};
+
+const getOAuthSignupTokenOrThrow = (req: Request): string => {
+  const oauthSignupToken = req.cookies?.[OAUTH_SIGNUP_TOKEN_COOKIE];
+  if (!oauthSignupToken) {
+    throw new AppError(
+      401,
+      ERROR_CODES.INVALID_OR_EXPIRED_SIGNUP_TOKEN,
+      "인증 정보가 만료되었습니다. 처음부터 다시 시도해주세요"
+    );
+  }
+  return oauthSignupToken;
 };
 
 export const authController = {
@@ -92,10 +107,10 @@ export const authController = {
       const result = await authService.oauthLogin(provider, req.body);
 
       if (result.isNewUser) {
+        setOAuthSignupTokenCookie(res, result.oauthSignupToken);
         res.json({
           data: {
             isNewUser: true,
-            oauthSignupToken: result.oauthSignupToken,
             providerProfile: result.providerProfile,
           },
         });
@@ -111,7 +126,12 @@ export const authController = {
 
   oauthSignup: (async (req, res, next) => {
     try {
-      const { accessToken, refreshToken, user, hasProfile } = await authService.oauthSignup(req.body);
+      const oauthSignupToken = getOAuthSignupTokenOrThrow(req);
+      const { accessToken, refreshToken, user, hasProfile } = await authService.oauthSignup(
+        oauthSignupToken,
+        req.body
+      );
+      clearOAuthSignupTokenCookie(res);
       setAuthCookies(res, { accessToken, refreshToken });
       res.status(201).json({ data: { user, hasProfile } });
     } catch (error) {
