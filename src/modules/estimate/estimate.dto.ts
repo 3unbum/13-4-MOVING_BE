@@ -1,37 +1,10 @@
 import type { Prisma } from "../../../generated/prisma/client.ts";
+import { estimateInclude } from "./estimate.repository";
 
 /// estimate.repository의 estimateInclude로 조회한 결과 타입.
-/// include를 바꾸면 여기가 함께 따라오도록 Prisma 타입으로 유도합니다.
+/// typeof로 실제 include를 참조하므로, 필드를 추가/삭제해도 이 타입이 자동으로 따라옵니다.
 export type EstimateWithMover = Prisma.EstimateGetPayload<{
-  include: {
-    mover: {
-      select: {
-        id: true;
-        name: true;
-        moverProfile: {
-          select: {
-            image: true;
-            nickName: true;
-            career: true;
-            bio: true;
-            avgRating: true;
-            reviewCount: true;
-            confirmedCount: true;
-            favoriteCount: true;
-          };
-        };
-      };
-    };
-    quotationRequest: {
-      select: {
-        id: true;
-        category: true;
-        movingDate: true;
-        createdAt: true;
-        targetedRequests: { select: { moverId: true } };
-      };
-    };
-  };
+  include: typeof estimateInclude;
 }>;
 
 /// 견적 응답 — FE 견적 카드가 쓰는 형태로 평탄화합니다.

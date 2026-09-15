@@ -20,7 +20,7 @@ const SAVE_MAX_RETRIES = 3;
 /// 추가 집계 없이 조인 한 번으로 끝납니다.
 ///
 /// password 등이 새어나가지 않도록 user는 select로 필요한 필드만 뽑습니다.
-const estimateInclude = {
+export const estimateInclude = {
   mover: {
     select: {
       id: true,
