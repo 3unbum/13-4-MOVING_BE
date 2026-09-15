@@ -62,6 +62,8 @@ const router = Router();
  *                       nickName: { type: string }
  *                       image: { type: string, nullable: true }
  *                       career: { type: integer }
+ *                       bio: { type: string, description: 한 줄 소개 }
+ *                       description: { type: string, description: 상세 설명 }
  *                       avgRating: { type: number }
  *                       reviewCount: { type: integer }
  *                       confirmedCount: { type: integer }
@@ -196,6 +198,7 @@ router.get(
  *                     nickName: { type: string }
  *                     bio: { type: string }
  *                     image: { type: string, nullable: true }
+ *                     career: { type: integer, description: 경력(년) }
  *                     avgRating: { type: number }
  *                     reviewCount: { type: integer }
  *                     confirmedCount: { type: integer }

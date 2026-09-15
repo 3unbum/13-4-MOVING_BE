@@ -72,6 +72,8 @@ export interface MoverListItemResponse {
   nickName: string;
   image: string | null;
   career: number;
+  bio: string;
+  description: string;
   avgRating: number;
   reviewCount: number;
   confirmedCount: number;

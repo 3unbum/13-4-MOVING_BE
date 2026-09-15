@@ -51,6 +51,8 @@ function mapToMoverListItem(profile: MoverListProfile): MoverListItemResponse {
     nickName: profile.nickName,
     image: profile.image,
     career: profile.career,
+    bio: profile.bio,
+    description: profile.description,
     avgRating: Number(profile.avgRating),
     reviewCount: profile.reviewCount,
     confirmedCount: profile.confirmedCount,
