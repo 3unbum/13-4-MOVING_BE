@@ -12,6 +12,46 @@ import {
 
 const SAVE_MAX_RETRIES = 3;
 
+/// 견적 응답에 기사님 정보를 싣기 위한 공통 include.
+///
+/// FE 견적 카드가 이름·평점·경력·찜수까지 한 번에 필요한데 estimate 컬럼만으로는 채울 수 없고,
+/// moverId로 /movers/:id를 견적 수만큼 부르면 N+1이 됩니다. 정렬용 반정규화 컬럼
+/// (avgRating·reviewCount·confirmedCount·favoriteCount)이 이미 moverProfile에 있어
+/// 추가 집계 없이 조인 한 번으로 끝납니다.
+///
+/// password 등이 새어나가지 않도록 user는 select로 필요한 필드만 뽑습니다.
+const estimateInclude = {
+  mover: {
+    select: {
+      id: true,
+      name: true,
+      moverProfile: {
+        select: {
+          image: true,
+          nickName: true,
+          career: true,
+          bio: true,
+          avgRating: true,
+          reviewCount: true,
+          confirmedCount: true,
+          favoriteCount: true,
+        },
+      },
+    },
+  },
+  /// 지정 견적 여부 판별용 — estimate.is_targeted 플래그는 8/28에 미채택이라 조인으로 봅니다.
+  /// 요청에 달린 지정 목록에 이 견적의 기사님이 있으면 지정 견적입니다.
+  quotationRequest: {
+    select: {
+      id: true,
+      category: true,
+      movingDate: true,
+      createdAt: true,
+      targetedRequests: { select: { moverId: true } },
+    },
+  },
+} satisfies Prisma.EstimateInclude;
+
 // 견적 작성 (기사님이 견적 요청에 견적 제시) — 일반견적 5건 상한 체크를 Serializable 트랜잭션으로 원자적 처리
 // isTargeted=false일 때만 상한 체크. 직렬화 충돌(P2034)은 재시도, 중복 제출(P2002)은 ALREADY_ESTIMATED로 변환
 async function save(estimate: EstimateInputField, isTargeted: boolean) {
@@ -100,6 +140,7 @@ async function getAllByMover({
     orderBy: { id: "desc" },
     take,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
+    include: estimateInclude,
   });
 }
 
@@ -115,12 +156,13 @@ async function getAllByQuotationRequest({
     orderBy: { id: "desc" },
     take,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
+    include: estimateInclude,
   });
 }
 
 // 견적서 id 로 상세조회
 async function getById(id: number) {
-  return prisma.estimate.findUnique({ where: { id } });
+  return prisma.estimate.findUnique({ where: { id }, include: estimateInclude });
 }
 
 // 견적 확정(배정) — estimate CONFIRMED, quotationRequest ASSIGNED, mover confirmedCount+1, notification 생성을 한 트랜잭션으로 처리
