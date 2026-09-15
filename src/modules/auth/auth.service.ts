@@ -192,10 +192,10 @@ export const authService = {
   },
 
   /** oauthLogin에서 신규 회원으로 판별된 뒤, 전화번호를 받아 계정 생성을 완료한다. */
-  async oauthSignup(dto: OAuthSignupDto): Promise<AuthResult> {
+  async oauthSignup(oauthSignupToken: string, dto: OAuthSignupDto): Promise<AuthResult> {
     let payload;
     try {
-      payload = oauthSignupTokenUtil.verify(dto.oauthSignupToken);
+      payload = oauthSignupTokenUtil.verify(oauthSignupToken);
     } catch {
       throw new AppError(
         401,

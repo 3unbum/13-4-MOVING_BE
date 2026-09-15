@@ -518,7 +518,8 @@ describe("authService.oauthLogin", () => {
 });
 
 describe("authService.oauthSignup", () => {
-  const dto = { oauthSignupToken: "signup-token", phoneNumber: "01012345678" };
+  const token = "signup-token";
+  const dto = { phoneNumber: "01012345678" };
   const payload = {
     provider: "GOOGLE" as const,
     providerId: "google-1",
@@ -534,7 +535,7 @@ describe("authService.oauthSignup", () => {
     mockedRepository.create.mockResolvedValue(makeUser() as never);
 
     // Exercise
-    const result = await authService.oauthSignup(dto);
+    const result = await authService.oauthSignup(token, dto);
 
     // Assertion
     expect(mockedRepository.create).toHaveBeenCalledWith({
@@ -557,7 +558,7 @@ describe("authService.oauthSignup", () => {
     });
 
     // Exercise
-    const result = authService.oauthSignup(dto);
+    const result = authService.oauthSignup(token, dto);
 
     // Assertion
     await expect(result).rejects.toMatchObject({
@@ -572,7 +573,7 @@ describe("authService.oauthSignup", () => {
     mockedRepository.findBySocialAndRole.mockResolvedValue(makeUser() as never);
 
     // Exercise
-    const result = authService.oauthSignup(dto);
+    const result = authService.oauthSignup(token, dto);
 
     // Assertion
     await expect(result).rejects.toMatchObject({
@@ -589,7 +590,7 @@ describe("authService.oauthSignup", () => {
     mockedRepository.create.mockRejectedValue(makeP2002Error());
 
     // Exercise
-    const result = authService.oauthSignup(dto);
+    const result = authService.oauthSignup(token, dto);
 
     // Assertion
     await expect(result).rejects.toMatchObject({
@@ -606,7 +607,7 @@ describe("authService.oauthSignup", () => {
     mockedRepository.create.mockRejectedValue(unknownError);
 
     // Exercise
-    const result = authService.oauthSignup(dto);
+    const result = authService.oauthSignup(token, dto);
 
     // Assertion
     await expect(result).rejects.toBe(unknownError);
