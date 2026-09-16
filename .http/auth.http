@@ -76,11 +76,10 @@ Content-Type: application/json
   "role": "CUSTOMER"
 }
 
-### OAuth 회원가입 완료 (신규회원 판별 시 발급되는 oauthSignupToken 필요)
+### OAuth 회원가입 완료 (신규회원 판별 시 발급되는 oauthSignupToken 쿠키 필요 - 위 요청 후 쿠키 자동 첨부)
 POST {{baseUrl}}/auth/oauth/signup
 Content-Type: application/json
 
 {
-  "oauthSignupToken": "OAUTH_SIGNUP_TOKEN",
   "phoneNumber": "01012345678"
 }

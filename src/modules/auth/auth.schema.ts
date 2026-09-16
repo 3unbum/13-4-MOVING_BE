@@ -37,7 +37,6 @@ export const oauthLoginSchema = z.object({
 });
 
 export const oauthSignupSchema = z.object({
-  oauthSignupToken: z.string().min(1, "oauthSignupToken이 필요합니다"),
   phoneNumber: z.string().regex(/^01[016789]\d{7,8}$/, "올바른 전화번호 형식이 아닙니다"),
 });
 

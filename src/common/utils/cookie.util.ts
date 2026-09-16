@@ -8,6 +8,7 @@ import { env, isProduction } from "../../config/env";
  */
 export const ACCESS_TOKEN_COOKIE = "accessToken";
 export const REFRESH_TOKEN_COOKIE = "refreshToken";
+export const OAUTH_SIGNUP_TOKEN_COOKIE = "oauthSignupToken";
 
 const baseCookieOptions: CookieOptions = {
   httpOnly: true,
@@ -38,4 +39,15 @@ export const setAuthCookies = (
 export const clearAuthCookies = (res: Response): void => {
   res.clearCookie(ACCESS_TOKEN_COOKIE, baseCookieOptions);
   res.clearCookie(REFRESH_TOKEN_COOKIE, baseCookieOptions);
+};
+
+export const setOAuthSignupTokenCookie = (res: Response, oauthSignupToken: string): void => {
+  res.cookie(OAUTH_SIGNUP_TOKEN_COOKIE, oauthSignupToken, {
+    ...baseCookieOptions,
+    maxAge: ms(env.OAUTH_SIGNUP_TOKEN_EXPIRES_IN as ms.StringValue),
+  });
+};
+
+export const clearOAuthSignupTokenCookie = (res: Response): void => {
+  res.clearCookie(OAUTH_SIGNUP_TOKEN_COOKIE, baseCookieOptions);
 };
