@@ -3,6 +3,7 @@ export interface FavoriteMoverCard {
   nickName: string;
   bio: string;
   image: string | null;
+  career: number;
   avgRating: number;
   reviewCount: number;
   confirmedCount: number;

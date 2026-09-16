@@ -85,6 +85,7 @@ describe("POST /api/favorites", () => {
       nickName: "믿음직한 이사왕",
       bio: "고객 만족을 최우선으로 생각합니다",
       image: null,
+      career: 7,
       avgRating: 4.5,
       reviewCount: 12,
       confirmedCount: 8,

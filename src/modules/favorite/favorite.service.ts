@@ -23,6 +23,7 @@ function toCard(
     nickName: profile.nickName,
     bio: profile.bio,
     image: profile.image,
+    career: profile.career,
     avgRating: toRating(profile.avgRating),
     reviewCount: profile.reviewCount,
     confirmedCount: profile.confirmedCount,
