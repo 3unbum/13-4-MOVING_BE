@@ -149,6 +149,11 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
     ? await prisma.moverRegion.findMany({ where: { moverId }, select: { region: true } })
     : [];
 
+  // 고객 이름 부분 검색 — 기사님 찾기(mover.repository)의 keyword와 같은 방식입니다
+  const searchWhere = query.search
+    ? { user: { name: { contains: query.search, mode: "insensitive" as const } } }
+    : {};
+
   // 지정받은 시점순은 targetedRequest 기준으로 정렬해야 해서 조회 자체를 다르게 함
   if (query.sort === "targetedAt") {
     const targetedRequests = await prisma.targetedRequest.findMany({
@@ -159,6 +164,7 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
           estimates: { none: { moverId } },
           ...(query.category && { category: query.category }),
           ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
+          ...searchWhere,
         },
       },
       include: { quotationRequest: { include: moverRequestInclude } },
@@ -179,6 +185,7 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
       ...(query.category && { category: query.category }),
       ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
       ...(query.isTargeted && { targetedRequests: { some: { moverId } } }),
+      ...searchWhere,
     },
     include: moverRequestInclude,
     orderBy: query.sort === "movingDate" ? { movingDate: "asc" } : { id: "desc" },

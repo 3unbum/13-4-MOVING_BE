@@ -398,6 +398,23 @@ describe("getMoverRequests", () => {
     expect(result[0]).not.toHaveProperty("user");
   });
 
+  it("search를 넘기면 고객 이름으로 거른다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery({ search: "홍" }));
+
+    const where = mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where;
+    expect(where.user).toEqual({ name: { contains: "홍", mode: "insensitive" } });
+  });
+
+  it("search가 없으면 이름 조건을 걸지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where.user).toBeUndefined();
+  });
+
   it("지정받은 시점순(targetedAt)에서도 이름이 들어간다", async () => {
     // 이 정렬만 targetedRequest를 거쳐 조회하므로 경로가 갈립니다
     mockedPrisma.targetedRequest.findMany.mockResolvedValue([

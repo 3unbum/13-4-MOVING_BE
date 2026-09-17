@@ -37,4 +37,9 @@ export const moverRequestQuerySchema = estimateListQuerySchema.omit({ status: tr
   category: z.enum(ServiceType).optional(),
   // latest(기본, 요청 등록 최신순) | movingDate(이사 빠른순) | targetedAt(지정받은 시점순)
   sort: z.enum(["latest", "movingDate", "targetedAt"]).optional(),
+  // 고객 이름 부분 검색. 빈 문자열은 "검색 안 함"으로 취급합니다(?search= 로 붙는 경우)
+  search: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().trim().optional()
+  ),
 });
