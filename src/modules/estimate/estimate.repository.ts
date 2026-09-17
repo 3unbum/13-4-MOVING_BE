@@ -24,9 +24,16 @@ const SAVE_MAX_RETRIES = 3;
 ///
 /// 카드에 "OOO 고객님"이 들어가는데 응답에 userId만 있어 이름을 채울 수 없었습니다.
 /// user를 통째로 넣으면 password·refreshToken까지 나가므로 select로 이름만 뽑습니다.
-export const moverRequestInclude = {
-  user: { select: { name: true } },
-} as const;
+///
+/// `targetedRequests`는 **조회한 기사님 본인의 지정 여부**만 확인하면 되므로
+/// moverId로 걸러 최대 1건만 가져옵니다. 전체를 가져오면 다른 기사님이 지정됐다는
+/// 사실까지 응답에 실립니다. 반려는 지정 견적 요청에만 허용되고(estimate.service)
+/// 카드·모달의 "지정 견적 요청" 칩도 이 값으로 그립니다.
+export const moverRequestInclude = (moverId: number) =>
+  ({
+    user: { select: { name: true } },
+    targetedRequests: { where: { moverId }, select: { id: true }, take: 1 },
+  }) as const;
 
 export const estimateInclude = {
   mover: {

@@ -48,17 +48,20 @@ export function toEstimateListResponse(estimates: EstimateWithMover[]) {
 
 /// moverRequestInclude로 조회한 받은 요청 타입.
 export type MoverRequestWithUser = Prisma.QuotationRequestGetPayload<{
-  include: typeof moverRequestInclude;
+  include: ReturnType<typeof moverRequestInclude>;
 }>;
 
-/// 받은 요청 응답 — 카드가 쓰는 형태로 고객 이름을 평탄화합니다.
+/// 받은 요청 응답 — 카드가 쓰는 형태로 고객 이름과 지정 여부를 평탄화합니다.
 ///
 /// 중첩(`user.name`)을 그대로 두면 호출부마다 옵셔널 체이닝이 붙고, user 객체가
 /// 통째로 노출돼 필드가 늘어날 때 새어나갈 여지가 생깁니다.
+///
+/// `targetedRequests`는 moverId로 걸러 담기므로(estimate.repository) 존재 여부만
+/// 보면 됩니다. 배열을 그대로 내보내면 프론트가 의미를 다시 해석해야 합니다.
 export function toMoverRequestResponse(request: MoverRequestWithUser) {
-  const { user, ...rest } = request;
+  const { user, targetedRequests, ...rest } = request;
 
-  return { ...rest, userName: user.name };
+  return { ...rest, userName: user.name, isTargeted: targetedRequests.length > 0 };
 }
 
 export function toMoverRequestListResponse(requests: MoverRequestWithUser[]) {

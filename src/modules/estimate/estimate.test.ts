@@ -12,6 +12,11 @@ jest.mock("./estimate.repository", () => ({
     save: jest.fn(),
     confirm: jest.fn(),
   },
+  // include는 목이 아니라 실제 모양 그대로 써야 where/include 단언이 의미를 가집니다
+  moverRequestInclude: (moverId: number) => ({
+    user: { select: { name: true } },
+    targetedRequests: { where: { moverId }, select: { id: true }, take: 1 },
+  }),
 }));
 
 jest.mock("@/config/prisma", () => ({
@@ -357,8 +362,10 @@ describe("confirm", () => {
 });
 
 /**
- * 받은 요청 목(mock) — moverRequestInclude가 user를 함께 실어옵니다.
+ * 받은 요청 목(mock) — moverRequestInclude가 user와 targetedRequests를 함께 실어옵니다.
  * 카드에 "OOO 고객님"이 들어가는데 응답에 userId뿐이라 이름을 채울 수 없었습니다(#88).
+ *
+ * `targetedRequests`는 조회한 기사님 것만 걸러 담기므로 기본값은 빈 배열(= 일반 요청)입니다.
  */
 function mockMoverRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -369,6 +376,7 @@ function mockMoverRequest(overrides: Record<string, unknown> = {}) {
     fromRegion: "SEOUL",
     quotationStatus: "PENDING",
     user: { name: "최지우" },
+    targetedRequests: [],
     ...overrides,
   };
 }
@@ -413,6 +421,62 @@ describe("getMoverRequests", () => {
     await estimateService.getMoverRequests(1, baseQuery());
 
     expect(mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where.user).toBeUndefined();
+  });
+
+  it("지정 견적 요청이면 isTargeted가 true다", async () => {
+    // 반려는 지정 견적 요청에만 허용되고 카드·모달 칩도 이 값으로 그립니다
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([
+      mockMoverRequest({ targetedRequests: [{ id: 7 }] }),
+    ]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(result[0]).toMatchObject({ isTargeted: true });
+  });
+
+  it("일반 요청이면 isTargeted가 false다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(result[0]).toMatchObject({ isTargeted: false });
+  });
+
+  it("targetedRequests 배열을 응답에 노출하지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([
+      mockMoverRequest({ targetedRequests: [{ id: 7 }] }),
+    ]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    // 배열을 그대로 내보내면 프론트가 의미를 다시 해석해야 합니다
+    expect(result[0]).not.toHaveProperty("targetedRequests");
+  });
+
+  it("본인의 지정 여부만 보도록 moverId로 걸러 조회한다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(9, baseQuery());
+
+    const include = mockedPrisma.quotationRequest.findMany.mock.calls[0][0].include;
+    expect(include.targetedRequests).toMatchObject({ where: { moverId: 9 } });
+  });
+
+  it("이사 유형을 여러 개 넘기면 모두 걸러낸다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery({ category: ["SMALL", "HOME"] }));
+
+    const where = mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where;
+    expect(where.category).toEqual({ in: ["SMALL", "HOME"] });
+  });
+
+  it("이사 유형이 없으면 category 조건을 걸지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where.category).toBeUndefined();
   });
 
   it("지정받은 시점순(targetedAt)에서도 이름이 들어간다", async () => {
