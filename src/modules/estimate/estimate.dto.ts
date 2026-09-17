@@ -24,6 +24,11 @@ export function toEstimateResponse(estimate: EstimateWithMover) {
       category: quotationRequest.category,
       movingDate: quotationRequest.movingDate,
       createdAt: quotationRequest.createdAt,
+      fromAddress: quotationRequest.fromAddress,
+      toAddress: quotationRequest.toAddress,
+      /// 카드·상세의 "OOO 고객님" — 중첩(`user.name`)을 그대로 두면 호출부마다
+      /// 옵셔널 체이닝이 붙고 user 객체가 통째로 노출됩니다.
+      userName: quotationRequest.user.name,
     },
     mover: {
       id: mover.id,

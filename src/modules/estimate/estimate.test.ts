@@ -62,13 +62,26 @@ function mockEstimate(overrides: Record<string, unknown> = {}) {
         favoriteCount: 136,
       },
     },
-    quotationRequest: {
-      id: 27,
-      category: "SMALL",
-      movingDate: new Date("2026-07-01"),
-      createdAt: new Date("2026-06-24"),
-      targetedRequests: [],
-    },
+    quotationRequest: mockQuotationRequest(),
+    ...overrides,
+  };
+}
+
+/**
+ * 견적에 딸린 견적 요청 목.
+ *
+ * 고객 이름과 주소는 "내 견적 관리"(#88) 카드·상세가 씁니다 — 없으면 DTO가 터집니다.
+ */
+function mockQuotationRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 27,
+    category: "SMALL",
+    movingDate: new Date("2026-07-01"),
+    createdAt: new Date("2026-06-24"),
+    fromAddress: "서울 중구 삼일대로 343",
+    toAddress: "서울 강남구 선릉로 428",
+    targetedRequests: [],
+    user: { name: "김민서" },
     ...overrides,
   };
 }
@@ -171,17 +184,33 @@ describe("getById", () => {
     });
   });
 
+  test("응답에 고객 이름과 주소가 들어간다", async () => {
+    // "내 견적 관리" 카드·상세가 "OOO 고객님"과 출발지·도착지를 그립니다 (#88)
+    mockedRepository.getById.mockResolvedValue(mockEstimate({ moverId: 1 }) as never);
+
+    const result = await estimateService.getById(1, 1, "MOVER");
+
+    expect(result.quotationRequest).toMatchObject({
+      userName: "김민서",
+      fromAddress: "서울 중구 삼일대로 343",
+      toAddress: "서울 강남구 선릉로 428",
+    });
+  });
+
+  test("고객 user 객체를 응답에 노출하지 않는다", async () => {
+    mockedRepository.getById.mockResolvedValue(mockEstimate({ moverId: 1 }) as never);
+
+    const result = await estimateService.getById(1, 1, "MOVER");
+
+    // user를 통째로 내보내면 필드가 늘어날 때 password 등이 새어나갑니다
+    expect(result.quotationRequest).not.toHaveProperty("user");
+  });
+
   test("지정 목록에 있는 기사님이면 isTargeted가 true다", async () => {
     mockedRepository.getById.mockResolvedValue(
       mockEstimate({
         moverId: 1,
-        quotationRequest: {
-          id: 27,
-          category: "SMALL",
-          movingDate: new Date("2026-07-01"),
-          createdAt: new Date("2026-06-24"),
-          targetedRequests: [{ moverId: 1 }],
-        },
+        quotationRequest: mockQuotationRequest({ targetedRequests: [{ moverId: 1 }] }),
       }) as never
     );
 
@@ -194,13 +223,7 @@ describe("getById", () => {
     mockedRepository.getById.mockResolvedValue(
       mockEstimate({
         moverId: 1,
-        quotationRequest: {
-          id: 27,
-          category: "SMALL",
-          movingDate: new Date("2026-07-01"),
-          createdAt: new Date("2026-06-24"),
-          targetedRequests: [{ moverId: 99 }],
-        },
+        quotationRequest: mockQuotationRequest({ targetedRequests: [{ moverId: 99 }] }),
       }) as never
     );
 

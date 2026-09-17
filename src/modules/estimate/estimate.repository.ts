@@ -56,13 +56,20 @@ export const estimateInclude = {
   },
   /// 지정 견적 여부 판별용 — estimate.is_targeted 플래그는 8/28에 미채택이라 조인으로 봅니다.
   /// 요청에 달린 지정 목록에 이 견적의 기사님이 있으면 지정 견적입니다.
+  ///
+  /// 고객 이름과 주소는 "내 견적 관리"(#88) 카드·상세가 씁니다.
+  /// 카드에 "OOO 고객님"과 출발지·도착지가 들어가는데 id·category·movingDate만으로는
+  /// 채울 수 없었습니다. user는 password 등이 새어나가지 않도록 select로 이름만 뽑습니다.
   quotationRequest: {
     select: {
       id: true,
       category: true,
       movingDate: true,
       createdAt: true,
+      fromAddress: true,
+      toAddress: true,
       targetedRequests: { select: { moverId: true } },
+      user: { select: { name: true } },
     },
   },
 } satisfies Prisma.EstimateInclude;
