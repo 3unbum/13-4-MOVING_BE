@@ -20,6 +20,14 @@ const SAVE_MAX_RETRIES = 3;
 /// 추가 집계 없이 조인 한 번으로 끝납니다.
 ///
 /// password 등이 새어나가지 않도록 user는 select로 필요한 필드만 뽑습니다.
+/// 받은 요청(기사님) 조회용 include.
+///
+/// 카드에 "OOO 고객님"이 들어가는데 응답에 userId만 있어 이름을 채울 수 없었습니다.
+/// user를 통째로 넣으면 password·refreshToken까지 나가므로 select로 이름만 뽑습니다.
+export const moverRequestInclude = {
+  user: { select: { name: true } },
+} as const;
+
 export const estimateInclude = {
   mover: {
     select: {

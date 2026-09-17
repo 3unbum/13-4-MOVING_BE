@@ -2,8 +2,12 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import type { UserRole } from "../../../generated/prisma/enums.ts";
-import { toEstimateListResponse, toEstimateResponse } from "./estimate.dto";
-import estimateRepository from "./estimate.repository";
+import {
+  toEstimateListResponse,
+  toEstimateResponse,
+  toMoverRequestListResponse,
+} from "./estimate.dto";
+import estimateRepository, { moverRequestInclude } from "./estimate.repository";
 import { estimateListQuery, moverRequestQuery } from "./estimate.type";
 
 async function getMoverEstimates(moverId: number, query: estimateListQuery) {
@@ -157,7 +161,7 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
           ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
         },
       },
-      include: { quotationRequest: true },
+      include: { quotationRequest: { include: moverRequestInclude } },
       orderBy: { createdAt: "asc" },
       take: query.take ?? 6,
       ...(query.cursor && {
@@ -165,10 +169,10 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
         cursor: { quotationRequestId_moverId: { quotationRequestId: query.cursor, moverId } },
       }),
     });
-    return targetedRequests.map((t) => t.quotationRequest);
+    return toMoverRequestListResponse(targetedRequests.map((t) => t.quotationRequest));
   }
 
-  return prisma.quotationRequest.findMany({
+  const requests = await prisma.quotationRequest.findMany({
     where: {
       quotationStatus: "PENDING",
       estimates: { none: { moverId } },
@@ -176,10 +180,13 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
       ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
       ...(query.isTargeted && { targetedRequests: { some: { moverId } } }),
     },
+    include: moverRequestInclude,
     orderBy: query.sort === "movingDate" ? { movingDate: "asc" } : { id: "desc" },
     take: query.take ?? 6,
     ...(query.cursor && { skip: 1, cursor: { id: query.cursor } }),
   });
+
+  return toMoverRequestListResponse(requests);
 }
 
 export {

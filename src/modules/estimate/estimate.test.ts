@@ -16,15 +16,17 @@ jest.mock("./estimate.repository", () => ({
 
 jest.mock("@/config/prisma", () => ({
   prisma: {
-    quotationRequest: { findUnique: jest.fn(), findFirst: jest.fn() },
-    targetedRequest: { findUnique: jest.fn() },
+    quotationRequest: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+    targetedRequest: { findUnique: jest.fn(), findMany: jest.fn() },
+    moverRegion: { findMany: jest.fn() },
   },
 }));
 
 const mockedRepository = jest.mocked(estimateRepository);
 const mockedPrisma = prisma as unknown as {
-  quotationRequest: { findUnique: jest.Mock; findFirst: jest.Mock };
-  targetedRequest: { findUnique: jest.Mock };
+  quotationRequest: { findUnique: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
+  targetedRequest: { findUnique: jest.Mock; findMany: jest.Mock };
+  moverRegion: { findMany: jest.Mock };
 };
 
 beforeEach(() => jest.clearAllMocks());
@@ -351,5 +353,60 @@ describe("confirm", () => {
     await estimateService.confirm(1, 1);
 
     expect(mockedRepository.confirm).toHaveBeenCalledWith(1, 10);
+  });
+});
+
+/**
+ * 받은 요청 목(mock) — moverRequestInclude가 user를 함께 실어옵니다.
+ * 카드에 "OOO 고객님"이 들어가는데 응답에 userId뿐이라 이름을 채울 수 없었습니다(#88).
+ */
+function mockMoverRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 41,
+    userId: 180,
+    category: "SMALL",
+    movingDate: new Date("2026-09-30"),
+    fromRegion: "SEOUL",
+    quotationStatus: "PENDING",
+    user: { name: "최지우" },
+    ...overrides,
+  };
+}
+
+/** zod transform 후 타입 — isServiceRegion·isTargeted는 항상 boolean으로 들어옵니다 */
+function baseQuery(overrides: Record<string, unknown> = {}) {
+  return { isServiceRegion: false, isTargeted: false, ...overrides } as Parameters<
+    typeof estimateService.getMoverRequests
+  >[1];
+}
+
+describe("getMoverRequests", () => {
+  it("고객 이름을 userName으로 평탄화한다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(result[0]).toMatchObject({ id: 41, userName: "최지우" });
+  });
+
+  it("user 객체를 응답에 노출하지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    // user를 통째로 내보내면 필드가 늘어날 때 password 등이 새어나갑니다
+    expect(result[0]).not.toHaveProperty("user");
+  });
+
+  it("지정받은 시점순(targetedAt)에서도 이름이 들어간다", async () => {
+    // 이 정렬만 targetedRequest를 거쳐 조회하므로 경로가 갈립니다
+    mockedPrisma.targetedRequest.findMany.mockResolvedValue([
+      { quotationRequest: mockMoverRequest({ id: 45, user: { name: "윤지호" } }) },
+    ]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery({ sort: "targetedAt" }));
+
+    expect(result[0]).toMatchObject({ id: 45, userName: "윤지호" });
+    expect(mockedPrisma.quotationRequest.findMany).not.toHaveBeenCalled();
   });
 });

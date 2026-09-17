@@ -1,5 +1,5 @@
 import type { Prisma } from "../../../generated/prisma/client.ts";
-import { estimateInclude } from "./estimate.repository";
+import { estimateInclude, moverRequestInclude } from "./estimate.repository";
 
 /// estimate.repository의 estimateInclude로 조회한 결과 타입.
 /// typeof로 실제 include를 참조하므로, 필드를 추가/삭제해도 이 타입이 자동으로 따라옵니다.
@@ -44,4 +44,23 @@ export function toEstimateResponse(estimate: EstimateWithMover) {
 
 export function toEstimateListResponse(estimates: EstimateWithMover[]) {
   return estimates.map(toEstimateResponse);
+}
+
+/// moverRequestInclude로 조회한 받은 요청 타입.
+export type MoverRequestWithUser = Prisma.QuotationRequestGetPayload<{
+  include: typeof moverRequestInclude;
+}>;
+
+/// 받은 요청 응답 — 카드가 쓰는 형태로 고객 이름을 평탄화합니다.
+///
+/// 중첩(`user.name`)을 그대로 두면 호출부마다 옵셔널 체이닝이 붙고, user 객체가
+/// 통째로 노출돼 필드가 늘어날 때 새어나갈 여지가 생깁니다.
+export function toMoverRequestResponse(request: MoverRequestWithUser) {
+  const { user, ...rest } = request;
+
+  return { ...rest, userName: user.name };
+}
+
+export function toMoverRequestListResponse(requests: MoverRequestWithUser[]) {
+  return requests.map(toMoverRequestResponse);
 }
