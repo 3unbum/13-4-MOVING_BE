@@ -34,7 +34,22 @@ export const moverRequestQuerySchema = estimateListQuerySchema.omit({ status: tr
     .enum(["true", "false"])
     .optional()
     .transform((v) => v === "true"),
-  category: z.enum(ServiceType).optional(),
+  // 이사 유형은 중복 선택입니다(피그마 필터 시안). `?category=SMALL&category=HOME`처럼
+  // 같은 키를 반복하면 Express가 배열로 넘겨주고, 하나만 오면 문자열이라 배열로 통일합니다.
+  // 빈 배열은 "전체"와 같아서 필터를 걸지 않도록 undefined로 떨굽니다.
+  category: z.preprocess(
+    (value) => {
+      if (value === undefined) return undefined;
+      const list = Array.isArray(value) ? value : [value];
+      return list.length > 0 ? list : undefined;
+    },
+    z.array(z.enum(ServiceType)).nonempty().optional()
+  ),
   // latest(기본, 요청 등록 최신순) | movingDate(이사 빠른순) | targetedAt(지정받은 시점순)
   sort: z.enum(["latest", "movingDate", "targetedAt"]).optional(),
+  // 고객 이름 부분 검색. 빈 문자열은 "검색 안 함"으로 취급합니다(?search= 로 붙는 경우)
+  search: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().trim().optional()
+  ),
 });

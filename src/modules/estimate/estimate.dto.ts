@@ -1,5 +1,5 @@
 import type { Prisma } from "../../../generated/prisma/client.ts";
-import { estimateInclude } from "./estimate.repository";
+import { estimateInclude, moverRequestInclude } from "./estimate.repository";
 
 /// estimate.repository의 estimateInclude로 조회한 결과 타입.
 /// typeof로 실제 include를 참조하므로, 필드를 추가/삭제해도 이 타입이 자동으로 따라옵니다.
@@ -24,6 +24,11 @@ export function toEstimateResponse(estimate: EstimateWithMover) {
       category: quotationRequest.category,
       movingDate: quotationRequest.movingDate,
       createdAt: quotationRequest.createdAt,
+      fromAddress: quotationRequest.fromAddress,
+      toAddress: quotationRequest.toAddress,
+      /// 카드·상세의 "OOO 고객님" — 중첩(`user.name`)을 그대로 두면 호출부마다
+      /// 옵셔널 체이닝이 붙고 user 객체가 통째로 노출됩니다.
+      userName: quotationRequest.user.name,
     },
     mover: {
       id: mover.id,
@@ -44,4 +49,26 @@ export function toEstimateResponse(estimate: EstimateWithMover) {
 
 export function toEstimateListResponse(estimates: EstimateWithMover[]) {
   return estimates.map(toEstimateResponse);
+}
+
+/// moverRequestInclude로 조회한 받은 요청 타입.
+export type MoverRequestWithUser = Prisma.QuotationRequestGetPayload<{
+  include: ReturnType<typeof moverRequestInclude>;
+}>;
+
+/// 받은 요청 응답 — 카드가 쓰는 형태로 고객 이름과 지정 여부를 평탄화합니다.
+///
+/// 중첩(`user.name`)을 그대로 두면 호출부마다 옵셔널 체이닝이 붙고, user 객체가
+/// 통째로 노출돼 필드가 늘어날 때 새어나갈 여지가 생깁니다.
+///
+/// `targetedRequests`는 moverId로 걸러 담기므로(estimate.repository) 존재 여부만
+/// 보면 됩니다. 배열을 그대로 내보내면 프론트가 의미를 다시 해석해야 합니다.
+export function toMoverRequestResponse(request: MoverRequestWithUser) {
+  const { user, targetedRequests, ...rest } = request;
+
+  return { ...rest, userName: user.name, isTargeted: targetedRequests.length > 0 };
+}
+
+export function toMoverRequestListResponse(requests: MoverRequestWithUser[]) {
+  return requests.map(toMoverRequestResponse);
 }

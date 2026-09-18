@@ -12,19 +12,26 @@ jest.mock("./estimate.repository", () => ({
     save: jest.fn(),
     confirm: jest.fn(),
   },
+  // include는 목이 아니라 실제 모양 그대로 써야 where/include 단언이 의미를 가집니다
+  moverRequestInclude: (moverId: number) => ({
+    user: { select: { name: true } },
+    targetedRequests: { where: { moverId }, select: { id: true }, take: 1 },
+  }),
 }));
 
 jest.mock("@/config/prisma", () => ({
   prisma: {
-    quotationRequest: { findUnique: jest.fn(), findFirst: jest.fn() },
-    targetedRequest: { findUnique: jest.fn() },
+    quotationRequest: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+    targetedRequest: { findUnique: jest.fn(), findMany: jest.fn() },
+    moverRegion: { findMany: jest.fn() },
   },
 }));
 
 const mockedRepository = jest.mocked(estimateRepository);
 const mockedPrisma = prisma as unknown as {
-  quotationRequest: { findUnique: jest.Mock; findFirst: jest.Mock };
-  targetedRequest: { findUnique: jest.Mock };
+  quotationRequest: { findUnique: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
+  targetedRequest: { findUnique: jest.Mock; findMany: jest.Mock };
+  moverRegion: { findMany: jest.Mock };
 };
 
 beforeEach(() => jest.clearAllMocks());
@@ -55,13 +62,26 @@ function mockEstimate(overrides: Record<string, unknown> = {}) {
         favoriteCount: 136,
       },
     },
-    quotationRequest: {
-      id: 27,
-      category: "SMALL",
-      movingDate: new Date("2026-07-01"),
-      createdAt: new Date("2026-06-24"),
-      targetedRequests: [],
-    },
+    quotationRequest: mockQuotationRequest(),
+    ...overrides,
+  };
+}
+
+/**
+ * 견적에 딸린 견적 요청 목.
+ *
+ * 고객 이름과 주소는 "내 견적 관리"(#88) 카드·상세가 씁니다 — 없으면 DTO가 터집니다.
+ */
+function mockQuotationRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 27,
+    category: "SMALL",
+    movingDate: new Date("2026-07-01"),
+    createdAt: new Date("2026-06-24"),
+    fromAddress: "서울 중구 삼일대로 343",
+    toAddress: "서울 강남구 선릉로 428",
+    targetedRequests: [],
+    user: { name: "김민서" },
     ...overrides,
   };
 }
@@ -164,17 +184,33 @@ describe("getById", () => {
     });
   });
 
+  test("응답에 고객 이름과 주소가 들어간다", async () => {
+    // "내 견적 관리" 카드·상세가 "OOO 고객님"과 출발지·도착지를 그립니다 (#88)
+    mockedRepository.getById.mockResolvedValue(mockEstimate({ moverId: 1 }) as never);
+
+    const result = await estimateService.getById(1, 1, "MOVER");
+
+    expect(result.quotationRequest).toMatchObject({
+      userName: "김민서",
+      fromAddress: "서울 중구 삼일대로 343",
+      toAddress: "서울 강남구 선릉로 428",
+    });
+  });
+
+  test("고객 user 객체를 응답에 노출하지 않는다", async () => {
+    mockedRepository.getById.mockResolvedValue(mockEstimate({ moverId: 1 }) as never);
+
+    const result = await estimateService.getById(1, 1, "MOVER");
+
+    // user를 통째로 내보내면 필드가 늘어날 때 password 등이 새어나갑니다
+    expect(result.quotationRequest).not.toHaveProperty("user");
+  });
+
   test("지정 목록에 있는 기사님이면 isTargeted가 true다", async () => {
     mockedRepository.getById.mockResolvedValue(
       mockEstimate({
         moverId: 1,
-        quotationRequest: {
-          id: 27,
-          category: "SMALL",
-          movingDate: new Date("2026-07-01"),
-          createdAt: new Date("2026-06-24"),
-          targetedRequests: [{ moverId: 1 }],
-        },
+        quotationRequest: mockQuotationRequest({ targetedRequests: [{ moverId: 1 }] }),
       }) as never
     );
 
@@ -187,13 +223,7 @@ describe("getById", () => {
     mockedRepository.getById.mockResolvedValue(
       mockEstimate({
         moverId: 1,
-        quotationRequest: {
-          id: 27,
-          category: "SMALL",
-          movingDate: new Date("2026-07-01"),
-          createdAt: new Date("2026-06-24"),
-          targetedRequests: [{ moverId: 99 }],
-        },
+        quotationRequest: mockQuotationRequest({ targetedRequests: [{ moverId: 99 }] }),
       }) as never
     );
 
@@ -351,5 +381,136 @@ describe("confirm", () => {
     await estimateService.confirm(1, 1);
 
     expect(mockedRepository.confirm).toHaveBeenCalledWith(1, 10);
+  });
+});
+
+/**
+ * 받은 요청 목(mock) — moverRequestInclude가 user와 targetedRequests를 함께 실어옵니다.
+ * 카드에 "OOO 고객님"이 들어가는데 응답에 userId뿐이라 이름을 채울 수 없었습니다(#88).
+ *
+ * `targetedRequests`는 조회한 기사님 것만 걸러 담기므로 기본값은 빈 배열(= 일반 요청)입니다.
+ */
+function mockMoverRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 41,
+    userId: 180,
+    category: "SMALL",
+    movingDate: new Date("2026-09-30"),
+    fromRegion: "SEOUL",
+    quotationStatus: "PENDING",
+    user: { name: "최지우" },
+    targetedRequests: [],
+    ...overrides,
+  };
+}
+
+/** zod transform 후 타입 — isServiceRegion·isTargeted는 항상 boolean으로 들어옵니다 */
+function baseQuery(overrides: Record<string, unknown> = {}) {
+  return { isServiceRegion: false, isTargeted: false, ...overrides } as Parameters<
+    typeof estimateService.getMoverRequests
+  >[1];
+}
+
+describe("getMoverRequests", () => {
+  it("고객 이름을 userName으로 평탄화한다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(result[0]).toMatchObject({ id: 41, userName: "최지우" });
+  });
+
+  it("user 객체를 응답에 노출하지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    // user를 통째로 내보내면 필드가 늘어날 때 password 등이 새어나갑니다
+    expect(result[0]).not.toHaveProperty("user");
+  });
+
+  it("search를 넘기면 고객 이름으로 거른다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery({ search: "홍" }));
+
+    const where = mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where;
+    expect(where.user).toEqual({ name: { contains: "홍", mode: "insensitive" } });
+  });
+
+  it("search가 없으면 이름 조건을 걸지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where.user).toBeUndefined();
+  });
+
+  it("지정 견적 요청이면 isTargeted가 true다", async () => {
+    // 반려는 지정 견적 요청에만 허용되고 카드·모달 칩도 이 값으로 그립니다
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([
+      mockMoverRequest({ targetedRequests: [{ id: 7 }] }),
+    ]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(result[0]).toMatchObject({ isTargeted: true });
+  });
+
+  it("일반 요청이면 isTargeted가 false다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(result[0]).toMatchObject({ isTargeted: false });
+  });
+
+  it("targetedRequests 배열을 응답에 노출하지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([
+      mockMoverRequest({ targetedRequests: [{ id: 7 }] }),
+    ]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery());
+
+    // 배열을 그대로 내보내면 프론트가 의미를 다시 해석해야 합니다
+    expect(result[0]).not.toHaveProperty("targetedRequests");
+  });
+
+  it("본인의 지정 여부만 보도록 moverId로 걸러 조회한다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(9, baseQuery());
+
+    const include = mockedPrisma.quotationRequest.findMany.mock.calls[0][0].include;
+    expect(include.targetedRequests).toMatchObject({ where: { moverId: 9 } });
+  });
+
+  it("이사 유형을 여러 개 넘기면 모두 걸러낸다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery({ category: ["SMALL", "HOME"] }));
+
+    const where = mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where;
+    expect(where.category).toEqual({ in: ["SMALL", "HOME"] });
+  });
+
+  it("이사 유형이 없으면 category 조건을 걸지 않는다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery());
+
+    expect(mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where.category).toBeUndefined();
+  });
+
+  it("지정받은 시점순(targetedAt)에서도 이름이 들어간다", async () => {
+    // 이 정렬만 targetedRequest를 거쳐 조회하므로 경로가 갈립니다
+    mockedPrisma.targetedRequest.findMany.mockResolvedValue([
+      { quotationRequest: mockMoverRequest({ id: 45, user: { name: "윤지호" } }) },
+    ]);
+
+    const result = await estimateService.getMoverRequests(1, baseQuery({ sort: "targetedAt" }));
+
+    expect(result[0]).toMatchObject({ id: 45, userName: "윤지호" });
+    expect(mockedPrisma.quotationRequest.findMany).not.toHaveBeenCalled();
   });
 });

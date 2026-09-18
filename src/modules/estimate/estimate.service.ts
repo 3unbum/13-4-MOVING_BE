@@ -2,8 +2,12 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import type { UserRole } from "../../../generated/prisma/enums.ts";
-import { toEstimateListResponse, toEstimateResponse } from "./estimate.dto";
-import estimateRepository from "./estimate.repository";
+import {
+  toEstimateListResponse,
+  toEstimateResponse,
+  toMoverRequestListResponse,
+} from "./estimate.dto";
+import estimateRepository, { moverRequestInclude } from "./estimate.repository";
 import { estimateListQuery, moverRequestQuery } from "./estimate.type";
 
 async function getMoverEstimates(moverId: number, query: estimateListQuery) {
@@ -145,6 +149,11 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
     ? await prisma.moverRegion.findMany({ where: { moverId }, select: { region: true } })
     : [];
 
+  // 고객 이름 부분 검색 — 기사님 찾기(mover.repository)의 keyword와 같은 방식입니다
+  const searchWhere = query.search
+    ? { user: { name: { contains: query.search, mode: "insensitive" as const } } }
+    : {};
+
   // 지정받은 시점순은 targetedRequest 기준으로 정렬해야 해서 조회 자체를 다르게 함
   if (query.sort === "targetedAt") {
     const targetedRequests = await prisma.targetedRequest.findMany({
@@ -153,11 +162,12 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
         quotationRequest: {
           quotationStatus: "PENDING",
           estimates: { none: { moverId } },
-          ...(query.category && { category: query.category }),
+          ...(query.category && { category: { in: query.category } }),
           ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
+          ...searchWhere,
         },
       },
-      include: { quotationRequest: true },
+      include: { quotationRequest: { include: moverRequestInclude(moverId) } },
       orderBy: { createdAt: "asc" },
       take: query.take ?? 6,
       ...(query.cursor && {
@@ -165,21 +175,25 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
         cursor: { quotationRequestId_moverId: { quotationRequestId: query.cursor, moverId } },
       }),
     });
-    return targetedRequests.map((t) => t.quotationRequest);
+    return toMoverRequestListResponse(targetedRequests.map((t) => t.quotationRequest));
   }
 
-  return prisma.quotationRequest.findMany({
+  const requests = await prisma.quotationRequest.findMany({
     where: {
       quotationStatus: "PENDING",
       estimates: { none: { moverId } },
-      ...(query.category && { category: query.category }),
+      ...(query.category && { category: { in: query.category } }),
       ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
       ...(query.isTargeted && { targetedRequests: { some: { moverId } } }),
+      ...searchWhere,
     },
+    include: moverRequestInclude(moverId),
     orderBy: query.sort === "movingDate" ? { movingDate: "asc" } : { id: "desc" },
     take: query.take ?? 6,
     ...(query.cursor && { skip: 1, cursor: { id: query.cursor } }),
   });
+
+  return toMoverRequestListResponse(requests);
 }
 
 export {
