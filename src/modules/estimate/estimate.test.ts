@@ -2,6 +2,7 @@ import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import estimateRepository from "./estimate.repository";
 import * as estimateService from "./estimate.service";
+import { estimateCreateSchema } from "./estimate.schema";
 
 jest.mock("./estimate.repository", () => ({
   __esModule: true,
@@ -291,6 +292,25 @@ describe("reject", () => {
       moverId: 10,
       comment: "너무 멀어서 어렵습니다",
     });
+  });
+});
+
+describe("estimateCreateSchema — 견적가 범위", () => {
+  // 상한이 없으면 Postgres Int(2^31-1)를 넘겨 DB가 "integer out of range"로 터집니다 (QA-16)
+  const valid = { comment: "정성껏 모시겠습니다", price: 150000 };
+
+  test("1억 원을 넘으면 거부한다", () => {
+    const result = estimateCreateSchema.safeParse({ ...valid, price: 999_999_999_999_999 });
+
+    expect(result.success).toBe(false);
+  });
+
+  test("1억 원은 통과한다", () => {
+    expect(estimateCreateSchema.safeParse({ ...valid, price: 100_000_000 }).success).toBe(true);
+  });
+
+  test("1만 원 미만은 거부한다", () => {
+    expect(estimateCreateSchema.safeParse({ ...valid, price: 9999 }).success).toBe(false);
   });
 });
 
