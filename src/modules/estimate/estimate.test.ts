@@ -1,5 +1,6 @@
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
+import { getExpireBaseDate } from "@/jobs/expireRequests.util";
 import estimateRepository from "./estimate.repository";
 import * as estimateService from "./estimate.service";
 import { estimateCreateSchema } from "./estimate.schema";
@@ -532,5 +533,29 @@ describe("getMoverRequests", () => {
 
     expect(result[0]).toMatchObject({ id: 45, userName: "윤지호" });
     expect(mockedPrisma.quotationRequest.findMany).not.toHaveBeenCalled();
+  });
+
+  // 1차 QA-15 — 이사 당일 요청이 목록에 남아 있었습니다.
+  // 당일에 견적을 보내도 의미가 없고, 요청 생성부터 "내일 이후"만 허용합니다.
+  it("이사 당일·경과 요청을 목록에서 제외한다", async () => {
+    mockedPrisma.quotationRequest.findMany.mockResolvedValue([mockMoverRequest()]);
+
+    await estimateService.getMoverRequests(1, baseQuery());
+
+    const where = mockedPrisma.quotationRequest.findMany.mock.calls[0][0].where;
+    // gt(초과)여야 당일이 빠집니다. gte면 당일이 그대로 남습니다.
+    expect(where.movingDate).toEqual({ gt: getExpireBaseDate() });
+  });
+
+  it("지정받은 시점순(targetedAt)에서도 이사 당일 요청을 제외한다", async () => {
+    // 조회 경로가 갈려서, 한쪽만 고치면 정렬을 바꿨을 때 당일 요청이 되살아납니다
+    mockedPrisma.targetedRequest.findMany.mockResolvedValue([
+      { quotationRequest: mockMoverRequest() },
+    ]);
+
+    await estimateService.getMoverRequests(1, baseQuery({ sort: "targetedAt" }));
+
+    const where = mockedPrisma.targetedRequest.findMany.mock.calls[0][0].where;
+    expect(where.quotationRequest.movingDate).toEqual({ gt: getExpireBaseDate() });
   });
 });
