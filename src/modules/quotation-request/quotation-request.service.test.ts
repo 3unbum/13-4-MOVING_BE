@@ -68,14 +68,17 @@ describe("createTargetedRequest", () => {
     expect(mockedRepository.saveTargetedRequest).not.toHaveBeenCalled();
   });
 
-  it("ASSIGNED 요청에도 지정할 수 있다", async () => {
+  // 1차 QA #7 — ASSIGNED는 "기사님 확정, 이사 전"이라 스키마 주석상 활성이지만
+  // 이미 기사님이 정해진 요청에 새 지정이 들어가면 안 됩니다.
+  it("이미 기사님이 확정된(ASSIGNED) 요청이면 NO_ACTIVE_REQUEST", async () => {
     mockedRepository.findById.mockResolvedValue(
       makeRequest({ quotationStatus: "ASSIGNED" }) as never
     );
-    mockedRepository.findMoverById.mockResolvedValue({ id: 5 } as never);
-    mockedRepository.saveTargetedRequest.mockResolvedValue({ id: 1 } as never);
 
-    await expect(service.createTargetedRequest(100, 1, 5)).resolves.toBeDefined();
+    await expect(service.createTargetedRequest(100, 1, 5)).rejects.toMatchObject({
+      code: ERROR_CODES.NO_ACTIVE_REQUEST,
+    });
+    expect(mockedRepository.saveTargetedRequest).not.toHaveBeenCalled();
   });
 
   it("정상이면 지정 요청을 생성하고 알림 콜백을 넘긴다", async () => {
