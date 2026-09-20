@@ -78,8 +78,14 @@ async function createTargetedRequest(quotationRequestId: number, userId: number,
   if (found.userId !== userId) {
     throw AppError.forbidden("본인의 견적 요청에만 기사님을 지정할 수 있습니다.");
   }
-  if (found.quotationStatus !== "PENDING" && found.quotationStatus !== "ASSIGNED") {
-    throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 견적 요청입니다.");
+  // ASSIGNED는 "기사님 확정, 이사 전"이라 스키마 주석상 활성이지만, 이미 기사님이
+  // 정해진 요청에 새 지정을 받을 이유가 없습니다. 1차 QA #7에서 실제로 지정이
+  // 들어가는 게 확인돼 PENDING만 허용합니다.
+  if (found.quotationStatus !== "PENDING") {
+    throw AppError.badRequest(
+      ERROR_CODES.NO_ACTIVE_REQUEST,
+      "이미 기사님이 확정되었거나 종료된 견적 요청입니다."
+    );
   }
 
   const mover = await repository.findMoverById(moverId);
