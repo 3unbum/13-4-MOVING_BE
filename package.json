@@ -19,7 +19,9 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
     "lint:fix": "eslint src --fix",
-    "prepare": "husky"
+    "prepare": "husky",
+    "tunnel": "dotenv -- bash -c 'ssh -N -i \"$SSH_KEY_PATH\" -o IdentityAgent=none -o IdentitiesOnly=yes -o ServerAliveInterval=60 -o ExitOnForwardFailure=yes -L 5433:$DB_HOST:5432 $EC2_USER@$EC2_HOST'",
+    "ssh": "dotenv -- bash -c 'ssh -i \"$SSH_KEY_PATH\" -o IdentityAgent=none -o IdentitiesOnly=yes $EC2_USER@$EC2_HOST'"
   },
   "repository": {
     "type": "git",
@@ -70,6 +72,7 @@
     "@types/supertest": "^7.2.1",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
