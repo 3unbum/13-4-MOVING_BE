@@ -2,7 +2,12 @@ import z from "zod";
 import { EstimateStatus, ServiceType } from "../../../generated/prisma/enums";
 
 const estimateFields = {
-  price: z.int().min(10000, "최소 견적 가격은 10,000원 이상입니다."),
+  // 상한이 없으면 Postgres `Int`(2^31-1)를 넘겨 DB에서 "integer out of range"로 터집니다.
+  // 1억 원은 이사 견적으로 충분히 넉넉하면서 오타·장난 입력을 걸러냅니다 (1차 QA-16).
+  price: z
+    .int()
+    .min(10000, "최소 견적 가격은 10,000원 이상입니다.")
+    .max(100_000_000, "견적 가격은 1억 원 이하로 입력해 주세요."),
   comment: z
     .string()
     .min(10, "10자 이상 입력 부탁드립니다.")

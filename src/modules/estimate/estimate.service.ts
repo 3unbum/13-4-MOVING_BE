@@ -1,6 +1,7 @@
 import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
+import { getExpireBaseDate } from "@/jobs/expireRequests.util";
 import type { UserRole } from "../../../generated/prisma/enums.ts";
 import {
   toEstimateListResponse,
@@ -154,18 +155,26 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
     ? { user: { name: { contains: query.search, mode: "insensitive" as const } } }
     : {};
 
+  // 두 조회 경로(아래 targetedAt 분기 / 일반)가 갈라지지 않도록 공통 조건은 한 곳에 둡니다.
+  // 한쪽만 고치면 정렬을 바꿨을 때 결과 기준이 달라집니다.
+  const requestWhere = {
+    quotationStatus: "PENDING" as const,
+    estimates: { none: { moverId } },
+    // 이사 당일·경과 요청은 지금 견적을 보내도 의미가 없습니다. 요청 생성부터
+    // "내일 이후"만 허용하므로(quotation-request.schema.ts) 목록도 같은 기준을 씁니다.
+    // 배치가 밀려 PENDING으로 남은 경과 건도 여기서 함께 빠집니다. (1차 QA-15)
+    movingDate: { gt: getExpireBaseDate() },
+    ...(query.category && { category: { in: query.category } }),
+    ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
+    ...searchWhere,
+  };
+
   // 지정받은 시점순은 targetedRequest 기준으로 정렬해야 해서 조회 자체를 다르게 함
   if (query.sort === "targetedAt") {
     const targetedRequests = await prisma.targetedRequest.findMany({
       where: {
         moverId,
-        quotationRequest: {
-          quotationStatus: "PENDING",
-          estimates: { none: { moverId } },
-          ...(query.category && { category: { in: query.category } }),
-          ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
-          ...searchWhere,
-        },
+        quotationRequest: requestWhere,
       },
       include: { quotationRequest: { include: moverRequestInclude(moverId) } },
       orderBy: { createdAt: "asc" },
@@ -180,12 +189,8 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
 
   const requests = await prisma.quotationRequest.findMany({
     where: {
-      quotationStatus: "PENDING",
-      estimates: { none: { moverId } },
-      ...(query.category && { category: { in: query.category } }),
-      ...(query.isServiceRegion && { fromRegion: { in: moverRegions.map((r) => r.region) } }),
+      ...requestWhere,
       ...(query.isTargeted && { targetedRequests: { some: { moverId } } }),
-      ...searchWhere,
     },
     include: moverRequestInclude(moverId),
     orderBy: query.sort === "movingDate" ? { movingDate: "asc" } : { id: "desc" },

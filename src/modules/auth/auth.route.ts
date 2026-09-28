@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../common/middlewares/auth";
 import { validate } from "../../common/middlewares/validate";
+import { loginRateLimiter } from "../../common/middlewares/rateLimit";
 import {
   signupSchema,
   loginSchema,
@@ -73,8 +74,21 @@ router.post("/signup", validate(signupSchema), authController.signup);
  *         description: 유효성 검사 실패
  *       401:
  *         description: 이메일 또는 비밀번호 불일치 (INVALID_CREDENTIALS)
+ *       429:
+ *         description: 동일 계정(role + 이메일)으로 15분간 로그인 5회 초과 실패 (TOO_MANY_REQUESTS)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     code: { type: string, example: TOO_MANY_REQUESTS }
+ *                     message: { type: string }
+ *                     retryAfterSeconds: { type: integer }
  */
-router.post("/login", validate(loginSchema), authController.login);
+router.post("/login", validate(loginSchema), loginRateLimiter, authController.login);
 
 /**
  * @swagger

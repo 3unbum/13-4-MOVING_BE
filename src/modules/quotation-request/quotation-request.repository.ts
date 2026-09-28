@@ -115,13 +115,12 @@ async function saveTargetedRequest(
             where: { id: quotationRequestId },
             select: { quotationStatus: true },
           });
-          if (
-            !target ||
-            (target.quotationStatus !== "PENDING" && target.quotationStatus !== "ASSIGNED")
-          ) {
+          // service와 같은 기준이어야 합니다 — 한쪽만 PENDING으로 좁히면 그 사이
+          // 확정된 요청이 트랜잭션을 통과합니다 (QA #7)
+          if (!target || target.quotationStatus !== "PENDING") {
             throw AppError.badRequest(
               ERROR_CODES.NO_ACTIVE_REQUEST,
-              "이미 종료된 견적 요청입니다."
+              "이미 기사님이 확정되었거나 종료된 견적 요청입니다."
             );
           }
 

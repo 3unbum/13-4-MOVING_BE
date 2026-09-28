@@ -13,5 +13,6 @@ declare namespace Express {
 
   interface Request {
     user?: User;
+    rateLimit?: import("express-rate-limit").RateLimitInfo;
   }
 }
