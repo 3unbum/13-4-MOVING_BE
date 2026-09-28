@@ -4,6 +4,10 @@ import { prisma } from "@/config/prisma";
 import { Prisma } from "../../../generated/prisma/client.ts";
 import { createManyNotifications, createNotification } from "../notification/notification.service";
 import {
+  enqueueNotificationPublish,
+  runAfterCommitPublish,
+} from "../notification/notification.publish";
+import {
   EstimateGetAllByMoverParams,
   EstimateGetAllByQuotationRequestParams,
   EstimateInputField,
@@ -79,7 +83,8 @@ export const estimateInclude = {
 async function save(estimate: EstimateInputField, isTargeted: boolean) {
   for (let attempt = 1; attempt <= SAVE_MAX_RETRIES; attempt++) {
     try {
-      return await prisma.$transaction(
+      return await runAfterCommitPublish(() =>
+        prisma.$transaction(
         async (tx) => {
           if (!isTargeted) {
             const targetedMovers = await tx.targetedRequest.findMany({
@@ -120,10 +125,12 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
             estimateId: created.id,
             type: "NEW_ESTIMATE",
           });
+          enqueueNotificationPublish([request.userId], "NEW_ESTIMATE");
 
           return created;
         },
         { isolationLevel: "Serializable" }
+      )
       );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -204,7 +211,8 @@ async function getById(id: number) {
 // 견적 확정(배정) — estimate CONFIRMED, quotationRequest ASSIGNED, mover confirmedCount+1, notification 생성을 한 트랜잭션으로 처리
 // COMPLETED는 이사일 경과 후 expireRequests.job.ts가 처리 (여기서 건드리지 않음)
 async function confirm(estimateId: number, moverId: number) {
-  return prisma.$transaction(async (tx) => {
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
     const existing = await tx.estimate.findUnique({
       where: { id: estimateId },
       // 확정 알림은 고객도 받으므로 요청자 id를 함께 읽습니다
@@ -239,9 +247,14 @@ async function confirm(estimateId: number, moverId: number) {
       { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" },
       { userId: existing.quotationRequest.userId, estimateId, type: "ESTIMATE_CONFIRMED" },
     ]);
+    enqueueNotificationPublish(
+      [moverId, existing.quotationRequest.userId],
+      "ESTIMATE_CONFIRMED"
+    );
 
     return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
-  });
+    })
+  );
 }
 
 export default { confirm, getAllByMover, getAllByQuotationRequest, getById, reject, save };

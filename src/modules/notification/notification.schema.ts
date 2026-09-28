@@ -1,7 +1,11 @@
 import { z } from "zod";
 
-/** 리뷰 목록과 같은 커서 규격 (BE default 10, max 20) */
+/**
+ * 리뷰 목록과 같은 커서 규격 (BE default 10, max 20).
+ * isRead는 쿼리스트링이라 boolean coerce를 쓰면 "false"가 true가 됩니다. enum 문자열로 받습니다.
+ */
 export const notificationListQuerySchema = z.object({
+  isRead: z.enum(["true", "false"]).optional(),
   cursor: z.coerce.number().int().positive().optional(),
   take: z.coerce.number().int().min(1).max(20).optional(),
 });

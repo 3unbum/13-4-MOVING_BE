@@ -34,6 +34,8 @@ export const notificationController = {
    */
   stream: ((req, res, next) => {
     try {
+      // Node 기본 소켓 타임아웃(약 5분)이 열린 SSE를 끊지 않게 합니다.
+      req.socket?.setTimeout(0);
       const close = openStream(getUserId(req), res);
       // 탭을 닫거나 네트워크가 끊기면 close 이벤트가 옵니다. 안 정리하면 heartbeat가 계속 돕니다.
       req.on("close", close);

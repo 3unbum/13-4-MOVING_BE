@@ -1,5 +1,6 @@
 import { prisma } from "../../config/prisma";
 import type { PrismaTransaction } from "../../config/prisma";
+import { Prisma } from "../../../generated/prisma/client.ts";
 import type { RegionType, ServiceType } from "../../../generated/prisma/enums.ts";
 import type { CreateNotificationParams } from "./notification.type";
 
@@ -67,9 +68,9 @@ export const notificationRepository = {
     return tx.notification.createMany({ data: paramsList.map(toCreateData) });
   },
 
-  findManyByUserId(userId: number, cursor?: number, take?: number) {
+  findManyByUserId(userId: number, cursor?: number, take?: number, isRead?: boolean) {
     return prisma.notification.findMany({
-      where: { userId },
+      where: { userId, ...(isRead !== undefined && { isRead }) },
       include: notificationDetailInclude,
       ...listArgs(cursor, take),
     });
@@ -99,13 +100,24 @@ export const notificationRepository = {
     return result.count;
   },
 
+  /**
+   * 본인 알림만 지우고, 실제로 지워진 id를 돌려줍니다.
+   * deleteMany는 개수만 줘서, 요청에 섞인 남의 id까지 프론트가 목록에서 빼게 됩니다.
+   */
   async deleteOwned(userId: number, ids: number[]) {
-    if (ids.length === 0) return 0;
+    if (ids.length === 0) {
+      return { deletedCount: 0, deletedIds: [] as number[] };
+    }
 
-    const result = await prisma.notification.deleteMany({
-      where: { id: { in: ids }, userId },
-    });
-    return result.count;
+    const deleted = await prisma.$queryRaw<{ id: number }[]>`
+      DELETE FROM notification
+      WHERE user_id = ${userId}
+        AND id IN (${Prisma.join(ids)})
+      RETURNING id
+    `;
+    const deletedIds = deleted.map((row) => row.id);
+
+    return { deletedCount: deletedIds.length, deletedIds };
   },
 
   /**

@@ -92,6 +92,7 @@ export interface UpdatedCountResult {
 
 export interface DeletedCountResult {
   deletedCount: number;
+  deletedIds: number[];
 }
 
 export type { NotificationType };

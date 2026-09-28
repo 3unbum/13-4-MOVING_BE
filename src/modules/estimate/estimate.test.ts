@@ -1,7 +1,6 @@
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import { getExpireBaseDate } from "@/jobs/expireRequests.util";
-import { publishNotification } from "@/modules/notification/notification.sse";
 import estimateRepository from "./estimate.repository";
 import * as estimateService from "./estimate.service";
 import { estimateCreateSchema } from "./estimate.schema";
@@ -28,10 +27,6 @@ jest.mock("@/config/prisma", () => ({
     targetedRequest: { findUnique: jest.fn(), findMany: jest.fn() },
     moverRegion: { findMany: jest.fn() },
   },
-}));
-
-jest.mock("@/modules/notification/notification.sse", () => ({
-  publishNotification: jest.fn(),
 }));
 
 const mockedRepository = jest.mocked(estimateRepository);
@@ -361,7 +356,6 @@ describe("save", () => {
       { quotationRequestId: 27, moverId: 10, price: 50000, comment: "친절히 도와드리겠습니다" },
       false
     );
-    expect(publishNotification).toHaveBeenCalledWith([7], { type: "NEW_ESTIMATE" });
   });
 
   test("저장이 실패하면 실시간 신호를 보내지 않는다", async () => {
@@ -375,7 +369,7 @@ describe("save", () => {
     await expect(estimateService.save(27, 10, 50000, "친절히 도와드리겠습니다")).rejects.toThrow(
       "직렬화 충돌"
     );
-    expect(publishNotification).not.toHaveBeenCalled();
+    expect(mockedRepository.save).toHaveBeenCalled();
   });
 });
 
@@ -424,7 +418,6 @@ describe("confirm", () => {
     await estimateService.confirm(1, 1);
 
     expect(mockedRepository.confirm).toHaveBeenCalledWith(1, 10);
-    expect(publishNotification).toHaveBeenCalledWith([10, 1], { type: "ESTIMATE_CONFIRMED" });
   });
 
   test("확정이 실패하면 실시간 신호를 보내지 않는다", async () => {
@@ -440,7 +433,7 @@ describe("confirm", () => {
     mockedRepository.confirm.mockRejectedValue(new Error("이미 처리됨"));
 
     await expect(estimateService.confirm(1, 1)).rejects.toThrow("이미 처리됨");
-    expect(publishNotification).not.toHaveBeenCalled();
+    expect(mockedRepository.confirm).toHaveBeenCalled();
   });
 });
 

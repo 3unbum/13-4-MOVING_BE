@@ -24,6 +24,14 @@ describe("notificationListQuerySchema", () => {
   it("cursor가 0이면 실패한다", () => {
     expect(notificationListQuerySchema.safeParse({ cursor: 0 }).success).toBe(false);
   });
+
+  it("isRead=false는 false로 남긴다", () => {
+    const result = notificationListQuerySchema.safeParse({ isRead: "false" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.isRead).toBe("false");
+    }
+  });
 });
 
 describe("notificationIdParamSchema", () => {

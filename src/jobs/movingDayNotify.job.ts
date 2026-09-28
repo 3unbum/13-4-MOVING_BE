@@ -2,7 +2,10 @@ import cron from "node-cron";
 import { prisma } from "../config/prisma";
 import { getExpireBaseDate } from "@/jobs/expireRequests.util";
 import { createManyNotifications } from "@/modules/notification/notification.service";
-import { publishNotification } from "@/modules/notification/notification.sse";
+import {
+  enqueueNotificationPublish,
+  runAfterCommitPublish,
+} from "@/modules/notification/notification.publish";
 
 /**
  * 이사 당일 알림 — 매일 09:00 (KST). 고객과 확정 기사님이 함께 받습니다.
@@ -46,28 +49,28 @@ export async function notifyMovingDay(): Promise<void> {
 
     try {
       // 중복 확인과 생성을 한 트랜잭션에 묶어, 재실행이 겹쳐도 같은 수신자에게 두 번 가지 않게 합니다
-      const notifiedUserIds = await prisma.$transaction(async (tx) => {
-        const existing = await tx.notification.findMany({
-          where: { quotationRequestId: target.id, type: "MOVING_DAY" },
-          select: { userId: true },
-        });
-        const notified = new Set(existing.map((row) => row.userId));
-        const pending = recipients.filter((userId) => !notified.has(userId));
+      const notifiedUserIds = await runAfterCommitPublish(() =>
+        prisma.$transaction(async (tx) => {
+          const existing = await tx.notification.findMany({
+            where: { quotationRequestId: target.id, type: "MOVING_DAY" },
+            select: { userId: true },
+          });
+          const notified = new Set(existing.map((row) => row.userId));
+          const pending = recipients.filter((userId) => !notified.has(userId));
 
-        await createManyNotifications(
-          tx,
-          pending.map((userId) => ({
-            userId,
-            type: "MOVING_DAY" as const,
-            quotationRequestId: target.id,
-          }))
-        );
+          await createManyNotifications(
+            tx,
+            pending.map((userId) => ({
+              userId,
+              type: "MOVING_DAY" as const,
+              quotationRequestId: target.id,
+            }))
+          );
+          enqueueNotificationPublish(pending, "MOVING_DAY");
 
-        return pending;
-      });
-
-      // 커밋 후에 실시간 신호를 보냅니다
-      publishNotification(notifiedUserIds, { type: "MOVING_DAY" });
+          return pending;
+        })
+      );
 
       created += notifiedUserIds.length;
       if (notifiedUserIds.length < recipients.length) skipped += 1;

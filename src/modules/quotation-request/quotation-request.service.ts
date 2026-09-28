@@ -5,7 +5,10 @@ import {
   createManyNotifications,
   createNotification,
 } from "@/modules/notification/notification.service";
-import { publishNotification } from "@/modules/notification/notification.sse";
+import {
+  enqueueNotificationPublish,
+  runAfterCommitPublish,
+} from "@/modules/notification/notification.publish";
 import * as repository from "./quotation-request.repository";
 import type { QuotationRequestCreateInput } from "./quotation-request.type";
 
@@ -24,32 +27,31 @@ async function create(input: QuotationRequestCreateInput) {
     );
   }
 
-  const { created, moverIds } = await prisma.$transaction(async (tx) => {
-    const saved = await repository.save(input, tx);
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const saved = await repository.save(input, tx);
 
-    // 출발지 지역 + 이사 유형이 맞는 기사님들에게 NEW_REQUEST 알림.
-    // 대상이 수십 명일 수 있어 한 건씩 await하지 않고 createMany로 넣습니다.
-    const targetMoverIds = await repository.findMoverIdsByRegionAndService(
-      input.from.region,
-      input.category,
-      tx
-    );
-    await createManyNotifications(
-      tx,
-      targetMoverIds.map((moverId) => ({
-        userId: moverId,
-        type: "NEW_REQUEST" as const,
-        quotationRequestId: saved.id,
-      }))
-    );
+      // 출발지 지역 + 이사 유형이 맞는 기사님들에게 NEW_REQUEST 알림.
+      // 대상이 수십 명일 수 있어 한 건씩 await하지 않고 createMany로 넣습니다.
+      const targetMoverIds = await repository.findMoverIdsByRegionAndService(
+        input.from.region,
+        input.category,
+        tx
+      );
+      await createManyNotifications(
+        tx,
+        targetMoverIds.map((moverId) => ({
+          userId: moverId,
+          type: "NEW_REQUEST" as const,
+          quotationRequestId: saved.id,
+        }))
+      );
+      // 커밋이 성공한 뒤에만 신호가 나갑니다. 롤백되면 대기열은 버려집니다.
+      enqueueNotificationPublish(targetMoverIds, "NEW_REQUEST");
 
-    return { created: saved, moverIds: targetMoverIds };
-  });
-
-  // 커밋이 끝난 뒤에 실시간 신호를 보냅니다 (롤백된 알림이 나가지 않도록)
-  publishNotification(moverIds, { type: "NEW_REQUEST" });
-
-  return created;
+      return saved;
+    })
+  );
 }
 
 /** 활성 요청 조회. 없으면 null을 반환합니다(에러 아님). */
@@ -106,13 +108,12 @@ async function createTargetedRequest(quotationRequestId: number, userId: number,
   const mover = await repository.findMoverById(moverId);
   if (!mover) throw AppError.notFound("기사님을 찾을 수 없습니다.");
 
-  const saved = await repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
-    await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
-  });
-
-  publishNotification([moverId], { type: "NEW_REQUEST" });
-
-  return saved;
+  return runAfterCommitPublish(() =>
+    repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
+      await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
+      enqueueNotificationPublish([moverId], "NEW_REQUEST");
+    })
+  );
 }
 
 export { create, createTargetedRequest, findActive, findById, findMany };

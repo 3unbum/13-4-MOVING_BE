@@ -175,7 +175,7 @@ describe("notificationService.list", () => {
     const result = await notificationService.list(7, { take: 2 });
 
     // Assertion
-    expect(mockedRepository.findManyByUserId).toHaveBeenCalledWith(7, undefined, 3);
+    expect(mockedRepository.findManyByUserId).toHaveBeenCalledWith(7, undefined, 3, undefined);
     expect(result.items).toHaveLength(2);
     expect(result.nextCursor).toBe(4);
   });
@@ -212,7 +212,16 @@ describe("notificationService.list", () => {
     await notificationService.list(7, { cursor: 12, take: 5 });
 
     // Assertion
-    expect(mockedRepository.findManyByUserId).toHaveBeenCalledWith(7, 12, 6);
+    expect(mockedRepository.findManyByUserId).toHaveBeenCalledWith(7, 12, 6, undefined);
+  });
+
+  it("isRead=false면 안 읽은 알림만 조회한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([] as never);
+    mockedRepository.countUnread.mockResolvedValue(2);
+
+    await notificationService.list(7, { isRead: "false" });
+
+    expect(mockedRepository.findManyByUserId).toHaveBeenCalledWith(7, undefined, 11, false);
   });
 });
 
@@ -290,19 +299,19 @@ describe("notificationService.markAllRead", () => {
 describe("notificationService.delete", () => {
   it("단건을 삭제한다", async () => {
     // Setup
-    mockedRepository.deleteOwned.mockResolvedValue(1);
+    mockedRepository.deleteOwned.mockResolvedValue({ deletedCount: 1, deletedIds: [42] });
 
     // Exercise
     const result = await notificationService.delete(7, 42);
 
     // Assertion
-    expect(result).toEqual({ deletedCount: 1 });
+    expect(result).toEqual({ deletedCount: 1, deletedIds: [42] });
     expect(mockedRepository.deleteOwned).toHaveBeenCalledWith(7, [42]);
   });
 
   it("대상이 없으면 404를 던진다", async () => {
     // Setup
-    mockedRepository.deleteOwned.mockResolvedValue(0);
+    mockedRepository.deleteOwned.mockResolvedValue({ deletedCount: 0, deletedIds: [] });
 
     // Exercise + Assertion
     await expect(notificationService.delete(7, 42)).rejects.toMatchObject({
@@ -315,24 +324,24 @@ describe("notificationService.delete", () => {
 describe("notificationService.bulkDelete", () => {
   it("중복 id를 제거하고 삭제한다", async () => {
     // Setup
-    mockedRepository.deleteOwned.mockResolvedValue(2);
+    mockedRepository.deleteOwned.mockResolvedValue({ deletedCount: 2, deletedIds: [1, 2] });
 
     // Exercise
     const result = await notificationService.bulkDelete(7, [1, 2, 1]);
 
     // Assertion
     expect(mockedRepository.deleteOwned).toHaveBeenCalledWith(7, [1, 2]);
-    expect(result).toEqual({ deletedCount: 2 });
+    expect(result).toEqual({ deletedCount: 2, deletedIds: [1, 2] });
   });
 
   it("하나도 못 지워도 에러 대신 0을 돌려준다", async () => {
     // Setup — 다중 삭제는 일부만 남아 있는 경우가 정상이라 404로 막지 않습니다
-    mockedRepository.deleteOwned.mockResolvedValue(0);
+    mockedRepository.deleteOwned.mockResolvedValue({ deletedCount: 0, deletedIds: [] });
 
     // Exercise
     const result = await notificationService.bulkDelete(7, [1, 2]);
 
     // Assertion
-    expect(result).toEqual({ deletedCount: 0 });
+    expect(result).toEqual({ deletedCount: 0, deletedIds: [] });
   });
 });

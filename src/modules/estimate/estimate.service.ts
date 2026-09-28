@@ -8,7 +8,6 @@ import {
   toEstimateResponse,
   toMoverRequestListResponse,
 } from "./estimate.dto";
-import { publishNotification } from "@/modules/notification/notification.sse";
 import estimateRepository, { moverRequestInclude } from "./estimate.repository";
 import { estimateListQuery, moverRequestQuery } from "./estimate.type";
 
@@ -87,8 +86,7 @@ async function getById(estimateId: number, userId: number, role: UserRole) {
 async function getActiveQuotationRequest(quotationRequestId: number) {
   const quotationRequest = await prisma.quotationRequest.findUnique({
     where: { id: quotationRequestId },
-    // userId는 견적 발송 후 요청 고객에게 실시간 신호를 보낼 때 씁니다
-    select: { userId: true, quotationStatus: true },
+    select: { quotationStatus: true },
   });
   if (!quotationRequest) throw AppError.notFound("해당 견적 요청을 찾을 수 없습니다.");
   if (quotationRequest.quotationStatus !== "PENDING") {
@@ -112,21 +110,17 @@ async function reject(quotationRequestId: number, moverId: number, comment: stri
 // 견적 제시 — mover만 가능. 지정견적이면 상한 체크 스킵, 일반견적이면 이 요청이 이미 받은 일반견적 5건 상한 체크
 // 상한 체크 + 실제 저장은 repository.save 안에서 트랜잭션으로 원자적 처리 (동시 제출 레이스 방지)
 async function save(quotationRequestId: number, moverId: number, price: number, comment: string) {
-  const quotationRequest = await getActiveQuotationRequest(quotationRequestId);
+  await getActiveQuotationRequest(quotationRequestId);
 
   const targetedRequest = await prisma.targetedRequest.findUnique({
     where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
   });
 
-  const saved = await estimateRepository.save(
+  // 실시간 신호는 repository.save가 커밋에 성공한 뒤에만 보냅니다
+  return estimateRepository.save(
     { quotationRequestId, moverId, price, comment },
     Boolean(targetedRequest)
   );
-
-  // 커밋 후에 보냅니다 — save는 Serializable 재시도가 걸려 롤백이 실제로 일어납니다
-  publishNotification([quotationRequest.userId], { type: "NEW_ESTIMATE" });
-
-  return saved;
 }
 
 // 견적 확정 — customer만 가능. 본인 요청 + 활성 상태 + PENDING 견적일 때만
@@ -147,12 +141,8 @@ async function confirm(estimateId: number, userId: number) {
     throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 요청입니다");
   }
 
-  const confirmed = await estimateRepository.confirm(estimateId, estimate.moverId);
-
-  // 확정은 기사님·고객 양쪽이 받습니다 (userId가 곧 요청 고객)
-  publishNotification([estimate.moverId, userId], { type: "ESTIMATE_CONFIRMED" });
-
-  return confirmed;
+  // 실시간 신호는 repository.confirm이 커밋에 성공한 뒤에만 보냅니다
+  return estimateRepository.confirm(estimateId, estimate.moverId);
 }
 
 // mover 받은 요청 목록 — 기본은 전체 최신순, isServiceRegion/isTargeted/category 체크박스로 프론트에서 추가 필터

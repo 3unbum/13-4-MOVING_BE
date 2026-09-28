@@ -1,5 +1,6 @@
 import { prisma } from "@/config/prisma";
 import { createManyNotifications, createNotification } from "../notification/notification.service";
+import { publishNotification } from "../notification/notification.sse";
 import estimateRepository from "./estimate.repository";
 
 // 실제 DB는 쓰지 않고 트랜잭션 콜백만 직접 실행합니다
@@ -18,6 +19,10 @@ jest.mock("../../../generated/prisma/client.ts", () => ({
 jest.mock("../notification/notification.service", () => ({
   createNotification: jest.fn(),
   createManyNotifications: jest.fn(),
+}));
+
+jest.mock("../notification/notification.sse", () => ({
+  publishNotification: jest.fn(),
 }));
 
 const mockedPrisma = jest.mocked(prisma);
@@ -75,6 +80,7 @@ describe("estimateRepository.save", () => {
       estimateId: 30,
       type: "NEW_ESTIMATE",
     });
+    expect(publishNotification).toHaveBeenCalledWith([7], { type: "NEW_ESTIMATE" });
   });
 
   it("지정 견적도 같은 알림을 보낸다 (상한 체크만 건너뛴다)", async () => {
@@ -110,6 +116,7 @@ describe("estimateRepository.save", () => {
       )
     ).rejects.toMatchObject({ code: "ESTIMATE_LIMIT_EXCEEDED" });
     expect(createNotification).not.toHaveBeenCalled();
+    expect(publishNotification).not.toHaveBeenCalled();
   });
 });
 
@@ -139,6 +146,7 @@ describe("estimateRepository.confirm", () => {
       { userId: 5, estimateId: 42, type: "ESTIMATE_CONFIRMED" },
       { userId: 7, estimateId: 42, type: "ESTIMATE_CONFIRMED" },
     ]);
+    expect(publishNotification).toHaveBeenCalledWith([5, 7], { type: "ESTIMATE_CONFIRMED" });
   });
 
   it("이미 처리된 견적이면 알림을 만들지 않는다", async () => {
@@ -151,6 +159,7 @@ describe("estimateRepository.confirm", () => {
       code: "ESTIMATE_ALREADY_PROCESSED",
     });
     expect(createManyNotifications).not.toHaveBeenCalled();
+    expect(publishNotification).not.toHaveBeenCalled();
   });
 
   it("없는 견적이면 404를 던진다", async () => {

@@ -130,7 +130,13 @@ export const notificationService = {
   async list(userId: number, query: NotificationListQuery): Promise<NotificationListResult> {
     const take = query.take ?? DEFAULT_TAKE;
     // take + 1건을 읽어 다음 페이지 존재 여부를 판정합니다 (리뷰 목록과 같은 방식)
-    const rows = await notificationRepository.findManyByUserId(userId, query.cursor, take + 1);
+    const isRead = query.isRead === undefined ? undefined : query.isRead === "true";
+    const rows = await notificationRepository.findManyByUserId(
+      userId,
+      query.cursor,
+      take + 1,
+      isRead
+    );
     const hasMore = rows.length > take;
     const items = (hasMore ? rows.slice(0, take) : rows)
       .map(toItem)
@@ -176,14 +182,14 @@ export const notificationService = {
 
   async delete(userId: number, id: number): Promise<DeletedCountResult> {
     const deleted = await notificationRepository.deleteOwned(userId, [id]);
-    if (deleted === 0) {
+    if (deleted.deletedCount === 0) {
       throw AppError.notFound("알림을 찾을 수 없습니다");
     }
-    return { deletedCount: deleted };
+    return deleted;
   },
 
   async bulkDelete(userId: number, ids: number[]): Promise<DeletedCountResult> {
     const uniqueIds = [...new Set(ids)];
-    return { deletedCount: await notificationRepository.deleteOwned(userId, uniqueIds) };
+    return notificationRepository.deleteOwned(userId, uniqueIds);
   },
 };

@@ -5,14 +5,24 @@ const HEARTBEAT_MS = 25_000;
 
 /** SSE가 쓰는 부분만 갖춘 가짜 Response */
 function makeRes() {
+  const handlers = new Map<string, () => void>();
   return {
     writeHead: jest.fn(),
     write: jest.fn(),
     writableEnded: false,
+    destroyed: false,
+    on: jest.fn((event: string, handler: () => void) => {
+      handlers.set(event, handler);
+    }),
+    emit(event: string) {
+      handlers.get(event)?.();
+    },
   } as unknown as Response & {
     writeHead: jest.Mock;
     write: jest.Mock;
     writableEnded: boolean;
+    destroyed: boolean;
+    emit: (event: string) => void;
   };
 }
 
@@ -179,14 +189,47 @@ describe("publishNotification", () => {
     // Setup — 소켓이 죽으면 write가 throw합니다
     const res = makeRes();
     open(7, res);
+    res.write.mockClear();
     res.write.mockImplementation(() => {
       throw new Error("소켓 종료");
     });
 
     // Exercise
     publishNotification([7], { type: "NEW_REQUEST" });
+    jest.advanceTimersByTime(HEARTBEAT_MS);
 
     // Assertion — 끊어진 연결이 Map에 쌓이면 다음 발행마다 계속 실패합니다
     expect(countConnections(7)).toBe(0);
+    expect(res.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("destroy된 소켓에는 쓰지 않고 연결을 정리한다", () => {
+    // Setup
+    const res = makeRes();
+    open(7, res);
+    res.destroyed = true;
+    res.write.mockClear();
+
+    // Exercise
+    publishNotification([7], { type: "NEW_REQUEST" });
+
+    // Assertion
+    expect(res.write).not.toHaveBeenCalled();
+    expect(countConnections(7)).toBe(0);
+  });
+
+  it("응답 error가 오면 heartbeat를 멈춘다", () => {
+    // Setup
+    const res = makeRes();
+    open(7, res);
+    res.write.mockClear();
+
+    // Exercise
+    res.emit("error");
+    jest.advanceTimersByTime(HEARTBEAT_MS);
+
+    // Assertion
+    expect(countConnections(7)).toBe(0);
+    expect(res.write).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,10 @@ router.use(requireAuth);
  *     parameters:
  *       - $ref: '#/components/parameters/cursor'
  *       - $ref: '#/components/parameters/take'
+ *       - in: query
+ *         name: isRead
+ *         schema: { type: string, enum: [true, false] }
+ *         description: 생략하면 전체. true는 읽음만, false는 안 읽음만
  *     responses:
  *       200:
  *         description: 알림 목록
@@ -186,7 +190,7 @@ router.patch(
  *                 maxItems: 50
  *     responses:
  *       200:
- *         description: 삭제된 건수
+ *         description: 삭제된 건수와 실제로 지워진 id 목록
  *       400:
  *         description: ids 누락 또는 상한 초과
  */

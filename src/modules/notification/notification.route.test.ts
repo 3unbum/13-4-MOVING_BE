@@ -172,26 +172,26 @@ describe("PATCH /api/notifications/:id/read", () => {
 
 describe("DELETE /api/notifications/:id", () => {
   it("단건 삭제한다", async () => {
-    mockedService.delete.mockResolvedValue({ deletedCount: 1 });
+    mockedService.delete.mockResolvedValue({ deletedCount: 1, deletedIds: [42] });
 
     const res = await request(buildApp()).delete("/api/notifications/42");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: { deletedCount: 1 } });
+    expect(res.body).toEqual({ data: { deletedCount: 1, deletedIds: [42] } });
     expect(mockedService.delete).toHaveBeenCalledWith(1, 42);
   });
 });
 
 describe("DELETE /api/notifications", () => {
   it("ids로 다중 삭제한다", async () => {
-    mockedService.bulkDelete.mockResolvedValue({ deletedCount: 2 });
+    mockedService.bulkDelete.mockResolvedValue({ deletedCount: 2, deletedIds: [10, 11] });
 
     const res = await request(buildApp())
       .delete("/api/notifications")
       .send({ ids: [10, 11] });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: { deletedCount: 2 } });
+    expect(res.body).toEqual({ data: { deletedCount: 2, deletedIds: [10, 11] } });
     expect(mockedService.bulkDelete).toHaveBeenCalledWith(1, [10, 11]);
   });
 

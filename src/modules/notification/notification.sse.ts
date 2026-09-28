@@ -20,29 +20,30 @@ const HEARTBEAT_MS = 25_000;
 /** 끊겼을 때 브라우저가 재연결을 시도할 간격 */
 const RETRY_MS = 5_000;
 
-const connections = new Map<number, Set<Response>>();
+interface LiveConnection {
+  res: Response;
+  /** heartbeat를 멈추고 Map에서 이 연결만 뺍니다. 여러 번 호출해도 안전합니다. */
+  stop: () => void;
+}
+
+const connections = new Map<number, Set<LiveConnection>>();
 
 export interface NotificationEvent {
   type: NotificationType;
 }
 
-/** 쓰기 실패(소켓이 이미 닫힘)는 끊어진 연결로 봅니다 */
+/**
+ * 이미 끊긴 소켓에 write하면 프로세스가 예외로 죽을 수 있습니다.
+ * writableEnded만 보면 destroy된 소켓을 놓칩니다.
+ */
 function write(res: Response, chunk: string): boolean {
-  if (res.writableEnded) return false;
+  if (res.writableEnded || res.destroyed) return false;
   try {
     res.write(chunk);
     return true;
   } catch {
     return false;
   }
-}
-
-function detach(userId: number, res: Response) {
-  const current = connections.get(userId);
-  if (!current) return;
-  current.delete(res);
-  // 빈 Set을 남겨두면 접속했다 떠난 유저만큼 Map이 계속 자랍니다
-  if (current.size === 0) connections.delete(userId);
 }
 
 /**
@@ -59,24 +60,39 @@ export function openStream(userId: number, res: Response): () => void {
     "X-Accel-Buffering": "no",
   });
 
-  // 주석 한 줄을 먼저 흘려보내 프록시가 헤더를 즉시 내보내게 합니다
-  write(res, `retry: ${RETRY_MS}\n: connected\n\n`);
+  const targets = connections.get(userId) ?? new Set<LiveConnection>();
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let stopped = false;
 
-  const targets = connections.get(userId) ?? new Set<Response>();
-  targets.add(res);
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (heartbeat) clearInterval(heartbeat);
+    targets.delete(live);
+    // 빈 Set을 남겨두면 접속했다 떠난 유저만큼 Map이 계속 자랍니다
+    if (targets.size === 0) connections.delete(userId);
+  };
+
+  const live: LiveConnection = { res, stop };
+  targets.add(live);
   connections.set(userId, targets);
 
-  const heartbeat = setInterval(() => {
-    if (!write(res, ": ping\n\n")) {
-      clearInterval(heartbeat);
-      detach(userId, res);
-    }
-  }, HEARTBEAT_MS);
+  // close는 컨트롤러가 req에 겁니다. error는 write가 throw하기 전에 오므로 여기서 정리합니다.
+  res.on("error", stop);
 
-  return () => {
-    clearInterval(heartbeat);
-    detach(userId, res);
-  };
+  // 주석 한 줄을 먼저 흘려보내 프록시가 헤더를 즉시 내보내게 합니다
+  if (!write(res, `retry: ${RETRY_MS}\n: connected\n\n`)) {
+    stop();
+    return stop;
+  }
+
+  heartbeat = setInterval(() => {
+    if (!write(res, ": ping\n\n")) stop();
+  }, HEARTBEAT_MS);
+  // 이 타이머만 남아서 프로세스가 안 끝나는 일을 막습니다
+  heartbeat.unref();
+
+  return stop;
 }
 
 /**
@@ -93,9 +109,9 @@ export function publishNotification(userIds: number[], event: NotificationEvent)
     const targets = connections.get(userId);
     if (!targets) continue;
 
-    for (const res of [...targets]) {
-      if (!write(res, `event: notification\ndata: ${body}\n\n`)) {
-        detach(userId, res);
+    for (const live of [...targets]) {
+      if (!write(live.res, `event: notification\ndata: ${body}\n\n`)) {
+        live.stop();
       }
     }
   }
