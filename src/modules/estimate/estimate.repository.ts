@@ -100,7 +100,7 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
             }
           }
 
-          return tx.estimate.create({
+          const created = await tx.estimate.create({
             data: {
               price: estimate.price,
               comment: estimate.comment,
@@ -108,6 +108,21 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
               mover: { connect: { id: estimate.moverId } },
             },
           });
+
+          const request = await tx.quotationRequest.findUnique({
+            where: { id: estimate.quotationRequestId },
+            select: { userId: true },
+          });
+          if (request) {
+            await createNotification(tx, {
+              userId: request.userId,
+              type: "NEW_ESTIMATE",
+              estimateId: created.id,
+              quotationRequestId: estimate.quotationRequestId,
+            });
+          }
+
+          return created;
         },
         { isolationLevel: "Serializable" }
       );
@@ -193,7 +208,7 @@ async function confirm(estimateId: number, moverId: number) {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.estimate.findUnique({
       where: { id: estimateId },
-      select: { quotationRequestId: true },
+      select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
     });
     if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
 
@@ -220,6 +235,11 @@ async function confirm(estimateId: number, moverId: number) {
       data: { confirmedCount: { increment: 1 } },
     });
     await createNotification(tx, { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" });
+    await createNotification(tx, {
+      userId: existing.quotationRequest.userId,
+      estimateId,
+      type: "ESTIMATE_CONFIRMED",
+    });
 
     return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
   });

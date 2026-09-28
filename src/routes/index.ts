@@ -6,6 +6,7 @@ import favoriteRouter from "../modules/favorite/favorite.route";
 import quotationRequestRouter from "../modules/quotation-request/quotation-request.route";
 import profileRouter from "../modules/profile/profile.route";
 import reviewRouter from "../modules/review/review.route";
+import notificationRouter from "../modules/notification/notification.route";
 
 const router = Router();
 
@@ -22,6 +23,6 @@ router.use(estimateRouter);
 router.use(reviewRouter);
 router.use("/movers", moverRouter);
 router.use("/favorites", favoriteRouter);
-// router.use("/notifications", notificationRouter);
+router.use("/notifications", notificationRouter);
 
 export default router;
