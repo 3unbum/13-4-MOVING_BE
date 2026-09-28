@@ -1,6 +1,7 @@
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import { getExpireBaseDate } from "@/jobs/expireRequests.util";
+import { publishNotification } from "@/modules/notification/notification.sse";
 import estimateRepository from "./estimate.repository";
 import * as estimateService from "./estimate.service";
 import { estimateCreateSchema } from "./estimate.schema";
@@ -27,6 +28,10 @@ jest.mock("@/config/prisma", () => ({
     targetedRequest: { findUnique: jest.fn(), findMany: jest.fn() },
     moverRegion: { findMany: jest.fn() },
   },
+}));
+
+jest.mock("@/modules/notification/notification.sse", () => ({
+  publishNotification: jest.fn(),
 }));
 
 const mockedRepository = jest.mocked(estimateRepository);
@@ -328,6 +333,7 @@ describe("save", () => {
 
   test("지정견적이면 isTargeted=true로 넘긴다", async () => {
     mockedPrisma.quotationRequest.findUnique.mockResolvedValue({
+      userId: 7,
       quotationStatus: "PENDING",
     } as never);
     mockedPrisma.targetedRequest.findUnique.mockResolvedValue({ moverId: 10 } as never);
@@ -343,6 +349,7 @@ describe("save", () => {
 
   test("일반견적이면 isTargeted=false로 넘긴다", async () => {
     mockedPrisma.quotationRequest.findUnique.mockResolvedValue({
+      userId: 7,
       quotationStatus: "PENDING",
     } as never);
     mockedPrisma.targetedRequest.findUnique.mockResolvedValue(null as never);
@@ -354,6 +361,21 @@ describe("save", () => {
       { quotationRequestId: 27, moverId: 10, price: 50000, comment: "친절히 도와드리겠습니다" },
       false
     );
+    expect(publishNotification).toHaveBeenCalledWith([7], { type: "NEW_ESTIMATE" });
+  });
+
+  test("저장이 실패하면 실시간 신호를 보내지 않는다", async () => {
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({
+      userId: 7,
+      quotationStatus: "PENDING",
+    } as never);
+    mockedPrisma.targetedRequest.findUnique.mockResolvedValue(null as never);
+    mockedRepository.save.mockRejectedValue(new Error("직렬화 충돌"));
+
+    await expect(estimateService.save(27, 10, 50000, "친절히 도와드리겠습니다")).rejects.toThrow(
+      "직렬화 충돌"
+    );
+    expect(publishNotification).not.toHaveBeenCalled();
   });
 });
 
@@ -402,6 +424,23 @@ describe("confirm", () => {
     await estimateService.confirm(1, 1);
 
     expect(mockedRepository.confirm).toHaveBeenCalledWith(1, 10);
+    expect(publishNotification).toHaveBeenCalledWith([10, 1], { type: "ESTIMATE_CONFIRMED" });
+  });
+
+  test("확정이 실패하면 실시간 신호를 보내지 않는다", async () => {
+    mockedRepository.getById.mockResolvedValue({
+      estimateStatus: "PENDING",
+      quotationRequestId: 27,
+      moverId: 10,
+    } as never);
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({
+      userId: 1,
+      quotationStatus: "PENDING",
+    } as never);
+    mockedRepository.confirm.mockRejectedValue(new Error("이미 처리됨"));
+
+    await expect(estimateService.confirm(1, 1)).rejects.toThrow("이미 처리됨");
+    expect(publishNotification).not.toHaveBeenCalled();
   });
 });
 

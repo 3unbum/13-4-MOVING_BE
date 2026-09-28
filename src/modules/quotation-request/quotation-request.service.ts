@@ -5,6 +5,7 @@ import {
   createManyNotifications,
   createNotification,
 } from "@/modules/notification/notification.service";
+import { publishNotification } from "@/modules/notification/notification.sse";
 import * as repository from "./quotation-request.repository";
 import type { QuotationRequestCreateInput } from "./quotation-request.type";
 
@@ -23,27 +24,32 @@ async function create(input: QuotationRequestCreateInput) {
     );
   }
 
-  return prisma.$transaction(async (tx) => {
-    const created = await repository.save(input, tx);
+  const { created, moverIds } = await prisma.$transaction(async (tx) => {
+    const saved = await repository.save(input, tx);
 
     // 출발지 지역 + 이사 유형이 맞는 기사님들에게 NEW_REQUEST 알림.
     // 대상이 수십 명일 수 있어 한 건씩 await하지 않고 createMany로 넣습니다.
-    const moverIds = await repository.findMoverIdsByRegionAndService(
+    const targetMoverIds = await repository.findMoverIdsByRegionAndService(
       input.from.region,
       input.category,
       tx
     );
     await createManyNotifications(
       tx,
-      moverIds.map((moverId) => ({
+      targetMoverIds.map((moverId) => ({
         userId: moverId,
         type: "NEW_REQUEST" as const,
-        quotationRequestId: created.id,
+        quotationRequestId: saved.id,
       }))
     );
 
-    return created;
+    return { created: saved, moverIds: targetMoverIds };
   });
+
+  // 커밋이 끝난 뒤에 실시간 신호를 보냅니다 (롤백된 알림이 나가지 않도록)
+  publishNotification(moverIds, { type: "NEW_REQUEST" });
+
+  return created;
 }
 
 /** 활성 요청 조회. 없으면 null을 반환합니다(에러 아님). */
@@ -100,9 +106,13 @@ async function createTargetedRequest(quotationRequestId: number, userId: number,
   const mover = await repository.findMoverById(moverId);
   if (!mover) throw AppError.notFound("기사님을 찾을 수 없습니다.");
 
-  return repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
+  const saved = await repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
     await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
   });
+
+  publishNotification([moverId], { type: "NEW_REQUEST" });
+
+  return saved;
 }
 
 export { create, createTargetedRequest, findActive, findById, findMany };

@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { AppError } from "../../common/errors/AppError";
 import { notificationService } from "./notification.service";
+import { openStream } from "./notification.sse";
 import type {
   BulkDeleteNotificationsDto,
   NotificationIdParam,
@@ -22,6 +23,20 @@ export const notificationController = {
         req.query as unknown as NotificationListQuery
       );
       res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  /**
+   * SSE 스트림. 응답을 끝내지 않고 열어두므로 res.json을 부르지 않습니다.
+   * 쿠키 인증이라 브라우저는 EventSource(url, { withCredentials: true })로 붙습니다.
+   */
+  stream: ((req, res, next) => {
+    try {
+      const close = openStream(getUserId(req), res);
+      // 탭을 닫거나 네트워크가 끊기면 close 이벤트가 옵니다. 안 정리하면 heartbeat가 계속 돕니다.
+      req.on("close", close);
     } catch (error) {
       next(error);
     }

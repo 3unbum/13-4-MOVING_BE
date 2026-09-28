@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { prisma } from "../config/prisma";
 import { getExpireBaseDate } from "@/jobs/expireRequests.util";
 import { createManyNotifications } from "@/modules/notification/notification.service";
+import { publishNotification } from "@/modules/notification/notification.sse";
 
 /**
  * 이사 당일 알림 — 매일 09:00 (KST). 고객과 확정 기사님이 함께 받습니다.
@@ -45,7 +46,7 @@ export async function notifyMovingDay(): Promise<void> {
 
     try {
       // 중복 확인과 생성을 한 트랜잭션에 묶어, 재실행이 겹쳐도 같은 수신자에게 두 번 가지 않게 합니다
-      const addedCount = await prisma.$transaction(async (tx) => {
+      const notifiedUserIds = await prisma.$transaction(async (tx) => {
         const existing = await tx.notification.findMany({
           where: { quotationRequestId: target.id, type: "MOVING_DAY" },
           select: { userId: true },
@@ -62,11 +63,14 @@ export async function notifyMovingDay(): Promise<void> {
           }))
         );
 
-        return pending.length;
+        return pending;
       });
 
-      created += addedCount;
-      if (addedCount < recipients.length) skipped += 1;
+      // 커밋 후에 실시간 신호를 보냅니다
+      publishNotification(notifiedUserIds, { type: "MOVING_DAY" });
+
+      created += notifiedUserIds.length;
+      if (notifiedUserIds.length < recipients.length) skipped += 1;
     } catch (error) {
       // 한 건이 실패해도 나머지는 계속 처리합니다 (expireRequests와 같은 방식)
       console.error(`[notifyMovingDay] 요청 ${target.id} 처리 실패`, error);

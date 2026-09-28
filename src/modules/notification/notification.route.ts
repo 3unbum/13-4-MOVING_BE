@@ -64,6 +64,31 @@ router.get("/", validate(notificationListQuerySchema, "query"), notificationCont
 
 /**
  * @swagger
+ * /notifications/stream:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: 알림 실시간 스트림 (SSE)
+ *     description: |
+ *       `text/event-stream`으로 연결을 열어두고, 새 알림이 생기면 `notification` 이벤트를 보냅니다.
+ *       이벤트 본문은 `{ "type": "NEW_ESTIMATE" }`처럼 종류만 담으므로,
+ *       받은 뒤 `GET /notifications`로 목록을 다시 받아가세요.
+ *
+ *       쿠키 인증이라 `new EventSource(url, { withCredentials: true })`로 연결합니다.
+ *       accessToken이 만료되면 재연결에서 401이 나므로 `/auth/refresh` 후 다시 붙어야 합니다.
+ *       25초마다 주석(`: ping`)을 보내 프록시가 유휴 연결을 끊지 않게 합니다.
+ *     responses:
+ *       200:
+ *         description: 이벤트 스트림
+ *         content:
+ *           text/event-stream:
+ *             schema: { type: string }
+ *       401:
+ *         description: 미인증
+ */
+router.get("/stream", notificationController.stream);
+
+/**
+ * @swagger
  * /notifications/summary:
  *   get:
  *     tags: [Notifications]

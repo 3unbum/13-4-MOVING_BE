@@ -10,6 +10,10 @@ GET {{baseUrl}}/notifications?take=10&cursor={{notifications.response.body.$.dat
 ### 미확인 견적 요청 요약 (MOVER 전용)
 GET {{baseUrl}}/notifications/summary
 
+### 알림 실시간 스트림 (SSE, 쿠키 인증)
+# EventSource(url, { withCredentials: true })로 연결합니다.
+GET {{baseUrl}}/notifications/stream
+
 ### 알림 단건 읽음 처리
 PATCH {{baseUrl}}/notifications/{{notifications.response.body.$.data.items[0].id}}/read
 

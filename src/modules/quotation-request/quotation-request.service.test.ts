@@ -3,6 +3,7 @@ import { ERROR_CODES } from "@/common/errors/errorCodes";
 import * as repository from "./quotation-request.repository";
 import * as service from "./quotation-request.service";
 import { createManyNotifications, createNotification } from "../notification/notification.service";
+import { publishNotification } from "../notification/notification.sse";
 
 // service.ts가 create()에서 prisma를 직접 import합니다.
 // 끊어주지 않으면 generated/prisma/client.ts까지 끌고 가 모듈을 못 찾습니다.
@@ -27,6 +28,10 @@ jest.mock("./quotation-request.repository", () => ({
 jest.mock("../notification/notification.service", () => ({
   createNotification: jest.fn(),
   createManyNotifications: jest.fn(),
+}));
+
+jest.mock("../notification/notification.sse", () => ({
+  publishNotification: jest.fn(),
 }));
 
 /** 실제 트랜잭션은 필요 없습니다 — 그대로 전달되는지만 봅니다 */
@@ -91,6 +96,7 @@ describe("create", () => {
       { userId: 5, type: "NEW_REQUEST", quotationRequestId: 100 },
       { userId: 6, type: "NEW_REQUEST", quotationRequestId: 100 },
     ]);
+    expect(publishNotification).toHaveBeenCalledWith([5, 6], { type: "NEW_REQUEST" });
   });
 
   it("조건에 맞는 기사님이 없어도 요청 생성은 성공한다", async () => {
@@ -102,6 +108,7 @@ describe("create", () => {
 
     expect(result).toEqual({ id: 100 });
     expect(createManyNotifications).toHaveBeenCalledWith(fakeTx, []);
+    expect(publishNotification).toHaveBeenCalledWith([], { type: "NEW_REQUEST" });
   });
 });
 
@@ -172,5 +179,6 @@ describe("createTargetedRequest", () => {
       type: "NEW_REQUEST",
       quotationRequestId: 100,
     });
+    expect(publishNotification).toHaveBeenCalledWith([5], { type: "NEW_REQUEST" });
   });
 });

@@ -1,5 +1,6 @@
 import { prisma } from "@/config/prisma";
 import { createManyNotifications } from "@/modules/notification/notification.service";
+import { publishNotification } from "@/modules/notification/notification.sse";
 import { getExpireBaseDate } from "@/jobs/expireRequests.util";
 import { notifyMovingDay } from "./movingDayNotify.job";
 
@@ -15,6 +16,10 @@ jest.mock("@/config/prisma", () => ({
 
 jest.mock("@/modules/notification/notification.service", () => ({
   createManyNotifications: jest.fn(),
+}));
+
+jest.mock("@/modules/notification/notification.sse", () => ({
+  publishNotification: jest.fn(),
 }));
 
 const mockedPrisma = jest.mocked(prisma);
@@ -85,6 +90,8 @@ describe("notifyMovingDay", () => {
       { userId: 7, type: "MOVING_DAY", quotationRequestId: 100 },
       { userId: 5, type: "MOVING_DAY", quotationRequestId: 100 },
     ]);
+    // 트랜잭션이 끝난 뒤에 신호를 보냅니다 — 롤백된 알림이 실시간으로 나가지 않게
+    expect(publishNotification).toHaveBeenCalledWith([7, 5], { type: "MOVING_DAY" });
   });
 
   it("이미 보낸 수신자는 건너뛴다 (재실행해도 중복되지 않는다)", async () => {
@@ -101,6 +108,7 @@ describe("notifyMovingDay", () => {
     expect(createManyNotifications).toHaveBeenCalledWith(tx, [
       { userId: 5, type: "MOVING_DAY", quotationRequestId: 100 },
     ]);
+    expect(publishNotification).toHaveBeenCalledWith([5], { type: "MOVING_DAY" });
   });
 
   it("양쪽 모두 이미 보냈으면 아무것도 만들지 않는다", async () => {
@@ -115,6 +123,7 @@ describe("notifyMovingDay", () => {
 
     // Assertion — createManyNotifications가 빈 배열이면 DB를 건드리지 않습니다
     expect(createManyNotifications).toHaveBeenCalledWith(tx, []);
+    expect(publishNotification).toHaveBeenCalledWith([], { type: "MOVING_DAY" });
   });
 
   it("확정 견적이 없으면 고객에게만 보낸다", async () => {
@@ -131,6 +140,7 @@ describe("notifyMovingDay", () => {
     expect(createManyNotifications).toHaveBeenCalledWith(tx, [
       { userId: 7, type: "MOVING_DAY", quotationRequestId: 100 },
     ]);
+    expect(publishNotification).toHaveBeenCalledWith([7], { type: "MOVING_DAY" });
   });
 
   it("한 건이 실패해도 나머지를 계속 처리한다", async () => {
@@ -153,6 +163,8 @@ describe("notifyMovingDay", () => {
       { userId: 8, type: "MOVING_DAY", quotationRequestId: 200 },
       { userId: 6, type: "MOVING_DAY", quotationRequestId: 200 },
     ]);
+    expect(publishNotification).toHaveBeenCalledTimes(1);
+    expect(publishNotification).toHaveBeenCalledWith([8, 6], { type: "MOVING_DAY" });
     expect(console.error).toHaveBeenCalled();
   });
 });

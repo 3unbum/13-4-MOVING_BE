@@ -26,9 +26,19 @@ jest.mock("./notification.service", () => ({
   },
 }));
 
+jest.mock("./notification.sse", () => ({
+  openStream: jest.fn((_userId: number, res: { status: (code: number) => { end: () => void } }) => {
+    // 실제 스트림은 열어두지 않습니다. 라우트가 컨트롤러까지 도달하는지만 봅니다.
+    res.status(200).end();
+    return jest.fn();
+  }),
+}));
+
 import notificationRouter from "./notification.route";
+import { openStream } from "./notification.sse";
 
 const mockedService = jest.mocked(notificationService);
+const mockedOpenStream = jest.mocked(openStream);
 
 const testErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   if (error instanceof AppError) {
@@ -75,6 +85,16 @@ describe("GET /api/notifications", () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
     expect(mockedService.list).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/notifications/stream", () => {
+  it("stream이 :id 라우트로 먹히지 않고 SSE를 연다", async () => {
+    const res = await request(buildApp()).get("/api/notifications/stream");
+
+    expect(res.status).toBe(200);
+    expect(mockedOpenStream).toHaveBeenCalled();
+    expect(mockedOpenStream.mock.calls[0]?.[0]).toBe(1);
   });
 });
 
