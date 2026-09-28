@@ -2,7 +2,7 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import { Prisma } from "../../../generated/prisma/client.ts";
-import { createNotification } from "../notification/notification.service";
+import { createManyNotifications, createNotification } from "../notification/notification.service";
 import {
   EstimateGetAllByMoverParams,
   EstimateGetAllByQuotationRequestParams,
@@ -100,7 +100,7 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
             }
           }
 
-          return tx.estimate.create({
+          const created = await tx.estimate.create({
             data: {
               price: estimate.price,
               comment: estimate.comment,
@@ -108,6 +108,20 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
               mover: { connect: { id: estimate.moverId } },
             },
           });
+
+          // 견적을 요청한 고객에게 알립니다. 요청자 조회도 트랜잭션 안에서 해야
+          // 상한 검증과 같은 스냅샷을 봅니다.
+          const request = await tx.quotationRequest.findUniqueOrThrow({
+            where: { id: estimate.quotationRequestId },
+            select: { userId: true },
+          });
+          await createNotification(tx, {
+            userId: request.userId,
+            estimateId: created.id,
+            type: "NEW_ESTIMATE",
+          });
+
+          return created;
         },
         { isolationLevel: "Serializable" }
       );
@@ -193,7 +207,8 @@ async function confirm(estimateId: number, moverId: number) {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.estimate.findUnique({
       where: { id: estimateId },
-      select: { quotationRequestId: true },
+      // 확정 알림은 고객도 받으므로 요청자 id를 함께 읽습니다
+      select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
     });
     if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
 
@@ -219,7 +234,11 @@ async function confirm(estimateId: number, moverId: number) {
       where: { userId: moverId },
       data: { confirmedCount: { increment: 1 } },
     });
-    await createNotification(tx, { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" });
+    // 확정은 기사님·고객 양쪽이 받습니다. 같은 type이라 문구 분기는 FE가 자기 role로 처리합니다
+    await createManyNotifications(tx, [
+      { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" },
+      { userId: existing.quotationRequest.userId, estimateId, type: "ESTIMATE_CONFIRMED" },
+    ]);
 
     return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
   });

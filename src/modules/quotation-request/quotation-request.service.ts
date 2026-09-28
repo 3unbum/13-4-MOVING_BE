@@ -1,7 +1,10 @@
 import { prisma } from "@/config/prisma";
 import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
-import { createNotification } from "@/modules/notification/notification.service";
+import {
+  createManyNotifications,
+  createNotification,
+} from "@/modules/notification/notification.service";
 import * as repository from "./quotation-request.repository";
 import type { QuotationRequestCreateInput } from "./quotation-request.type";
 
@@ -23,15 +26,21 @@ async function create(input: QuotationRequestCreateInput) {
   return prisma.$transaction(async (tx) => {
     const created = await repository.save(input, tx);
 
-    // 출발지 지역 기사님들에게 NEW_REQUEST 알림
-    const moverIds = await repository.findMoverIdsByRegion(input.from.region, tx);
-    for (const moverId of moverIds) {
-      await createNotification(tx, {
+    // 출발지 지역 + 이사 유형이 맞는 기사님들에게 NEW_REQUEST 알림.
+    // 대상이 수십 명일 수 있어 한 건씩 await하지 않고 createMany로 넣습니다.
+    const moverIds = await repository.findMoverIdsByRegionAndService(
+      input.from.region,
+      input.category,
+      tx
+    );
+    await createManyNotifications(
+      tx,
+      moverIds.map((moverId) => ({
         userId: moverId,
-        type: "NEW_REQUEST",
+        type: "NEW_REQUEST" as const,
         quotationRequestId: created.id,
-      });
-    }
+      }))
+    );
 
     return created;
   });

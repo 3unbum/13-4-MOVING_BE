@@ -3,7 +3,7 @@ import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import type { PrismaTransaction } from "@/config/prisma";
 import { Prisma } from "../../../generated/prisma/client";
-import type { RegionType } from "../../../generated/prisma/enums";
+import type { RegionType, ServiceType } from "../../../generated/prisma/enums";
 import type { QuotationRequestCreateInput } from "./quotation-request.type";
 
 const TARGET_LIMIT = 3;
@@ -39,10 +39,19 @@ async function save(input: QuotationRequestCreateInput, tx: PrismaTransaction = 
   });
 }
 
-/** 출발지 지역에서 활동하는 기사님 id 목록 - NEW_REQUEST 알림 대상 */
-async function findMoverIdsByRegion(region: RegionType, tx: PrismaTransaction = prisma) {
+/**
+ * 출발지 지역 + 이사 유형이 모두 맞는 기사님 id 목록 - NEW_REQUEST 알림 대상.
+ *
+ * 지역만 보면 소형이사만 하는 기사님에게 사무실이사 요청 알림이 갑니다.
+ * 알림 요약("내 지역의 소형이사 견적 N건")도 이 교집합을 전제로 집계합니다.
+ */
+async function findMoverIdsByRegionAndService(
+  region: RegionType,
+  service: ServiceType,
+  tx: PrismaTransaction = prisma
+) {
   const rows = await tx.moverRegion.findMany({
-    where: { region },
+    where: { region, mover: { moverServices: { some: { service } } } },
     select: { moverId: true },
   });
   return rows.map((row) => row.moverId);
@@ -171,7 +180,7 @@ export {
   findById,
   findManyByUserId,
   findMoverById,
-  findMoverIdsByRegion,
+  findMoverIdsByRegionAndService,
   save,
   saveTargetedRequest,
 };
