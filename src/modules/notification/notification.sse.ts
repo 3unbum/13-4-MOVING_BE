@@ -77,7 +77,7 @@ export function openStream(userId: number, res: Response): () => void {
   targets.add(live);
   connections.set(userId, targets);
 
-  // close는 컨트롤러가 req에 겁니다. error는 write가 throw하기 전에 오므로 여기서 정리합니다.
+  // close는 컨트롤러가 res에 겁니다. error는 write가 throw하기 전에 오므로 여기서 정리합니다.
   res.on("error", stop);
 
   // 주석 한 줄을 먼저 흘려보내 프록시가 헤더를 즉시 내보내게 합니다
