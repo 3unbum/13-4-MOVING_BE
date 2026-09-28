@@ -75,7 +75,7 @@ router.post("/signup", validate(signupSchema), authController.signup);
  *       401:
  *         description: 이메일 또는 비밀번호 불일치 (INVALID_CREDENTIALS)
  *       429:
- *         description: 동일 이메일로 15분간 로그인 5회 초과 실패 (TOO_MANY_REQUESTS)
+ *         description: 동일 계정(role + 이메일)으로 15분간 로그인 5회 초과 실패 (TOO_MANY_REQUESTS)
  *         content:
  *           application/json:
  *             schema:

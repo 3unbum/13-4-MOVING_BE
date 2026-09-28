@@ -1,19 +1,15 @@
 import rateLimit from "express-rate-limit";
 import { ERROR_CODES } from "../errors/errorCodes";
 
-/**
- * 로그인 무차별 대입 방지. IP가 아닌 이메일(req.body.email) 기준으로 15분에 5회 제한
- * 로그인 성공은 카운트에서 제외 (skipSuccessfulRequests: true)
- * 반드시 body 유효성 검사(validate(loginSchema)) 뒤에 걸어야 email이 문자열임이 보장
- * retryAfterSeconds는 헤더의 Access-Control-Expose-Headers 추가 설정 없이 프론트가 바로 읽을 수 있도록 응답 바디에 포함합니다.
- */
+//retryAfterSeconds는 헤더의 Access-Control-Expose-Headers 추가 설정 없이 프론트가 바로 읽을 수 있도록 응답 바디에 포함합니다.
+
 export const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
   standardHeaders: false,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => req.body.email,
+  keyGenerator: (req) => `${req.body.role}:${req.body.email}`,
   handler: (req, res) => {
     const resetTime = req.rateLimit?.resetTime;
     const retryAfterSeconds = resetTime
