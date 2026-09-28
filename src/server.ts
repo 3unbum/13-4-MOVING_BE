@@ -1,6 +1,7 @@
 import app from "./app";
 import { env } from "./config/env";
 import { scheduleExpireRequests } from "./jobs/expireRequests.job";
+import { scheduleMovingDayNotify } from "./jobs/movingDayNotify.job";
 
 app.listen(env.PORT, () => {
   console.log(`서버 실행 중 — http://localhost:${env.PORT}`);
@@ -8,4 +9,5 @@ app.listen(env.PORT, () => {
     console.log(`swagger-jsdoc - http://localhost:${env.PORT}/api-docs`);
   }
   scheduleExpireRequests();
+  scheduleMovingDayNotify();
 });
