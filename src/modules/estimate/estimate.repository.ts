@@ -2,7 +2,7 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import { Prisma } from "../../../generated/prisma/client.ts";
-import { createNotification } from "../notification/notification.service";
+import { createNotification, runAfterCommitPublish } from "../notification/notification.service";
 import {
   EstimateGetAllByMoverParams,
   EstimateGetAllByQuotationRequestParams,
@@ -79,52 +79,55 @@ export const estimateInclude = {
 async function save(estimate: EstimateInputField, isTargeted: boolean) {
   for (let attempt = 1; attempt <= SAVE_MAX_RETRIES; attempt++) {
     try {
-      return await prisma.$transaction(
-        async (tx) => {
-          if (!isTargeted) {
-            const targetedMovers = await tx.targetedRequest.findMany({
-              where: { quotationRequestId: estimate.quotationRequestId },
-              select: { moverId: true },
-            });
-            const generalCount = await tx.estimate.count({
-              where: {
-                quotationRequestId: estimate.quotationRequestId,
-                moverId: { notIn: targetedMovers.map((t) => t.moverId) },
+      // 시도마다 래퍼를 새로 씀 — 실패한 시도의 SSE는 버리고, 커밋 성공 분만 푸시
+      return await runAfterCommitPublish(() =>
+        prisma.$transaction(
+          async (tx) => {
+            if (!isTargeted) {
+              const targetedMovers = await tx.targetedRequest.findMany({
+                where: { quotationRequestId: estimate.quotationRequestId },
+                select: { moverId: true },
+              });
+              const generalCount = await tx.estimate.count({
+                where: {
+                  quotationRequestId: estimate.quotationRequestId,
+                  moverId: { notIn: targetedMovers.map((t) => t.moverId) },
+                },
+              });
+              if (generalCount >= 5) {
+                throw AppError.badRequest(
+                  ERROR_CODES.ESTIMATE_LIMIT_EXCEEDED,
+                  "이 견적 요청에 이미 일반 견적이 5건 도착했습니다"
+                );
+              }
+            }
+
+            const created = await tx.estimate.create({
+              data: {
+                price: estimate.price,
+                comment: estimate.comment,
+                quotationRequest: { connect: { id: estimate.quotationRequestId } },
+                mover: { connect: { id: estimate.moverId } },
               },
             });
-            if (generalCount >= 5) {
-              throw AppError.badRequest(
-                ERROR_CODES.ESTIMATE_LIMIT_EXCEEDED,
-                "이 견적 요청에 이미 일반 견적이 5건 도착했습니다"
-              );
-            }
-          }
 
-          const created = await tx.estimate.create({
-            data: {
-              price: estimate.price,
-              comment: estimate.comment,
-              quotationRequest: { connect: { id: estimate.quotationRequestId } },
-              mover: { connect: { id: estimate.moverId } },
-            },
-          });
-
-          const request = await tx.quotationRequest.findUnique({
-            where: { id: estimate.quotationRequestId },
-            select: { userId: true },
-          });
-          if (request) {
-            await createNotification(tx, {
-              userId: request.userId,
-              type: "NEW_ESTIMATE",
-              estimateId: created.id,
-              quotationRequestId: estimate.quotationRequestId,
+            const request = await tx.quotationRequest.findUnique({
+              where: { id: estimate.quotationRequestId },
+              select: { userId: true },
             });
-          }
+            if (request) {
+              await createNotification(tx, {
+                userId: request.userId,
+                type: "NEW_ESTIMATE",
+                estimateId: created.id,
+                quotationRequestId: estimate.quotationRequestId,
+              });
+            }
 
-          return created;
-        },
-        { isolationLevel: "Serializable" }
+            return created;
+          },
+          { isolationLevel: "Serializable" }
+        )
       );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -205,44 +208,46 @@ async function getById(id: number) {
 // 견적 확정(배정) — estimate CONFIRMED, quotationRequest ASSIGNED, mover confirmedCount+1, notification 생성을 한 트랜잭션으로 처리
 // COMPLETED는 이사일 경과 후 expireRequests.job.ts가 처리 (여기서 건드리지 않음)
 async function confirm(estimateId: number, moverId: number) {
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.estimate.findUnique({
-      where: { id: estimateId },
-      select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
-    });
-    if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const existing = await tx.estimate.findUnique({
+        where: { id: estimateId },
+        select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
+      });
+      if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
 
-    // PENDING 조건부 갱신 — 동시에 두 번 확정 시도해도 하나만 성공하도록 (count로 검증)
-    const estimateUpdate = await tx.estimate.updateMany({
-      where: { id: estimateId, estimateStatus: "PENDING" },
-      data: { estimateStatus: "CONFIRMED" },
-    });
-    if (estimateUpdate.count !== 1) {
-      throw AppError.badRequest(ERROR_CODES.ESTIMATE_ALREADY_PROCESSED, "이미 처리된 견적입니다");
-    }
+      // PENDING 조건부 갱신 — 동시에 두 번 확정 시도해도 하나만 성공하도록 (count로 검증)
+      const estimateUpdate = await tx.estimate.updateMany({
+        where: { id: estimateId, estimateStatus: "PENDING" },
+        data: { estimateStatus: "CONFIRMED" },
+      });
+      if (estimateUpdate.count !== 1) {
+        throw AppError.badRequest(ERROR_CODES.ESTIMATE_ALREADY_PROCESSED, "이미 처리된 견적입니다");
+      }
 
-    // 같은 요청의 다른 견적이 먼저 확정됐을 수 있으므로 여기도 PENDING 조건부 갱신
-    const requestUpdate = await tx.quotationRequest.updateMany({
-      where: { id: existing.quotationRequestId, quotationStatus: "PENDING" },
-      data: { quotationStatus: "ASSIGNED" },
-    });
-    if (requestUpdate.count !== 1) {
-      throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 요청입니다");
-    }
+      // 같은 요청의 다른 견적이 먼저 확정됐을 수 있으므로 여기도 PENDING 조건부 갱신
+      const requestUpdate = await tx.quotationRequest.updateMany({
+        where: { id: existing.quotationRequestId, quotationStatus: "PENDING" },
+        data: { quotationStatus: "ASSIGNED" },
+      });
+      if (requestUpdate.count !== 1) {
+        throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 요청입니다");
+      }
 
-    await tx.moverProfile.update({
-      where: { userId: moverId },
-      data: { confirmedCount: { increment: 1 } },
-    });
-    await createNotification(tx, { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" });
-    await createNotification(tx, {
-      userId: existing.quotationRequest.userId,
-      estimateId,
-      type: "ESTIMATE_CONFIRMED",
-    });
+      await tx.moverProfile.update({
+        where: { userId: moverId },
+        data: { confirmedCount: { increment: 1 } },
+      });
+      await createNotification(tx, { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" });
+      await createNotification(tx, {
+        userId: existing.quotationRequest.userId,
+        estimateId,
+        type: "ESTIMATE_CONFIRMED",
+      });
 
-    return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
-  });
+      return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
+    })
+  );
 }
 
 export default { confirm, getAllByMover, getAllByQuotationRequest, getById, reject, save };

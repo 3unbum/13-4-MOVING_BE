@@ -1,7 +1,10 @@
 import cron from "node-cron";
 import { prisma } from "../config/prisma";
 import { getExpireBaseDate } from "./expireRequests.util";
-import { createNotification } from "../modules/notification/notification.service";
+import {
+  createNotification,
+  runAfterCommitPublish,
+} from "../modules/notification/notification.service";
 
 /**
  * 이사 당일 알림 — 매일 09:00 KST.
@@ -38,25 +41,27 @@ export async function notifyMovingDay(now: Date = new Date()): Promise<void> {
     const recipientIds = moverId ? [request.userId, moverId] : [request.userId];
 
     try {
-      await prisma.$transaction(async (tx) => {
-        for (const userId of recipientIds) {
-          const exists = await tx.notification.findFirst({
-            where: { userId, type: "MOVING_DAY", quotationRequestId: request.id },
-            select: { id: true },
-          });
-          if (exists) {
-            skipped += 1;
-            continue;
-          }
+      await runAfterCommitPublish(() =>
+        prisma.$transaction(async (tx) => {
+          for (const userId of recipientIds) {
+            const exists = await tx.notification.findFirst({
+              where: { userId, type: "MOVING_DAY", quotationRequestId: request.id },
+              select: { id: true },
+            });
+            if (exists) {
+              skipped += 1;
+              continue;
+            }
 
-          await createNotification(tx, {
-            userId,
-            type: "MOVING_DAY",
-            quotationRequestId: request.id,
-          });
-          created += 1;
-        }
-      });
+            await createNotification(tx, {
+              userId,
+              type: "MOVING_DAY",
+              quotationRequestId: request.id,
+            });
+            created += 1;
+          }
+        })
+      );
     } catch (error) {
       console.error(`[notifyMovingDay] 요청 ${request.id} 처리 실패`, error);
     }

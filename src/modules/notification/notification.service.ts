@@ -1,8 +1,8 @@
 import { prisma, type PrismaTransaction } from "../../config/prisma";
 import { AppError } from "../../common/errors/AppError";
 import type { NotificationType } from "../../../generated/prisma/enums.ts";
-import { publishNotification } from "./notification.hub";
 import { toNotificationItem } from "./notification.mapper";
+import { enqueueNotificationPublish } from "./notification.publish";
 import { notificationRepository } from "./notification.repository";
 import type { ListNotificationsQuery } from "./notification.schema";
 import type {
@@ -14,6 +14,7 @@ import type {
 } from "./notification.type";
 
 export type { NotificationType, CreateNotificationParams };
+export { runAfterCommitPublish } from "./notification.publish";
 
 const DEFAULT_LIMIT = 10;
 
@@ -21,7 +22,8 @@ const DEFAULT_LIMIT = 10;
  * 알림 생성 — 견적 요청/발송/확정 트랜잭션 안에서 호출됩니다.
  *
  * 시그니처는 확정된 것이므로 변경하지 마세요.
- * 문구는 FE가 type+payload로 조립합니다. SSE는 커밋 직후 같은 유저 연결에만 푸시합니다.
+ * DB INSERT만 수행하고, SSE는 runAfterCommitPublish 대기열에 넣습니다.
+ * (트랜잭션을 runAfterCommitPublish로 감싸야 커밋 성공 후에만 푸시됩니다.)
  */
 export async function createNotification(
   tx: PrismaTransaction,
@@ -34,9 +36,7 @@ export async function createNotification(
     quotationRequestId: params.quotationRequestId,
   });
 
-  const item = toNotificationItem(created);
-  // 트랜잭션 콜백이 끝난 뒤에 보냅니다. 롤백되면 목록 API가 진실입니다.
-  setImmediate(() => publishNotification(created.userId, item));
+  enqueueNotificationPublish(created.userId, toNotificationItem(created));
 }
 
 export const notificationService = {

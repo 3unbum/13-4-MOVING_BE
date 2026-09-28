@@ -1,7 +1,10 @@
 import { prisma } from "@/config/prisma";
 import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
-import { createNotification } from "@/modules/notification/notification.service";
+import {
+  createNotification,
+  runAfterCommitPublish,
+} from "@/modules/notification/notification.service";
 import * as repository from "./quotation-request.repository";
 import type { QuotationRequestCreateInput } from "./quotation-request.type";
 
@@ -20,21 +23,24 @@ async function create(input: QuotationRequestCreateInput) {
     );
   }
 
-  return prisma.$transaction(async (tx) => {
-    const created = await repository.save(input, tx);
+  // 커밋 성공 후에만 NEW_REQUEST SSE 푸시
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const created = await repository.save(input, tx);
 
-    // 출발지 지역 기사님들에게 NEW_REQUEST 알림
-    const moverIds = await repository.findMoverIdsByRegion(input.from.region, tx);
-    for (const moverId of moverIds) {
-      await createNotification(tx, {
-        userId: moverId,
-        type: "NEW_REQUEST",
-        quotationRequestId: created.id,
-      });
-    }
+      // 출발지 지역 기사님들에게 NEW_REQUEST 알림
+      const moverIds = await repository.findMoverIdsByRegion(input.from.region, tx);
+      for (const moverId of moverIds) {
+        await createNotification(tx, {
+          userId: moverId,
+          type: "NEW_REQUEST",
+          quotationRequestId: created.id,
+        });
+      }
 
-    return created;
-  });
+      return created;
+    })
+  );
 }
 
 /** 활성 요청 조회. 없으면 null을 반환합니다(에러 아님). */
@@ -91,9 +97,11 @@ async function createTargetedRequest(quotationRequestId: number, userId: number,
   const mover = await repository.findMoverById(moverId);
   if (!mover) throw AppError.notFound("기사님을 찾을 수 없습니다.");
 
-  return repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
-    await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
-  });
+  return runAfterCommitPublish(() =>
+    repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
+      await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
+    })
+  );
 }
 
 export { create, createTargetedRequest, findActive, findById, findMany };
