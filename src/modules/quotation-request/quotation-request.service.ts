@@ -108,12 +108,11 @@ async function createTargetedRequest(quotationRequestId: number, userId: number,
   const mover = await repository.findMoverById(moverId);
   if (!mover) throw AppError.notFound("기사님을 찾을 수 없습니다.");
 
-  return runAfterCommitPublish(() =>
-    repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
-      await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
-      enqueueNotificationPublish([moverId], "NEW_REQUEST");
-    })
-  );
+  // 재시도 루프 안의 각 트랜잭션이 대기열을 새로 엽니다. 여기서 감싸면 롤백된 신호가 남습니다.
+  return repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
+    await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
+    enqueueNotificationPublish([moverId], "NEW_REQUEST");
+  });
 }
 
 export { create, createTargetedRequest, findActive, findById, findMany };

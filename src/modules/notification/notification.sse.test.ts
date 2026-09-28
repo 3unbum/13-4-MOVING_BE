@@ -8,7 +8,8 @@ function makeRes() {
   const handlers = new Map<string, () => void>();
   return {
     writeHead: jest.fn(),
-    write: jest.fn(),
+    write: jest.fn(() => true),
+    destroy: jest.fn(),
     writableEnded: false,
     destroyed: false,
     on: jest.fn((event: string, handler: () => void) => {
@@ -20,6 +21,7 @@ function makeRes() {
   } as unknown as Response & {
     writeHead: jest.Mock;
     write: jest.Mock;
+    destroy: jest.Mock;
     writableEnded: boolean;
     destroyed: boolean;
     emit: (event: string) => void;
@@ -201,6 +203,21 @@ describe("publishNotification", () => {
     // Assertion — 끊어진 연결이 Map에 쌓이면 다음 발행마다 계속 실패합니다
     expect(countConnections(7)).toBe(0);
     expect(res.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("write가 false를 반환하면 연결을 끊는다", () => {
+    // Setup — 버퍼가 가득 차면 write가 false를 반환합니다
+    const res = makeRes();
+    open(7, res);
+    res.write.mockClear();
+    res.write.mockReturnValue(false);
+
+    // Exercise
+    publishNotification([7], { type: "NEW_REQUEST" });
+
+    // Assertion
+    expect(res.destroy).toHaveBeenCalled();
+    expect(countConnections(7)).toBe(0);
   });
 
   it("destroy된 소켓에는 쓰지 않고 연결을 정리한다", () => {

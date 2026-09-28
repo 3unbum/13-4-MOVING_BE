@@ -32,7 +32,7 @@ router.use(requireAuth);
  *       - $ref: '#/components/parameters/take'
  *       - in: query
  *         name: isRead
- *         schema: { type: string, enum: [true, false] }
+ *         schema: { type: string, enum: ["true", "false"] }
  *         description: 생략하면 전체. true는 읽음만, false는 안 읽음만
  *     responses:
  *       200:

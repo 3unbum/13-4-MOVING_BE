@@ -22,6 +22,17 @@ jest.mock("@/modules/notification/notification.sse", () => ({
   publishNotification: jest.fn(),
 }));
 
+// 실제 generated client를 로드하면 내부 상대 import(.ts)까지 따라가 해석이 깨집니다.
+jest.mock("../../generated/prisma/client.ts", () => ({
+  Prisma: {
+    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
+      code = "P2034";
+    },
+  },
+}));
+
+import { Prisma } from "../../generated/prisma/client.ts";
+
 const mockedPrisma = jest.mocked(prisma);
 
 /** 트랜잭션 안에서 중복 확인에 쓰는 메서드만 갖춘 가짜 tx */
@@ -92,6 +103,9 @@ describe("notifyMovingDay", () => {
     ]);
     // 트랜잭션이 끝난 뒤에 신호를 보냅니다 — 롤백된 알림이 실시간으로 나가지 않게
     expect(publishNotification).toHaveBeenCalledWith([7, 5], { type: "MOVING_DAY" });
+    expect(mockedPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
   });
 
   it("이미 보낸 수신자는 건너뛴다 (재실행해도 중복되지 않는다)", async () => {
@@ -166,5 +180,30 @@ describe("notifyMovingDay", () => {
     expect(publishNotification).toHaveBeenCalledTimes(1);
     expect(publishNotification).toHaveBeenCalledWith([8, 6], { type: "MOVING_DAY" });
     expect(console.error).toHaveBeenCalled();
+  });
+
+  it("직렬화 충돌이면 다시 시도하고 성공한 신호만 보낸다", async () => {
+    // Setup
+    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([
+      { id: 100, userId: 7, estimates: [{ moverId: 5 }] },
+    ]);
+    const tx = makeTx([]);
+    (mockedPrisma.$transaction as unknown as jest.Mock)
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("직렬화 충돌", {
+          code: "P2034",
+          clientVersion: "test",
+        })
+      )
+      .mockImplementationOnce((callback: (tx: unknown) => unknown) => callback(tx));
+
+    // Exercise
+    await notifyMovingDay();
+
+    // Assertion — 롤백된 시도의 신호는 나가지 않습니다
+    expect(mockedPrisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(createManyNotifications).toHaveBeenCalledTimes(1);
+    expect(publishNotification).toHaveBeenCalledTimes(1);
+    expect(console.error).not.toHaveBeenCalled();
   });
 });

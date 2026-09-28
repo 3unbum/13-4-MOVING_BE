@@ -35,11 +35,15 @@ export interface NotificationEvent {
 /**
  * 이미 끊긴 소켓에 write하면 프로세스가 예외로 죽을 수 있습니다.
  * writableEnded만 보면 destroy된 소켓을 놓칩니다.
+ * write가 false면 버퍼가 가득 찬 상태라, 계속 쓰면 메모리가 쌓입니다. 그 연결은 끊습니다.
  */
 function write(res: Response, chunk: string): boolean {
   if (res.writableEnded || res.destroyed) return false;
   try {
-    res.write(chunk);
+    if (res.write(chunk) === false) {
+      res.destroy();
+      return false;
+    }
     return true;
   } catch {
     return false;
