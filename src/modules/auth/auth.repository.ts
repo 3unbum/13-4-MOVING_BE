@@ -79,4 +79,53 @@ export const authRepository = {
       orderBy: { createdAt: "asc" },
     });
   },
+
+  /**
+   * 유저당 한 행만 유지하므로 재발송 시 기존 행을 지우고 새로 만듭니다.
+   * upsert로 덮어쓰면 id가 그대로 남아, 이전에 발급한 재설정 토큰(codeId)이 다시 유효해집니다.
+   */
+  replacePasswordResetCode(userId: number, codeHash: string, expiresAt: Date) {
+    return prisma.$transaction(async (tx) => {
+      await tx.passwordResetCode.deleteMany({ where: { userId } });
+      return tx.passwordResetCode.create({ data: { userId, codeHash, expiresAt } });
+    });
+  },
+
+  findPasswordResetCodeByUserId(userId: number) {
+    return prisma.passwordResetCode.findUnique({ where: { userId } });
+  },
+
+  /**
+   * 상한 미만일 때만 1 올립니다. 조건 확인과 증가를 한 쿼리로 해야
+   * 틀린 코드를 동시에 여러 개 보내도 상한을 넘지 않습니다.
+   * 증가했으면 true, 이미 상한에 도달해 있었으면 false
+   */
+  async incrementResetCodeFailedAttempts(id: number, maxAttempts: number) {
+    const { count } = await prisma.passwordResetCode.updateMany({
+      where: { id, failedAttempts: { lt: maxAttempts } },
+      data: { failedAttempts: { increment: 1 } },
+    });
+    return count === 1;
+  },
+
+  /**
+   * 재설정 토큰 1회 사용 처리 + 비밀번호 변경 + 다른 기기 세션 무효화를 한 트랜잭션으로 합니다.
+   * usedAt 조건을 건 updateMany로 사용 처리를 먼저 해서, 같은 토큰으로 동시에 요청해도 하나만 통과합니다.
+   * 처리했으면 true, 이미 사용됐거나 없는 코드면 false
+   */
+  completePasswordReset(codeId: number, userId: number, hashedPassword: string) {
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.passwordResetCode.updateMany({
+        where: { id: codeId, userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      if (count !== 1) return false;
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { password: hashedPassword, refreshToken: null },
+      });
+      return true;
+    });
+  },
 };
