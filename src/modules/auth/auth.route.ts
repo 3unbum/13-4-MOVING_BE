@@ -1,7 +1,11 @@
 import { Router } from "express";
 import { requireAuth } from "../../common/middlewares/auth";
 import { validate } from "../../common/middlewares/validate";
-import { loginRateLimiter } from "../../common/middlewares/rateLimit";
+import {
+  loginRateLimiter,
+  resetCodeRateLimiters,
+  resetCodeDailyMailLimiter,
+} from "../../common/middlewares/rateLimit";
 import {
   signupSchema,
   loginSchema,
@@ -240,10 +244,29 @@ router.post("/find-email", validate(findEmailSchema), authController.findEmail);
  *         description: 요청 처리 완료 (실제 발송 여부와 무관)
  *       400:
  *         description: 유효성 검사 실패
+ *       429:
+ *         description: |
+ *           요청 횟수 초과 (TOO_MANY_REQUESTS). 가입 여부와 무관하게 모든 요청을 셉니다.
+ *           - 같은 계정(role + 이메일): 1분 1회 / 1시간 5회 / 하루 10회
+ *           - 서비스 전체: 하루 400통 (실제로 발송한 메일만 셈)
+ *           retryAfterSeconds로 재발송 버튼 카운트다운을 표시할 수 있습니다.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     code: { type: string, example: TOO_MANY_REQUESTS }
+ *                     message: { type: string }
+ *                     retryAfterSeconds: { type: integer }
  */
 router.post(
   "/password-reset/code",
   validate(sendResetCodeSchema),
+  ...resetCodeRateLimiters,
+  resetCodeDailyMailLimiter,
   authController.sendPasswordResetCode
 );
 
