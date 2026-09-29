@@ -84,6 +84,15 @@ export const authController = {
     }
   }) as RequestHandler,
 
+  findEmail: (async (req, res, next) => {
+    try {
+      const result = await authService.findEmail(req.body);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
   /**
    * role을 모른 채 부를 수 있는 유일한 계정 조회.
    * requireAuth가 채워준 req.user.role로 분기만 하고, 응답 본문은 GET /profiles/{role}과 동일합니다.

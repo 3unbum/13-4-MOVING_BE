@@ -6,6 +6,7 @@ import {
   signupSchema,
   loginSchema,
   checkEmailSchema,
+  findEmailSchema,
   oauthProviderParamSchema,
   oauthLoginSchema,
   oauthSignupSchema,
@@ -158,6 +159,58 @@ router.post("/refresh", authController.refresh);
  *         description: 유효성 검사 실패
  */
 router.post("/check-email", validate(checkEmailSchema), authController.checkEmail);
+
+/**
+ * @swagger
+ * /auth/find-email:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 아이디(이메일) 찾기
+ *     description: |
+ *       role + 이름 + 전화번호가 일치하는 계정의 이메일을 마스킹해서 돌려줍니다(예: ab***@naver.com).
+ *       이메일 가입(LOCAL) 계정뿐 아니라 소셜 계정도 포함하며, provider로 가입 경로를 알려줍니다 —
+ *       소셜로 가입한 걸 잊은 사용자가 이메일로 중복 가입하지 않도록 하기 위함입니다.
+ *       같은 role 안에서도 LOCAL과 소셜 계정이 함께 있을 수 있어 여러 건이 나올 수 있습니다.
+ *       일치하는 계정이 없으면 404가 아니라 빈 배열로 응답합니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, name, phoneNumber]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               name: { type: string, minLength: 1, description: "앞뒤 공백은 제거 후 비교" }
+ *               phoneNumber: { type: string, description: "01[016789]XXXXXXX(X) 형식" }
+ *     responses:
+ *       200:
+ *         description: 조회 완료 — 일치하는 계정이 없으면 accounts가 빈 배열
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     accounts:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           email: { type: string, example: "ab***@naver.com" }
+ *                           provider: { type: string, enum: [LOCAL, GOOGLE, KAKAO, NAVER] }
+ *             example:
+ *               data:
+ *                 accounts:
+ *                   - { email: "ab***@naver.com", provider: LOCAL }
+ *                   - { email: "ab***@naver.com", provider: KAKAO }
+ *       400:
+ *         description: 유효성 검사 실패
+ */
+router.post("/find-email", validate(findEmailSchema), authController.findEmail);
 
 /**
  * @swagger

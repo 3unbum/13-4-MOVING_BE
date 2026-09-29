@@ -59,6 +59,47 @@ Content-Type: application/json
   "email": "customer1@test.com"
 }
 
+### 아이디(이메일) 찾기 - 시드 계정 customer@moving.test → 200, cu***@moving.test (LOCAL)
+# 일치하는 계정이 없어도 404가 아니라 accounts 빈 배열. 소셜 계정도 provider와 함께 포함됨
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "김소비",
+  "phoneNumber": "01011112222"
+}
+
+### 아이디 찾기 - 이름 앞뒤 공백 → 공백 제거 후 비교되어 위와 같은 결과
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "  김소비 ",
+  "phoneNumber": "01011112222"
+}
+
+### 아이디 찾기 - role 불일치 → 200, accounts 빈 배열
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "MOVER",
+  "name": "김소비",
+  "phoneNumber": "01011112222"
+}
+
+### 아이디 찾기 - 전화번호 형식 오류 → 400 VALIDATION_ERROR
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "김소비",
+  "phoneNumber": "010-1111-2222"
+}
+
 ### 토큰 갱신 (refreshToken 쿠키 필요 - 로그인 후 쿠키 자동 첨부)
 POST {{baseUrl}}/auth/refresh
 
