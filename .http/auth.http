@@ -118,6 +118,7 @@ Content-Type: application/json
 ### 2) 인증번호 확인 → 204 + passwordResetToken 쿠키(10분, httpOnly) 발급
 # 메일로 받은 6자리를 code에 넣으세요. 틀리면 400 INVALID_RESET_CODE,
 # 5번째로 틀리면 RESET_CODE_ATTEMPTS_EXCEEDED, 5분이 지나면 RESET_CODE_EXPIRED → 1)부터 다시
+# @name verifyResetCode
 POST {{baseUrl}}/auth/password-reset/verify
 Content-Type: application/json
 
@@ -127,10 +128,13 @@ Content-Type: application/json
   "code": "000000"
 }
 
-### 3) 새 비밀번호 설정 → 204 (passwordResetToken 쿠키 필요 - 2) 성공 후 자동 첨부)
+### 3) 새 비밀번호 설정 → 204
+# 쿠키가 자동으로 넘어가지 않아, 2)의 응답 Set-Cookie를 그대로 Cookie 헤더로 보냅니다.
+# 반드시 2)를 방금 성공(204)시킨 뒤 실행하세요 — 2)가 실패했거나 안 했으면 401
 # 성공하면 다른 기기 로그인도 끊기고 로그인·재설정 쿠키가 지워짐. 같은 토큰으로 다시 부르면 401
 POST {{baseUrl}}/auth/password-reset
 Content-Type: application/json
+Cookie: {{verifyResetCode.response.headers.Set-Cookie}}
 
 {
   "newPassword": "NewPassword1!"
