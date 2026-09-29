@@ -94,6 +94,21 @@ export const authController = {
   }) as RequestHandler,
 
   /**
+   * 가입 여부가 드러나지 않도록 발송 여부와 관계없이 항상 204로 응답합니다.
+   * mailSent는 응답 전에 표시해야 합니다 — 일일 발송 상한 limiter가 응답이 끝난 뒤 이 값을 읽어
+   * 실제로 보낸 메일만 카운트에 남깁니다.
+   */
+  sendPasswordResetCode: (async (req, res, next) => {
+    try {
+      const sent = await authService.sendPasswordResetCode(req.body);
+      if (sent) res.locals.mailSent = true;
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  /**
    * role을 모른 채 부를 수 있는 유일한 계정 조회.
    * requireAuth가 채워준 req.user.role로 분기만 하고, 응답 본문은 GET /profiles/{role}과 동일합니다.
    */

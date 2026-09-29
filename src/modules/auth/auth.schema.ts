@@ -32,6 +32,9 @@ export const findEmailSchema = z.object({
   phoneNumber: z.string().regex(/^01[016789]\d{7,8}$/, "올바른 전화번호 형식이 아닙니다"),
 });
 
+/** 요청 형태가 이메일 중복 확인과 같아 공유, 한쪽만 필드가 바뀌면 그때 분리 */
+export const sendResetCodeSchema = checkEmailSchema;
+
 export const oauthProviderParamSchema = z.object({
   provider: z.enum(["google", "kakao", "naver"]),
 });
@@ -50,6 +53,7 @@ export type SignupDto = z.infer<typeof signupSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
 export type CheckEmailDto = z.infer<typeof checkEmailSchema>;
 export type FindEmailDto = z.infer<typeof findEmailSchema>;
+export type SendResetCodeDto = z.infer<typeof sendResetCodeSchema>;
 export type OAuthProviderParam = z.infer<typeof oauthProviderParamSchema>;
 export type OAuthLoginDto = z.infer<typeof oauthLoginSchema>;
 export type OAuthSignupDto = z.infer<typeof oauthSignupSchema>;

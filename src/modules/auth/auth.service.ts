@@ -1,5 +1,7 @@
+import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { Prisma, type User } from "../../../generated/prisma/client";
+import { mailer, MAIL_FROM } from "../../config/mailer";
 import { authRepository } from "./auth.repository";
 import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
@@ -7,11 +9,13 @@ import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { exchangeOAuthCode, toSocialProvider, type OAuthProviderName } from "./oauth/dispatcher";
 import oauthSignupTokenUtil from "./oauth/oauthSignupToken.util";
+import { buildResetCodeMail } from "./password-reset/resetCodeMail";
 import type {
   SignupDto,
   LoginDto,
   CheckEmailDto,
   FindEmailDto,
+  SendResetCodeDto,
   OAuthLoginDto,
   OAuthSignupDto,
 } from "./auth.schema";
@@ -24,6 +28,12 @@ const createAuthTokens = async (userId: User["id"], role: User["role"]) => {
   await authRepository.updateRefreshToken(userId, hashUtil.hashRefreshToken(refreshToken));
   return { accessToken, refreshToken };
 };
+
+/** 비밀번호 재설정 인증번호 유효시간. 메일 문구에도 이 값이 들어갑니다. */
+const RESET_CODE_TTL_MINUTES = 5;
+
+/** 000000~999999. randomInt는 암호학적으로 안전한 난수라 Math.random 대신 씁니다. */
+const generateResetCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
 /** 아이디 앞 2자(2자 이하면 1자) + 고정 *** + 도메인. 별표 개수로 아이디 길이가 드러나지 않게 고정합니다. */
 const maskEmail = (email: string) => {
@@ -166,6 +176,46 @@ export const authService = {
   },
 
   /**
+   * LOCAL 계정이면 인증번호를 저장하고 메일을 보냅니다.
+   * 가입 여부가 드러나지 않도록 컨트롤러는 결과와 관계없이 같은 응답을 주고,
+   * 이 반환값은 서비스 전체 일일 발송 상한을 "실제로 보낸 메일"만으로 세는 데 씁니다.
+   * Gmail SMTP가 발송을 접수했으면 true
+   */
+  async sendPasswordResetCode(dto: SendResetCodeDto): Promise<boolean> {
+    const user = await authRepository.existsByEmailAndRole(dto.email, dto.role);
+    if (!user) return false;
+
+    const code = generateResetCode();
+    const expiresAt = new Date(Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000);
+    try {
+      await authRepository.replacePasswordResetCode(
+        user.id,
+        hashUtil.hashResetCode(code),
+        expiresAt
+      );
+    } catch (error) {
+      // 같은 유저의 동시 요청이 먼저 행을 만들면 userId 유니크가 막음 — 먼저 온 요청이 메일을 보내므로 여기선 발송하지 않음
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return false;
+      }
+      throw error;
+    }
+
+    try {
+      await mailer.sendMail({
+        from: MAIL_FROM,
+        to: dto.email,
+        ...buildResetCodeMail(code, RESET_CODE_TTL_MINUTES),
+      });
+      return true;
+    } catch (error) {
+      // 발송 실패도 응답은 같게 줍니다 — 가입된 이메일일 때만 에러가 나면 가입 여부가 드러나므로
+      console.error("[passwordReset] 인증번호 메일 발송 실패", error);
+      return false;
+    }
+  },
+
+  /**
    * code→token 교환·프로필 조회 후 (role, provider, providerId)로 기존 회원 여부를 판별한다.
    * 기존 회원이면 바로 로그인 처리, 신규 회원이면 oauthSignupToken만 발급하고
    * 계정 생성은 하지 않는다 (전화번호를 받아야 oauthSignup에서 생성됨).
@@ -239,7 +289,10 @@ export const authService = {
       payload.role
     );
     if (existing) {
-      throw AppError.conflict(ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED, "이미 가입된 계정입니다");
+      throw AppError.conflict(
+        ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED,
+        "이미 가입된 계정입니다"
+      );
     }
 
     let user: User;
@@ -255,7 +308,10 @@ export const authService = {
     } catch (error) {
       // findBySocialAndRole 조회 이후 동시 요청이 먼저 저장하면 (role, provider, providerId) 유니크가 막고 P2002를 던짐
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw AppError.conflict(ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED, "이미 가입된 계정입니다");
+        throw AppError.conflict(
+          ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED,
+          "이미 가입된 계정입니다"
+        );
       }
       throw error;
     }

@@ -7,6 +7,7 @@ import {
   loginSchema,
   checkEmailSchema,
   findEmailSchema,
+  sendResetCodeSchema,
   oauthProviderParamSchema,
   oauthLoginSchema,
   oauthSignupSchema,
@@ -211,6 +212,40 @@ router.post("/check-email", validate(checkEmailSchema), authController.checkEmai
  *         description: 유효성 검사 실패
  */
 router.post("/find-email", validate(findEmailSchema), authController.findEmail);
+
+/**
+ * @swagger
+ * /auth/password-reset/code:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 비밀번호 재설정 인증번호 발송
+ *     description: |
+ *       (role, email)의 이메일 가입(LOCAL) 계정이 있으면 6자리 인증번호를 메일로 보냅니다(유효 5분).
+ *       재발송하면 이전 인증번호는 무효가 됩니다.
+ *       가입 여부가 드러나지 않도록 미가입 이메일·소셜 계정·발송 실패 모두 같은 204로 응답합니다.
+ *       안내 문구는 프론트에서 표시합니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email }
+ *     responses:
+ *       204:
+ *         description: 요청 처리 완료 (실제 발송 여부와 무관)
+ *       400:
+ *         description: 유효성 검사 실패
+ */
+router.post(
+  "/password-reset/code",
+  validate(sendResetCodeSchema),
+  authController.sendPasswordResetCode
+);
 
 /**
  * @swagger
