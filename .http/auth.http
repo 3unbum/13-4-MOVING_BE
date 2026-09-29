@@ -100,6 +100,52 @@ Content-Type: application/json
   "phoneNumber": "010-1111-2222"
 }
 
+### ─────────── 비밀번호 재설정 (발송 → 확인 → 재설정) ───────────
+# 시드 계정(@moving.test)은 메일을 받을 수 없으므로, 본인이 받을 수 있는 이메일로 먼저 회원가입한 뒤
+# 아래 resetEmail을 그 주소로 바꿔서 순서대로 실행하세요.
+@resetEmail = your-email@example.com
+
+### 1) 인증번호 발송 → 항상 204 (미가입 이메일도 같은 응답, 실제로는 메일만 안 감)
+# 같은 계정 기준 1분 1회 · 1시간 5회 · 하루 10회. 넘으면 429 + retryAfterSeconds
+POST {{baseUrl}}/auth/password-reset/code
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "{{resetEmail}}"
+}
+
+### 2) 인증번호 확인 → 204 + passwordResetToken 쿠키(10분, httpOnly) 발급
+# 메일로 받은 6자리를 code에 넣으세요. 틀리면 400 INVALID_RESET_CODE,
+# 5번째로 틀리면 RESET_CODE_ATTEMPTS_EXCEEDED, 5분이 지나면 RESET_CODE_EXPIRED → 1)부터 다시
+POST {{baseUrl}}/auth/password-reset/verify
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "{{resetEmail}}",
+  "code": "000000"
+}
+
+### 3) 새 비밀번호 설정 → 204 (passwordResetToken 쿠키 필요 - 2) 성공 후 자동 첨부)
+# 성공하면 다른 기기 로그인도 끊기고 로그인·재설정 쿠키가 지워짐. 같은 토큰으로 다시 부르면 401
+POST {{baseUrl}}/auth/password-reset
+Content-Type: application/json
+
+{
+  "newPassword": "NewPassword1!"
+}
+
+### 4) 새 비밀번호로 로그인 확인 → 200
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "{{resetEmail}}",
+  "password": "NewPassword1!"
+}
+
 ### 토큰 갱신 (refreshToken 쿠키 필요 - 로그인 후 쿠키 자동 첨부)
 POST {{baseUrl}}/auth/refresh
 
