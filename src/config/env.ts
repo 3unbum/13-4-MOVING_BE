@@ -50,6 +50,14 @@ export const env = {
   NAVER_CLIENT_SECRET: optional("NAVER_CLIENT_SECRET", ""),
   KAKAO_CLIENT_ID: optional("KAKAO_CLIENT_ID", ""),
   KAKAO_CLIENT_SECRET: optional("KAKAO_CLIENT_SECRET", ""),
+
+  /**
+   * 비밀번호 재설정 인증번호 발송용 Gmail 계정. OAuth 자격증명과 같은 이유로 optional —
+   * 비어있으면 서버는 뜨고, 메일 발송 시점에만 Gmail 인증 실패로 떨어집니다.
+   * SMTP_PASS는 Gmail 로그인 비밀번호가 아니라 앱 비밀번호(16자리)입니다.
+   */
+  SMTP_USER: optional("SMTP_USER", ""),
+  SMTP_PASS: optional("SMTP_PASS", ""),
 } as const;
 
 export const isProduction = env.NODE_ENV === "production";
