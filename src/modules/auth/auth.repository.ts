@@ -67,4 +67,16 @@ export const authRepository = {
       select: { id: true },
     });
   },
+
+  /**
+   * 아이디 찾기용. 다른 조회와 달리 LOCAL로 좁히지 않고 소셜 계정도 함께 조회합니다.
+   * 같은 role 안에서도 이메일 가입 계정과 소셜 계정이 공존할 수 있어 여러 건이 나올 수 있습니다.
+   */
+  findAccountsByNameAndPhone(role: UserRole, name: string, phoneNumber: string) {
+    return prisma.user.findMany({
+      where: { role, name, phoneNumber },
+      select: { email: true, provider: true },
+      orderBy: { createdAt: "asc" },
+    });
+  },
 };

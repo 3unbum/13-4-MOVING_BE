@@ -7,8 +7,15 @@ import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { exchangeOAuthCode, toSocialProvider, type OAuthProviderName } from "./oauth/dispatcher";
 import oauthSignupTokenUtil from "./oauth/oauthSignupToken.util";
-import type { SignupDto, LoginDto, CheckEmailDto, OAuthLoginDto, OAuthSignupDto } from "./auth.schema";
-import type { AuthResult, OAuthLoginResult } from "./auth.type";
+import type {
+  SignupDto,
+  LoginDto,
+  CheckEmailDto,
+  FindEmailDto,
+  OAuthLoginDto,
+  OAuthSignupDto,
+} from "./auth.schema";
+import type { AuthResult, FindEmailResult, OAuthLoginResult } from "./auth.type";
 
 /** access/refresh 토큰을 발급하고, refreshToken 해시를 DB에 저장 */
 const createAuthTokens = async (userId: User["id"], role: User["role"]) => {
@@ -16,6 +23,13 @@ const createAuthTokens = async (userId: User["id"], role: User["role"]) => {
   const refreshToken = jwtUtil.createToken(userId, role, "refresh");
   await authRepository.updateRefreshToken(userId, hashUtil.hashRefreshToken(refreshToken));
   return { accessToken, refreshToken };
+};
+
+/** 아이디 앞 2자(2자 이하면 1자) + 고정 *** + 도메인. 별표 개수로 아이디 길이가 드러나지 않게 고정합니다. */
+const maskEmail = (email: string) => {
+  const [local, domain] = email.split("@");
+  const visible = local.length <= 2 ? 1 : 2;
+  return `${local.slice(0, visible)}***@${domain}`;
 };
 
 /**
@@ -134,6 +148,21 @@ export const authService = {
   async checkEmail(dto: CheckEmailDto): Promise<{ available: boolean }> {
     const existing = await authRepository.existsByEmailAndRole(dto.email, dto.role);
     return { available: !existing };
+  },
+
+  async findEmail(dto: FindEmailDto): Promise<FindEmailResult> {
+    const users = await authRepository.findAccountsByNameAndPhone(
+      dto.role,
+      dto.name,
+      dto.phoneNumber
+    );
+    return {
+      accounts: users.map((user) => ({
+        email: maskEmail(user.email),
+        // provider는 스키마상 nullable이지만 비어있다면 이메일 가입 계정뿐이라 LOCAL로 채웁니다
+        provider: user.provider ?? "LOCAL",
+      })),
+    };
   },
 
   /**

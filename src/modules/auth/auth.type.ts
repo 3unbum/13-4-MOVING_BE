@@ -20,6 +20,14 @@ export interface AuthResult {
 }
 
 /**
+ * 아이디 찾기 응답. 소셜 계정도 포함해 "가입한 적 없다"고 오해해 중복 가입하는 것을 막습니다.
+ * email은 마스킹된 값입니다.
+ */
+export interface FindEmailResult {
+  accounts: { email: string; provider: SocialProvider }[];
+}
+
+/**
  * POST /auth/oauth/{provider} 응답.
  * 기존 회원이면 바로 로그인 처리, 신규 회원이면 oauthSignupToken을 발급해
  * 프론트가 전화번호 입력 화면으로 이동시키도록 한다.
