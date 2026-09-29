@@ -4,6 +4,7 @@ import { notificationRepository } from "./notification.repository";
 jest.mock("../../config/prisma", () => ({
   prisma: {
     notification: { count: jest.fn() },
+    $queryRaw: jest.fn(),
   },
 }));
 
@@ -39,5 +40,21 @@ describe("notificationRepository.countUnread", () => {
         ],
       },
     });
+  });
+});
+
+describe("notificationRepository.summarizeUnreadNewRequests", () => {
+  it("DB에 저장된 enum 라벨을 API enum으로 변환한다", async () => {
+    mockedPrisma.$queryRaw.mockResolvedValue([
+      { region: "경기", category: "소형이사", count: 3 },
+      { region: "서울", category: "가정이사", count: 2 },
+    ]);
+
+    const rows = await notificationRepository.summarizeUnreadNewRequests(7);
+
+    expect(rows).toEqual([
+      { region: "GYEONGGI", category: "SMALL", count: 3 },
+      { region: "SEOUL", category: "HOME", count: 2 },
+    ]);
   });
 });

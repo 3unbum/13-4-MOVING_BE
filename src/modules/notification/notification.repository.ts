@@ -2,9 +2,27 @@ import { prisma } from "../../config/prisma";
 import type { PrismaTransaction } from "../../config/prisma";
 import { Prisma } from "../../../generated/prisma/client.ts";
 import type { RegionType, ServiceType } from "../../../generated/prisma/enums.ts";
+import { parseRegionLabel, parseServiceLabel } from "../mover/mover.type";
 import type { CreateNotificationParams } from "./notification.type";
 
 const DEFAULT_TAKE = 10;
+
+/** raw query가 돌려준 DB enum 라벨을 API enum으로 바꿉니다. 라벨 표는 schema @map과 같습니다. */
+function toRegionType(value: string): RegionType {
+  const region = parseRegionLabel(value);
+  if (!region) {
+    throw new Error(`알림 요약의 지역 값을 변환할 수 없습니다: ${value}`);
+  }
+  return region;
+}
+
+function toServiceType(value: string): ServiceType {
+  const category = parseServiceLabel(value);
+  if (!category) {
+    throw new Error(`알림 요약의 이사유형 값을 변환할 수 없습니다: ${value}`);
+  }
+  return category;
+}
 
 /**
  * payload 조립에 필요한 최소 필드만 가져옵니다.
@@ -150,9 +168,12 @@ export const notificationRepository = {
    * 알림을 전부 읽어와 메모리에서 세면 미확인이 많은 기사님에서 응답이 커지므로
    * 집계를 DB에 맡깁니다. COUNT(*)는 bigint라 ::int로 캐스팅해야 number로 옵니다.
    * type은 Postgres enum이라 바인딩 파라미터에 명시적 캐스트가 필요합니다.
+   *
+   * $queryRaw는 @map을 적용하지 않습니다. region_type·service_type은 DB에
+   * "경기", "소형이사"로 저장되므로, 응답 전에 API enum으로 바꿉니다.
    */
-  summarizeUnreadNewRequests(userId: number) {
-    return prisma.$queryRaw<{ region: RegionType; category: ServiceType; count: number }[]>`
+  async summarizeUnreadNewRequests(userId: number) {
+    const rows = await prisma.$queryRaw<{ region: string; category: string; count: number }[]>`
       SELECT qr.from_region AS region, qr.category AS category, COUNT(*)::int AS count
       FROM notification n
       JOIN quotation_request qr ON qr.id = n.quotation_request_id
@@ -162,5 +183,11 @@ export const notificationRepository = {
       GROUP BY qr.from_region, qr.category
       ORDER BY count DESC, region ASC, category ASC
     `;
+
+    return rows.map((row) => ({
+      region: toRegionType(row.region),
+      category: toServiceType(row.category),
+      count: row.count,
+    }));
   },
 };
