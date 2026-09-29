@@ -8,8 +8,10 @@ import {
   setOAuthSignupTokenCookie,
   clearOAuthSignupTokenCookie,
   setPasswordResetTokenCookie,
+  clearPasswordResetTokenCookie,
   REFRESH_TOKEN_COOKIE,
   OAUTH_SIGNUP_TOKEN_COOKIE,
+  PASSWORD_RESET_TOKEN_COOKIE,
 } from "../../common/utils/cookie.util";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
@@ -33,6 +35,18 @@ const getOAuthSignupTokenOrThrow = (req: Request): string => {
     );
   }
   return oauthSignupToken;
+};
+
+const getPasswordResetTokenOrThrow = (req: Request): string => {
+  const passwordResetToken = req.cookies?.[PASSWORD_RESET_TOKEN_COOKIE];
+  if (!passwordResetToken) {
+    throw new AppError(
+      401,
+      ERROR_CODES.INVALID_OR_EXPIRED_RESET_TOKEN,
+      "인증 시간이 만료되었습니다. 인증번호를 다시 받아주세요"
+    );
+  }
+  return passwordResetToken;
 };
 
 export const authController = {
@@ -114,6 +128,21 @@ export const authController = {
     try {
       const passwordResetToken = await authService.verifyPasswordResetCode(req.body);
       setPasswordResetTokenCookie(res, passwordResetToken);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  /**
+   * 재설정이 끝나면 재설정 토큰 쿠키를 지우고, 자동 로그인 없이 로그인 페이지로 보내도록 204만 응답합니다.
+   * 서버의 refreshToken이 비워져 이 브라우저에 남은 로그인 쿠키도 곧 무효가 되므로 함께 지웁니다.
+   */
+  resetPassword: (async (req, res, next) => {
+    try {
+      await authService.resetPassword(getPasswordResetTokenOrThrow(req), req.body);
+      clearPasswordResetTokenCookie(res);
+      clearAuthCookies(res);
       res.status(204).send();
     } catch (error) {
       next(error);

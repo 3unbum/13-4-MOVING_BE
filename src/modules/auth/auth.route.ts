@@ -13,6 +13,7 @@ import {
   findEmailSchema,
   sendResetCodeSchema,
   verifyResetCodeSchema,
+  resetPasswordSchema,
   oauthProviderParamSchema,
   oauthLoginSchema,
   oauthSignupSchema,
@@ -309,6 +310,42 @@ router.post(
   validate(verifyResetCodeSchema),
   authController.verifyPasswordResetCode
 );
+
+/**
+ * @swagger
+ * /auth/password-reset:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 새 비밀번호 설정
+ *     description: |
+ *       POST /auth/password-reset/verify에서 발급된 passwordResetToken 쿠키(10분 유효, 1회용)로 새 비밀번호를 설정합니다.
+ *       성공하면 다른 기기의 로그인이 모두 끊기고(refreshToken 삭제), 이 브라우저의 로그인 쿠키와 재설정 토큰 쿠키도 지웁니다.
+ *       자동 로그인은 하지 않으므로 프론트는 로그인 페이지로 이동시키면 됩니다.
+ *     security:
+ *       - passwordResetTokenAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newPassword]
+ *             properties:
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 8
+ *                 description: 영문 + 숫자 + 특수문자 포함, 72바이트 이하 (회원가입과 같은 규칙)
+ *     responses:
+ *       204:
+ *         description: 비밀번호 변경 완료
+ *       400:
+ *         description: 비밀번호 규칙 위반 (VALIDATION_ERROR)
+ *       401:
+ *         description: |
+ *           재설정 토큰 쿠키가 없거나 만료·위조됐거나 이미 사용함 (INVALID_OR_EXPIRED_RESET_TOKEN)
+ *           → 인증번호를 다시 받아야 함
+ */
+router.post("/password-reset", validate(resetPasswordSchema), authController.resetPassword);
 
 /**
  * @swagger

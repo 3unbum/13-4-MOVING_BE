@@ -19,6 +19,7 @@ import type {
   FindEmailDto,
   SendResetCodeDto,
   VerifyResetCodeDto,
+  ResetPasswordDto,
   OAuthLoginDto,
   OAuthSignupDto,
 } from "./auth.schema";
@@ -262,6 +263,34 @@ export const authService = {
     }
 
     return passwordResetTokenUtil.create({ userId: user.id, codeId: resetCode.id });
+  },
+
+  /**
+   * 재설정 토큰으로 새 비밀번호를 설정합니다. 토큰이 만료·위조됐거나 이미 사용한 경우 모두 같은 401 —
+   * 어느 쪽이든 사용자가 할 일은 인증번호를 다시 받는 것뿐이라 구분하지 않습니다.
+   * 다른 기기 로그인도 함께 끊기도록 refreshToken을 비웁니다.
+   */
+  async resetPassword(passwordResetToken: string, dto: ResetPasswordDto): Promise<void> {
+    const invalidTokenError = new AppError(
+      401,
+      ERROR_CODES.INVALID_OR_EXPIRED_RESET_TOKEN,
+      "인증 시간이 만료되었습니다. 인증번호를 다시 받아주세요"
+    );
+
+    let payload: { userId: number; codeId: number };
+    try {
+      payload = passwordResetTokenUtil.verify(passwordResetToken);
+    } catch {
+      throw invalidTokenError;
+    }
+
+    const hashedPassword = await hashUtil.hashPassword(dto.newPassword);
+    const completed = await authRepository.completePasswordReset(
+      payload.codeId,
+      payload.userId,
+      hashedPassword
+    );
+    if (!completed) throw invalidTokenError;
   },
 
   /**
