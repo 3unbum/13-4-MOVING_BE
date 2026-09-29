@@ -4,7 +4,7 @@ const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
 export const signupSchema = z.object({
   role: z.enum(["CUSTOMER", "MOVER"]),
-  name: z.string().min(1, "이름을 입력해주세요"),
+  name: z.string().trim().min(1, "이름을 입력해주세요"),
   email: z.email("올바른 이메일 형식이 아닙니다"),
   phoneNumber: z.string().regex(/^01[016789]\d{7,8}$/, "올바른 전화번호 형식이 아닙니다"),
   password: z
