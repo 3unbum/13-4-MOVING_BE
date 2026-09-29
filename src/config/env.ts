@@ -39,6 +39,15 @@ export const env = {
   OAUTH_SIGNUP_TOKEN_SECRET: required("OAUTH_SIGNUP_TOKEN_SECRET"),
   OAUTH_SIGNUP_TOKEN_EXPIRES_IN: optional("OAUTH_SIGNUP_TOKEN_EXPIRES_IN", "10m"),
 
+  /** 인증번호 확인 후 새 비밀번호 설정까지 쓰는 임시 토큰. */
+  PASSWORD_RESET_TOKEN_SECRET: required("PASSWORD_RESET_TOKEN_SECRET"),
+  PASSWORD_RESET_TOKEN_EXPIRES_IN: optional("PASSWORD_RESET_TOKEN_EXPIRES_IN", "10m"),
+  /**
+   * 인증번호 HMAC 키. 비어 있어도 HMAC은 에러 없이 계산돼 조용히 보안만 약해지므로
+   * optional로 두지 않습니다. 6자리(100만 가지)라 키 없는 해시는 DB 유출 시 바로 풀립니다.
+   */
+  PASSWORD_RESET_CODE_SECRET: required("PASSWORD_RESET_CODE_SECRET"),
+
   /**
    * provider별 자격증명은 optional로 둡니다 — 필수로 두면 하나라도 콘솔 등록 전엔
    * 다른 도메인 담당자의 서버 기동까지 막혀버립니다. 값이 비어있으면 해당 provider

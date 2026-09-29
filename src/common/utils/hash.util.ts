@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "../../config/env";
 import { AppError } from "../errors/AppError";
 import { ERROR_CODES } from "../errors/errorCodes";
 
@@ -40,4 +41,25 @@ const hashRefreshToken = (token: string) => createHash("sha256").update(token).d
 const compareRefreshToken = (token: string, hashedToken: string) =>
   hashRefreshToken(token) === hashedToken;
 
-export default { hashPassword, verifyPassword, hashRefreshToken, compareRefreshToken };
+/**
+ * 비밀번호 재설정 인증번호(6자리) 해싱 전용. sha256만 쓰면 100만 가지를 전부 계산해
+ * DB 유출 시 바로 풀리므로, 서버에만 있는 키를 섞는 HMAC을 씁니다.
+ */
+const hashResetCode = (code: string) =>
+  createHmac("sha256", env.PASSWORD_RESET_CODE_SECRET).update(code).digest("hex");
+
+/** 문자열 === 비교는 앞에서부터 다른 글자를 만나면 바로 끝나 응답 시간 차이가 생기므로 고정 시간 비교를 씁니다. */
+const compareResetCode = (code: string, hashedCode: string) => {
+  const actual = Buffer.from(hashResetCode(code));
+  const expected = Buffer.from(hashedCode);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+};
+
+export default {
+  hashPassword,
+  verifyPassword,
+  hashRefreshToken,
+  compareRefreshToken,
+  hashResetCode,
+  compareResetCode,
+};
