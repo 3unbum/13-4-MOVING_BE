@@ -1,7 +1,7 @@
 import { prisma } from "@/config/prisma";
 import { createManyNotifications } from "@/modules/notification/notification.service";
 import { publishNotification } from "@/modules/notification/notification.sse";
-import { getExpireBaseDate } from "@/jobs/expireRequests.util";
+import { addUtcDays, getExpireBaseDate } from "@/jobs/expireRequests.util";
 import { notifyMovingDay } from "./movingDayNotify.job";
 
 // 테스트가 실제로 크론을 걸지 않도록 끊습니다
@@ -59,18 +59,31 @@ beforeEach(() => {
 
 afterEach(() => jest.restoreAllMocks());
 
+const today = getExpireBaseDate();
+const tomorrow = addUtcDays(today, 1);
+
+function assigned(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 100,
+    userId: 7,
+    movingDate: today,
+    estimates: [{ moverId: 5 }],
+    ...overrides,
+  };
+}
+
 describe("notifyMovingDay", () => {
-  it("오늘 이사하는 ASSIGNED 요청만 조회한다", async () => {
-    // Setup
+  it("오늘과 내일 이사하는 ASSIGNED 요청을 조회한다", async () => {
     (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([]);
 
-    // Exercise
     await notifyMovingDay();
 
-    // Assertion — 확정 기사님이 없는 요청에는 알릴 상대가 없습니다
     expect(mockedPrisma.quotationRequest.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { movingDate: getExpireBaseDate(), quotationStatus: "ASSIGNED" },
+        where: {
+          movingDate: { in: [today, tomorrow] },
+          quotationStatus: "ASSIGNED",
+        },
       })
     );
   });
@@ -86,39 +99,43 @@ describe("notifyMovingDay", () => {
     expect(mockedPrisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("고객과 확정 기사님 양쪽에 알림을 만든다", async () => {
-    // Setup
-    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([
-      { id: 100, userId: 7, estimates: [{ moverId: 5 }] },
-    ]);
+  it("고객과 확정 기사님 양쪽에 당일 알림을 만든다", async () => {
+    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([assigned()]);
     const tx = arrangeTransaction();
 
-    // Exercise
     await notifyMovingDay();
 
-    // Assertion
     expect(createManyNotifications).toHaveBeenCalledWith(tx, [
       { userId: 7, type: "MOVING_DAY", quotationRequestId: 100 },
       { userId: 5, type: "MOVING_DAY", quotationRequestId: 100 },
     ]);
-    // 트랜잭션이 끝난 뒤에 신호를 보냅니다 — 롤백된 알림이 실시간으로 나가지 않게
     expect(publishNotification).toHaveBeenCalledWith([7, 5], { type: "MOVING_DAY" });
     expect(mockedPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "Serializable",
     });
   });
 
-  it("이미 보낸 수신자는 건너뛴다 (재실행해도 중복되지 않는다)", async () => {
-    // Setup — 고객에게는 이미 보냈고 기사님에게는 아직 못 보낸 상태
+  it("내일 이사 요청에는 전날 알림을 만든다", async () => {
     (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([
-      { id: 100, userId: 7, estimates: [{ moverId: 5 }] },
+      assigned({ movingDate: tomorrow }),
     ]);
-    const tx = arrangeTransaction([{ userId: 7 }]);
+    const tx = arrangeTransaction();
 
-    // Exercise
     await notifyMovingDay();
 
-    // Assertion
+    expect(createManyNotifications).toHaveBeenCalledWith(tx, [
+      { userId: 7, type: "MOVING_DAY_BEFORE", quotationRequestId: 100 },
+      { userId: 5, type: "MOVING_DAY_BEFORE", quotationRequestId: 100 },
+    ]);
+    expect(publishNotification).toHaveBeenCalledWith([7, 5], { type: "MOVING_DAY_BEFORE" });
+  });
+
+  it("이미 보낸 수신자는 건너뛴다 (재실행해도 중복되지 않는다)", async () => {
+    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([assigned()]);
+    const tx = arrangeTransaction([{ userId: 7 }]);
+
+    await notifyMovingDay();
+
     expect(createManyNotifications).toHaveBeenCalledWith(tx, [
       { userId: 5, type: "MOVING_DAY", quotationRequestId: 100 },
     ]);
@@ -126,31 +143,23 @@ describe("notifyMovingDay", () => {
   });
 
   it("양쪽 모두 이미 보냈으면 아무것도 만들지 않는다", async () => {
-    // Setup
-    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([
-      { id: 100, userId: 7, estimates: [{ moverId: 5 }] },
-    ]);
+    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([assigned()]);
     const tx = arrangeTransaction([{ userId: 7 }, { userId: 5 }]);
 
-    // Exercise
     await notifyMovingDay();
 
-    // Assertion — createManyNotifications가 빈 배열이면 DB를 건드리지 않습니다
     expect(createManyNotifications).toHaveBeenCalledWith(tx, []);
     expect(publishNotification).toHaveBeenCalledWith([], { type: "MOVING_DAY" });
   });
 
   it("확정 견적이 없으면 고객에게만 보낸다", async () => {
-    // Setup — ASSIGNED인데 확정 견적이 없는 어긋난 데이터
     (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([
-      { id: 100, userId: 7, estimates: [] },
+      assigned({ estimates: [] }),
     ]);
     const tx = arrangeTransaction();
 
-    // Exercise
     await notifyMovingDay();
 
-    // Assertion
     expect(createManyNotifications).toHaveBeenCalledWith(tx, [
       { userId: 7, type: "MOVING_DAY", quotationRequestId: 100 },
     ]);
@@ -158,20 +167,17 @@ describe("notifyMovingDay", () => {
   });
 
   it("한 건이 실패해도 나머지를 계속 처리한다", async () => {
-    // Setup
     (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([
-      { id: 100, userId: 7, estimates: [{ moverId: 5 }] },
-      { id: 200, userId: 8, estimates: [{ moverId: 6 }] },
+      assigned(),
+      assigned({ id: 200, userId: 8, estimates: [{ moverId: 6 }] }),
     ]);
     const tx = makeTx([]);
     (mockedPrisma.$transaction as unknown as jest.Mock)
       .mockRejectedValueOnce(new Error("연결 끊김"))
       .mockImplementationOnce((callback: (tx: unknown) => unknown) => callback(tx));
 
-    // Exercise
     await notifyMovingDay();
 
-    // Assertion — 두 번째 요청은 정상 처리됩니다
     expect(createManyNotifications).toHaveBeenCalledTimes(1);
     expect(createManyNotifications).toHaveBeenCalledWith(tx, [
       { userId: 8, type: "MOVING_DAY", quotationRequestId: 200 },
@@ -183,10 +189,7 @@ describe("notifyMovingDay", () => {
   });
 
   it("직렬화 충돌이면 다시 시도하고 성공한 신호만 보낸다", async () => {
-    // Setup
-    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([
-      { id: 100, userId: 7, estimates: [{ moverId: 5 }] },
-    ]);
+    (mockedPrisma.quotationRequest.findMany as jest.Mock).mockResolvedValue([assigned()]);
     const tx = makeTx([]);
     (mockedPrisma.$transaction as unknown as jest.Mock)
       .mockRejectedValueOnce(
@@ -195,12 +198,10 @@ describe("notifyMovingDay", () => {
           clientVersion: "test",
         })
       )
-      .mockImplementationOnce((callback: (tx: unknown) => unknown) => callback(tx));
+      .mockImplementationOnce((callback: (innerTx: unknown) => unknown) => callback(tx));
 
-    // Exercise
     await notifyMovingDay();
 
-    // Assertion — 롤백된 시도의 신호는 나가지 않습니다
     expect(mockedPrisma.$transaction).toHaveBeenCalledTimes(2);
     expect(createManyNotifications).toHaveBeenCalledTimes(1);
     expect(publishNotification).toHaveBeenCalledTimes(1);

@@ -118,12 +118,13 @@ function toItem(row: NotificationRow): NotificationItem | null {
       };
     }
 
-    case "MOVING_DAY": {
+    case "MOVING_DAY":
+    case "MOVING_DAY_BEFORE": {
       const request = row.quotationRequest;
       if (!request) return null;
       return {
         ...base,
-        type: "MOVING_DAY",
+        type: row.type,
         payload: {
           fromAddress: request.fromAddress,
           toAddress: request.toAddress,

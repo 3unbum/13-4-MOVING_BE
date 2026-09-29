@@ -41,7 +41,7 @@ export interface EstimateConfirmedPayload {
   category: ServiceType;
 }
 
-/** 고객·기사님 수신 — "오늘은 경기(일산) → 서울(영등포) 이사 예정일이에요" */
+/** 고객·기사님 수신 — type으로 전날/당일을 가릅니다 */
 export interface MovingDayPayload {
   fromAddress: string;
   toAddress: string;
@@ -61,6 +61,7 @@ export type NotificationItem =
   | (NotificationBase & { type: "NEW_REQUEST"; payload: NewRequestPayload })
   | (NotificationBase & { type: "NEW_ESTIMATE"; payload: NewEstimatePayload })
   | (NotificationBase & { type: "ESTIMATE_CONFIRMED"; payload: EstimateConfirmedPayload })
+  | (NotificationBase & { type: "MOVING_DAY_BEFORE"; payload: MovingDayPayload })
   | (NotificationBase & { type: "MOVING_DAY"; payload: MovingDayPayload });
 
 export interface NotificationListResult {

@@ -23,3 +23,8 @@ export function getExpireBaseDate(now: Date = new Date()): Date {
   const [year, month, day] = kstDateFormatter.format(now).split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day));
 }
+
+/** @db.Date(UTC 자정) 기준 일수 가감. 전날 알림의 "내일" 계산에 씁니다. */
+export function addUtcDays(base: Date, days: number): Date {
+  return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + days));
+}

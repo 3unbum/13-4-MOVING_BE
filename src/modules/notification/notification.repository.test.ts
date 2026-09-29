@@ -30,7 +30,7 @@ describe("notificationRepository.countUnread", () => {
         isRead: false,
         OR: [
           {
-            type: { in: ["NEW_REQUEST", "MOVING_DAY"] },
+            type: { in: ["NEW_REQUEST", "MOVING_DAY", "MOVING_DAY_BEFORE"] },
             quotationRequestId: { not: null },
           },
           {

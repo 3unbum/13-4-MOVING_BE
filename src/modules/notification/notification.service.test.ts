@@ -113,8 +113,9 @@ describe("notificationService.list", () => {
       row({ id: 3, type: "NEW_ESTIMATE", estimateId: 42, estimate }),
       row({ id: 2, type: "ESTIMATE_CONFIRMED", estimateId: 42, estimate }),
       row({ id: 1, type: "MOVING_DAY", quotationRequestId: 9, quotationRequest }),
+      row({ id: 0, type: "MOVING_DAY_BEFORE", quotationRequestId: 9, quotationRequest }),
     ] as never);
-    mockedRepository.countUnread.mockResolvedValue(4);
+    mockedRepository.countUnread.mockResolvedValue(5);
 
     // Exercise
     const result = await notificationService.list(7, {});
@@ -157,9 +158,18 @@ describe("notificationService.list", () => {
         quotationRequestId: 9,
         payload: { fromAddress: "경기 고양시 일산동구", toAddress: "서울 영등포구", movingDate },
       },
+      {
+        id: 0,
+        type: "MOVING_DAY_BEFORE",
+        isRead: false,
+        createdAt,
+        estimateId: null,
+        quotationRequestId: 9,
+        payload: { fromAddress: "경기 고양시 일산동구", toAddress: "서울 영등포구", movingDate },
+      },
     ]);
     expect(result.nextCursor).toBeNull();
-    expect(result.unreadCount).toBe(4);
+    expect(result.unreadCount).toBe(5);
   });
 
   it("take+1건을 요청하고 초과분은 잘라낸다", async () => {

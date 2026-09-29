@@ -26,7 +26,7 @@ router.use(requireAuth);
  *       - `NEW_REQUEST`: category, fromRegion, movingDate
  *       - `NEW_ESTIMATE`: moverNickName, category, price
  *       - `ESTIMATE_CONFIRMED`: moverNickName, customerName, category
- *       - `MOVING_DAY`: fromAddress, toAddress, movingDate
+ *       - `MOVING_DAY_BEFORE` / `MOVING_DAY`: fromAddress, toAddress, movingDate
  *     parameters:
  *       - $ref: '#/components/parameters/cursor'
  *       - $ref: '#/components/parameters/take'
@@ -53,7 +53,7 @@ router.use(requireAuth);
  *                           id: { type: integer }
  *                           type:
  *                             type: string
- *                             enum: [NEW_REQUEST, NEW_ESTIMATE, ESTIMATE_CONFIRMED, MOVING_DAY]
+ *                             enum: [NEW_REQUEST, NEW_ESTIMATE, ESTIMATE_CONFIRMED, MOVING_DAY_BEFORE, MOVING_DAY]
  *                           payload: { type: object }
  *                           isRead: { type: boolean }
  *                           createdAt: { type: string, format: date-time }
