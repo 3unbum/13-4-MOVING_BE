@@ -98,14 +98,16 @@ export const authRepository = {
   /**
    * 상한 미만일 때만 1 올립니다. 조건 확인과 증가를 한 쿼리로 해야
    * 틀린 코드를 동시에 여러 개 보내도 상한을 넘지 않습니다.
-   * 증가했으면 true, 이미 상한에 도달해 있었으면 false
+   * 올린 뒤의 값을 반환하고, 이미 상한에 도달해 있어 올리지 못했으면 null
    */
   async incrementResetCodeFailedAttempts(id: number, maxAttempts: number) {
-    const { count } = await prisma.passwordResetCode.updateMany({
+    // update는 조건에 맞는 행이 없으면 예외(P2025)와 함께 prisma:error 로그를 남기므로, 빈 배열을 주는 쪽을 씁니다
+    const [updated] = await prisma.passwordResetCode.updateManyAndReturn({
       where: { id, failedAttempts: { lt: maxAttempts } },
       data: { failedAttempts: { increment: 1 } },
+      select: { failedAttempts: true },
     });
-    return count === 1;
+    return updated?.failedAttempts ?? null;
   },
 
   /**

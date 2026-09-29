@@ -7,6 +7,7 @@ import {
   clearAuthCookies,
   setOAuthSignupTokenCookie,
   clearOAuthSignupTokenCookie,
+  setPasswordResetTokenCookie,
   REFRESH_TOKEN_COOKIE,
   OAUTH_SIGNUP_TOKEN_COOKIE,
 } from "../../common/utils/cookie.util";
@@ -102,6 +103,17 @@ export const authController = {
     try {
       const sent = await authService.sendPasswordResetCode(req.body);
       if (sent) res.locals.mailSent = true;
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  /** 인증번호가 맞으면 재설정 토큰을 httpOnly 쿠키로만 내려줍니다(응답 바디에는 없음). */
+  verifyPasswordResetCode: (async (req, res, next) => {
+    try {
+      const passwordResetToken = await authService.verifyPasswordResetCode(req.body);
+      setPasswordResetTokenCookie(res, passwordResetToken);
       res.status(204).send();
     } catch (error) {
       next(error);

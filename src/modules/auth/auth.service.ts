@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma, type User } from "../../../generated/prisma/client";
 import { mailer, MAIL_FROM } from "../../config/mailer";
 import { authRepository } from "./auth.repository";
+import { RESET_CODE_TTL_MINUTES, RESET_CODE_MAX_FAILED_ATTEMPTS } from "./auth.constants";
 import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
 import { AppError } from "../../common/errors/AppError";
@@ -10,12 +11,14 @@ import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { exchangeOAuthCode, toSocialProvider, type OAuthProviderName } from "./oauth/dispatcher";
 import oauthSignupTokenUtil from "./oauth/oauthSignupToken.util";
 import { buildResetCodeMail } from "./password-reset/resetCodeMail";
+import passwordResetTokenUtil from "./password-reset/passwordResetToken.util";
 import type {
   SignupDto,
   LoginDto,
   CheckEmailDto,
   FindEmailDto,
   SendResetCodeDto,
+  VerifyResetCodeDto,
   OAuthLoginDto,
   OAuthSignupDto,
 } from "./auth.schema";
@@ -29,8 +32,18 @@ const createAuthTokens = async (userId: User["id"], role: User["role"]) => {
   return { accessToken, refreshToken };
 };
 
-/** 비밀번호 재설정 인증번호 유효시간. 메일 문구에도 이 값이 들어갑니다. */
-const RESET_CODE_TTL_MINUTES = 5;
+/**
+ * 미가입 이메일·코드 없음·이미 사용한 코드도 이 에러로 묶어, 실제 불일치와 구분되지 않게 합니다.
+ * 남은 횟수는 실제 계정에서만 계산할 수 있어 가입 여부가 드러나므로 문구에 넣지 않습니다.
+ */
+const invalidResetCodeError = () =>
+  AppError.badRequest(ERROR_CODES.INVALID_RESET_CODE, "인증번호가 일치하지 않습니다");
+
+const resetCodeAttemptsExceededError = () =>
+  AppError.badRequest(
+    ERROR_CODES.RESET_CODE_ATTEMPTS_EXCEEDED,
+    "인증번호를 여러 번 틀려 무효가 되었습니다. 인증번호를 다시 받아주세요"
+  );
 
 /** 000000~999999. randomInt는 암호학적으로 안전한 난수라 Math.random 대신 씁니다. */
 const generateResetCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
@@ -213,6 +226,42 @@ export const authService = {
       console.error("[passwordReset] 인증번호 메일 발송 실패", error);
       return false;
     }
+  },
+
+  /**
+   * 인증번호가 맞으면 새 비밀번호 설정에 쓸 재설정 토큰을 발급합니다.
+   * 만료·횟수 초과는 사용자가 재발송해야 한다는 걸 알 수 있도록 따로 알립니다.
+   */
+  async verifyPasswordResetCode(dto: VerifyResetCodeDto): Promise<string> {
+    const user = await authRepository.existsByEmailAndRole(dto.email, dto.role);
+    if (!user) throw invalidResetCodeError();
+
+    const resetCode = await authRepository.findPasswordResetCodeByUserId(user.id);
+    if (!resetCode || resetCode.usedAt) throw invalidResetCodeError();
+
+    if (resetCode.expiresAt <= new Date()) {
+      throw AppError.badRequest(
+        ERROR_CODES.RESET_CODE_EXPIRED,
+        "인증번호가 만료되었습니다. 인증번호를 다시 받아주세요"
+      );
+    }
+    if (resetCode.failedAttempts >= RESET_CODE_MAX_FAILED_ATTEMPTS) {
+      throw resetCodeAttemptsExceededError();
+    }
+
+    if (!hashUtil.compareResetCode(dto.code, resetCode.codeHash)) {
+      const failedAttempts = await authRepository.incrementResetCodeFailedAttempts(
+        resetCode.id,
+        RESET_CODE_MAX_FAILED_ATTEMPTS
+      );
+      // null: 동시 요청이 먼저 상한을 채움 / 상한 도달: 이번이 마지막 기회였음 → 둘 다 이제 이 코드는 무효
+      if (failedAttempts === null || failedAttempts >= RESET_CODE_MAX_FAILED_ATTEMPTS) {
+        throw resetCodeAttemptsExceededError();
+      }
+      throw invalidResetCodeError();
+    }
+
+    return passwordResetTokenUtil.create({ userId: user.id, codeId: resetCode.id });
   },
 
   /**

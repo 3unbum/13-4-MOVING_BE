@@ -35,6 +35,10 @@ export const findEmailSchema = z.object({
 /** 요청 형태가 이메일 중복 확인과 같아 공유, 한쪽만 필드가 바뀌면 그때 분리 */
 export const sendResetCodeSchema = checkEmailSchema;
 
+export const verifyResetCodeSchema = checkEmailSchema.extend({
+  code: z.string().regex(/^\d{6}$/, "인증번호 6자리를 입력해주세요"),
+});
+
 export const oauthProviderParamSchema = z.object({
   provider: z.enum(["google", "kakao", "naver"]),
 });
@@ -54,6 +58,7 @@ export type LoginDto = z.infer<typeof loginSchema>;
 export type CheckEmailDto = z.infer<typeof checkEmailSchema>;
 export type FindEmailDto = z.infer<typeof findEmailSchema>;
 export type SendResetCodeDto = z.infer<typeof sendResetCodeSchema>;
+export type VerifyResetCodeDto = z.infer<typeof verifyResetCodeSchema>;
 export type OAuthProviderParam = z.infer<typeof oauthProviderParamSchema>;
 export type OAuthLoginDto = z.infer<typeof oauthLoginSchema>;
 export type OAuthSignupDto = z.infer<typeof oauthSignupSchema>;

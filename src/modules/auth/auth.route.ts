@@ -12,6 +12,7 @@ import {
   checkEmailSchema,
   findEmailSchema,
   sendResetCodeSchema,
+  verifyResetCodeSchema,
   oauthProviderParamSchema,
   oauthLoginSchema,
   oauthSignupSchema,
@@ -268,6 +269,45 @@ router.post(
   ...resetCodeRateLimiters,
   resetCodeDailyMailLimiter,
   authController.sendPasswordResetCode
+);
+
+/**
+ * @swagger
+ * /auth/password-reset/verify:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 비밀번호 재설정 인증번호 확인
+ *     description: |
+ *       메일로 받은 6자리 인증번호가 맞으면 재설정 토큰(10분 유효)을 httpOnly 쿠키(passwordResetToken)로 발급합니다.
+ *       응답 바디에는 토큰이 없습니다. 이 쿠키로 POST /auth/password-reset을 호출해 새 비밀번호를 설정합니다.
+ *       인증번호 하나에 5번까지 틀릴 수 있고, 5번째로 틀리면 그 인증번호는 무효가 되어 다시 받아야 합니다.
+ *       코드 추측은 이 횟수 제한과 발송 limiter가 막으므로 이 엔드포인트에는 limiter를 두지 않습니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email, code]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email, description: "인증번호를 요청할 때 입력한 이메일" }
+ *               code: { type: string, pattern: "^\\d{6}$", example: "482913" }
+ *     responses:
+ *       204:
+ *         description: 인증 성공 — passwordResetToken 쿠키 발급
+ *       400:
+ *         description: |
+ *           - VALIDATION_ERROR: 요청 형식 오류
+ *           - INVALID_RESET_CODE: 인증번호 불일치 (미가입 이메일·발송 이력 없음도 같은 코드로 응답)
+ *           - RESET_CODE_EXPIRED: 발송 후 5분 경과 → 다시 받아야 함
+ *           - RESET_CODE_ATTEMPTS_EXCEEDED: 5번 틀려 무효 → 다시 받아야 함
+ */
+router.post(
+  "/password-reset/verify",
+  validate(verifyResetCodeSchema),
+  authController.verifyPasswordResetCode
 );
 
 /**
