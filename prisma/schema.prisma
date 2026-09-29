@@ -356,7 +356,7 @@ model Favorite {
 
 /// 값은 NotificationType enum과 맞춥니다.
 /// 이사 전날·당일 중복은 마이그레이션의 partial unique로만 막습니다
-/// (user_id, quotation_request_id, type WHERE type LIKE 'MOVING_DAY%').
+/// (user_id, quotation_request_id, type WHERE type IN ('MOVING_DAY','MOVING_DAY_BEFORE')).
 /// NEW_REQUEST는 지역 알림 후 지정 요청이 한 번 더 갈 수 있어 같은 유니크를 걸지 않습니다.
 model Notification {
   id                 Int              @id @default(autoincrement())

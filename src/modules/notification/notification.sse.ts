@@ -65,13 +65,19 @@ export function openStream(userId: number, res: Response): () => void {
   });
 
   const targets = connections.get(userId) ?? new Set<LiveConnection>();
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
   let stopped = false;
+
+  // stop보다 먼저 만들면 콜백이 선언 전 stop을 잡습니다. 타이머는 바로 돌지 않습니다.
+  const heartbeat = setInterval(() => {
+    if (!write(res, ": ping\n\n")) stop();
+  }, HEARTBEAT_MS);
+  // 이 타이머만 남아서 프로세스가 안 끝나는 일을 막습니다
+  heartbeat.unref();
 
   const stop = () => {
     if (stopped) return;
     stopped = true;
-    if (heartbeat) clearInterval(heartbeat);
+    clearInterval(heartbeat);
     targets.delete(live);
     // 빈 Set을 남겨두면 접속했다 떠난 유저만큼 Map이 계속 자랍니다
     if (targets.size === 0) connections.delete(userId);
@@ -89,12 +95,6 @@ export function openStream(userId: number, res: Response): () => void {
     stop();
     return stop;
   }
-
-  heartbeat = setInterval(() => {
-    if (!write(res, ": ping\n\n")) stop();
-  }, HEARTBEAT_MS);
-  // 이 타이머만 남아서 프로세스가 안 끝나는 일을 막습니다
-  heartbeat.unref();
 
   return stop;
 }
