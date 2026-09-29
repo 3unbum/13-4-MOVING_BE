@@ -15,7 +15,10 @@ const notificationDetailInclude = {
     select: {
       price: true,
       mover: {
-        select: { moverProfile: { select: { nickName: true } } },
+        select: {
+          name: true,
+          moverProfile: { select: { nickName: true } },
+        },
       },
       quotationRequest: {
         select: {
@@ -76,8 +79,28 @@ export const notificationRepository = {
     });
   },
 
+  /**
+   * 목록에 노출되는 안 읽은 알림만 셉니다.
+   * toItem이 원본이 없는 행을 빼므로, 여기서도 타입에 맞는 FK가 있는 행만 셉니다.
+   * 프로필 닉네임은 목록에서 이름으로 대체하므로 조건에 넣지 않습니다.
+   */
   countUnread(userId: number) {
-    return prisma.notification.count({ where: { userId, isRead: false } });
+    return prisma.notification.count({
+      where: {
+        userId,
+        isRead: false,
+        OR: [
+          {
+            type: { in: ["NEW_REQUEST", "MOVING_DAY"] },
+            quotationRequestId: { not: null },
+          },
+          {
+            type: { in: ["NEW_ESTIMATE", "ESTIMATE_CONFIRMED"] },
+            estimateId: { not: null },
+          },
+        ],
+      },
+    });
   },
 
   /**

@@ -50,10 +50,23 @@ export async function createManyNotifications(
 type NotificationRow = Awaited<ReturnType<typeof notificationRepository.findManyByUserId>>[number];
 
 /**
+ * 닉네임이 없어도 알림은 남깁니다. 견적 카드와 같이 기사님 이름으로 대체하고,
+ * 이름도 비어 있으면 "기사님"을 씁니다.
+ */
+function moverDisplayName(mover: {
+  name: string;
+  moverProfile: { nickName: string } | null;
+}): string {
+  const nickName = mover.moverProfile?.nickName.trim();
+  if (nickName) return nickName;
+  const name = mover.name.trim();
+  return name || "기사님";
+}
+
+/**
  * 원본 relation으로 payload를 만듭니다.
  *
- * 원본이 지워졌거나(estimate/quotationRequest가 null) 기사님이 프로필을 지운 행은
- * 문구를 만들 수 없으므로 null을 돌려 목록에서 제외합니다 (review.service와 같은 방식).
+ * estimate/quotationRequest가 없으면 문구를 만들 수 없어 null을 돌려 목록에서 제외합니다.
  */
 function toItem(row: NotificationRow): NotificationItem | null {
   const base = {
@@ -80,13 +93,12 @@ function toItem(row: NotificationRow): NotificationItem | null {
     }
 
     case "NEW_ESTIMATE": {
-      const nickName = row.estimate?.mover.moverProfile?.nickName;
-      if (!row.estimate || !nickName) return null;
+      if (!row.estimate) return null;
       return {
         ...base,
         type: "NEW_ESTIMATE",
         payload: {
-          moverNickName: nickName,
+          moverNickName: moverDisplayName(row.estimate.mover),
           category: row.estimate.quotationRequest.category,
           price: row.estimate.price,
         },
@@ -94,13 +106,12 @@ function toItem(row: NotificationRow): NotificationItem | null {
     }
 
     case "ESTIMATE_CONFIRMED": {
-      const nickName = row.estimate?.mover.moverProfile?.nickName;
-      if (!row.estimate || !nickName) return null;
+      if (!row.estimate) return null;
       return {
         ...base,
         type: "ESTIMATE_CONFIRMED",
         payload: {
-          moverNickName: nickName,
+          moverNickName: moverDisplayName(row.estimate.mover),
           customerName: row.estimate.quotationRequest.user.name,
           category: row.estimate.quotationRequest.category,
         },

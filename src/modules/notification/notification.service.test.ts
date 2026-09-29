@@ -52,7 +52,7 @@ const quotationRequest = {
 
 const estimate = {
   price: 210000,
-  mover: { moverProfile: { nickName: "김코드" } },
+  mover: { name: "김기사", moverProfile: { nickName: "김코드" } },
   quotationRequest: {
     category: "SMALL",
     fromAddress: "경기 고양시 일산동구",
@@ -180,16 +180,36 @@ describe("notificationService.list", () => {
     expect(result.nextCursor).toBe(4);
   });
 
-  it("원본이 없는 알림은 목록에서 제외하되 nextCursor는 원본 기준으로 남긴다", async () => {
-    // Setup — 기사님이 프로필을 지워 닉네임을 만들 수 없는 행이 마지막에 옵니다
+  it("프로필이 없어도 기사님 이름으로 견적 알림을 남긴다", async () => {
     mockedRepository.findManyByUserId.mockResolvedValue([
-      row({ id: 9, type: "MOVING_DAY", quotationRequestId: 9, quotationRequest }),
       row({
-        id: 8,
+        id: 3,
         type: "NEW_ESTIMATE",
         estimateId: 42,
-        estimate: { ...estimate, mover: { moverProfile: null } },
+        estimate: { ...estimate, mover: { name: "김기사", moverProfile: null } },
       }),
+      row({
+        id: 2,
+        type: "ESTIMATE_CONFIRMED",
+        estimateId: 42,
+        estimate: { ...estimate, mover: { name: "  ", moverProfile: { nickName: "  " } } },
+      }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(0);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items.map((item) => item.payload)).toEqual([
+      { moverNickName: "김기사", category: "SMALL", price: 210000 },
+      { moverNickName: "기사님", customerName: "김가나", category: "SMALL" },
+    ]);
+  });
+
+  it("원본이 없는 알림은 목록에서 제외하되 nextCursor는 읽은 행 기준으로 남긴다", async () => {
+    // Setup — 견적이 없어 payload를 만들 수 없는 행이 페이지 안에 있습니다
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({ id: 9, type: "MOVING_DAY", quotationRequestId: 9, quotationRequest }),
+      row({ id: 8, type: "NEW_ESTIMATE", estimateId: null, estimate: null }),
       row({ id: 7, type: "MOVING_DAY", quotationRequestId: 9, quotationRequest }),
     ] as never);
     mockedRepository.countUnread.mockResolvedValue(0);
