@@ -1,7 +1,8 @@
 import { EventEmitter } from "node:events";
 import type { Request, Response, NextFunction } from "express";
 import { ERROR_CODES } from "../errors/errorCodes";
-import { loginRateLimiter } from "./rateLimit";
+import type { RateLimitRequestHandler } from "express-rate-limit";
+import { loginRateLimiter, resetCodeRateLimiters, resetCodeDailyMailLimiter } from "./rateLimit";
 
 type Role = "CUSTOMER" | "MOVER";
 
@@ -20,6 +21,7 @@ function makeRes() {
   res.json = jest.fn().mockReturnValue(res);
   res.setHeader = jest.fn().mockReturnValue(res);
   res.headersSent = false;
+  res.locals = {};
   return res;
 }
 
@@ -121,5 +123,128 @@ describe("loginRateLimiter", () => {
     // Assertion: MOVER는 CUSTOMER의 카운트에 영향받지 않고 통과한다
     expect(passed).toBe(true);
     expect(res.status).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * limiter 하나에 요청 1회를 흉내냅니다. 통과하면 컨트롤러가 응답했다고 보고 finish를 발생시키며,
+ * mailSent가 true면 컨트롤러가 실제로 메일을 보낸 것처럼 res.locals에 표시합니다.
+ */
+async function attempt(
+  limiter: RateLimitRequestHandler,
+  req: Request,
+  { mailSent = false }: { mailSent?: boolean } = {}
+) {
+  const res = makeRes();
+  const next = jest.fn() as unknown as NextFunction;
+
+  await limiter(req, res, next);
+
+  const passed = (next as jest.Mock).mock.calls.length > 0;
+  if (passed) {
+    res.statusCode = 204;
+    if (mailSent) res.locals.mailSent = true;
+  }
+  res.emit("finish");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  return { res, passed };
+}
+
+describe("resetCodeRateLimiters (계정 기준 인증번호 발송 제한)", () => {
+  const [perMinute, perHour, perDay] = resetCodeRateLimiters;
+
+  test.each([
+    ["1분", perMinute, 1, "인증번호는 1분에 한 번만 요청할 수 있습니다"],
+    ["1시간", perHour, 5, "인증번호 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요"],
+    ["하루", perDay, 10, "인증번호 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요"],
+  ])(
+    "%s 한도(%i회)까지는 통과시키고, 넘으면 429와 안내 문구를 응답한다",
+    async (label, limiter, limit, message) => {
+      // Setup
+      const req = makeReq(`reset-${label}@test.com`);
+
+      // Exercise
+      const allowed = [];
+      for (let i = 0; i < limit; i++) {
+        allowed.push(await attempt(limiter, req));
+      }
+      const { res, passed } = await attempt(limiter, req);
+
+      // Assertion
+      expect(allowed.every((r) => r.passed)).toBe(true);
+      expect(passed).toBe(false);
+      expect(res.status).toHaveBeenCalledWith(429);
+      expect(res.json).toHaveBeenCalledWith({
+        error: {
+          code: ERROR_CODES.TOO_MANY_REQUESTS,
+          message,
+          retryAfterSeconds: expect.any(Number),
+        },
+      });
+    }
+  );
+
+  test("응답이 성공(204)이어도 되돌리지 않고 모든 요청을 센다", async () => {
+    // Setup: 가입 여부를 숨기려고 항상 204를 주므로, 성공 응답도 카운트에 남아야 한다
+    const req = makeReq("reset-count-all@test.com");
+
+    // Exercise
+    await attempt(perMinute, req);
+    const { passed } = await attempt(perMinute, req);
+
+    // Assertion
+    expect(passed).toBe(false);
+  });
+
+  test("이메일이나 role이 다르면 서로 다른 카운트로 취급한다", async () => {
+    // Exercise: CUSTOMER 계정이 1분 한도를 소진한 뒤, 다른 이메일·같은 이메일의 MOVER가 요청
+    await attempt(perMinute, makeReq("reset-a@test.com", "CUSTOMER"));
+    const otherEmail = await attempt(perMinute, makeReq("reset-b@test.com", "CUSTOMER"));
+    const otherRole = await attempt(perMinute, makeReq("reset-a@test.com", "MOVER"));
+
+    // Assertion
+    expect(otherEmail.passed).toBe(true);
+    expect(otherRole.passed).toBe(true);
+  });
+});
+
+describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", () => {
+  const GLOBAL_KEY = "password-reset-mail";
+
+  // Setup/Teardown: 키가 하나뿐인 전역 limiter라 테스트끼리 카운트가 섞이지 않도록 매번 비운다
+  beforeEach(async () => {
+    await resetCodeDailyMailLimiter.resetKey(GLOBAL_KEY);
+  });
+
+  test("실제로 메일을 보내지 않은 요청(미가입 이메일 등)은 응답 후 카운트를 되돌린다", async () => {
+    // Exercise: 서로 다른 미가입 이메일로 상한(400)보다 많이 요청
+    const results = [];
+    for (let i = 0; i < 450; i++) {
+      results.push(await attempt(resetCodeDailyMailLimiter, makeReq(`nobody${i}@test.com`)));
+    }
+
+    // Assertion: 모두 통과하고 카운트는 0 — 아무 이메일로 상한을 소진하는 공격이 통하지 않는다
+    expect(results.every((r) => r.passed)).toBe(true);
+    expect((await resetCodeDailyMailLimiter.getKey(GLOBAL_KEY))?.totalHits ?? 0).toBe(0);
+  });
+
+  test("실제 발송이 400통에 도달하면 이후 요청은 계정과 관계없이 429로 막는다", async () => {
+    // Exercise
+    for (let i = 0; i < 400; i++) {
+      await attempt(resetCodeDailyMailLimiter, makeReq(`user${i}@test.com`), { mailSent: true });
+    }
+    const { res, passed } = await attempt(resetCodeDailyMailLimiter, makeReq("new@test.com"));
+
+    // Assertion
+    expect(passed).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith({
+      error: {
+        code: ERROR_CODES.TOO_MANY_REQUESTS,
+        message: "일시적으로 인증번호를 보낼 수 없습니다. 잠시 후 다시 시도해주세요",
+        retryAfterSeconds: expect.any(Number),
+      },
+    });
   });
 });

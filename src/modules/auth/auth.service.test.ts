@@ -6,6 +6,8 @@ import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
 import { exchangeOAuthCode, toSocialProvider } from "./oauth/dispatcher";
 import oauthSignupTokenUtil from "./oauth/oauthSignupToken.util";
+import passwordResetTokenUtil from "./password-reset/passwordResetToken.util";
+import { mailer } from "../../config/mailer";
 
 /**
  * generated/prisma/client의 실제 모듈은 tsconfig의 rewriteRelativeImportExtensions로 인해
@@ -32,6 +34,11 @@ jest.mock("./auth.repository", () => ({
     create: jest.fn(),
     updateRefreshToken: jest.fn(),
     existsByEmailAndRole: jest.fn(),
+    findAccountsByNameAndPhone: jest.fn(),
+    replacePasswordResetCode: jest.fn(),
+    findPasswordResetCodeByUserId: jest.fn(),
+    incrementResetCodeFailedAttempts: jest.fn(),
+    completePasswordReset: jest.fn(),
   },
 }));
 
@@ -42,6 +49,22 @@ jest.mock("../../common/utils/hash.util", () => ({
     verifyPassword: jest.fn(),
     hashRefreshToken: jest.fn(),
     compareRefreshToken: jest.fn(),
+    hashResetCode: jest.fn(),
+    compareResetCode: jest.fn(),
+  },
+}));
+
+// 실제 Gmail로 나가지 않도록 발송기를 흉내낸다
+jest.mock("../../config/mailer", () => ({
+  mailer: { sendMail: jest.fn() },
+  MAIL_FROM: '"무빙" <noreply@test.com>',
+}));
+
+jest.mock("./password-reset/passwordResetToken.util", () => ({
+  __esModule: true,
+  default: {
+    create: jest.fn(),
+    verify: jest.fn(),
   },
 }));
 
@@ -72,6 +95,8 @@ const mockedJwtUtil = jest.mocked(jwtUtil);
 const mockedExchangeOAuthCode = jest.mocked(exchangeOAuthCode);
 const mockedToSocialProvider = jest.mocked(toSocialProvider);
 const mockedOauthSignupTokenUtil = jest.mocked(oauthSignupTokenUtil);
+const mockedPasswordResetTokenUtil = jest.mocked(passwordResetTokenUtil);
+const mockedMailer = jest.mocked(mailer);
 
 /** P2002는 인스턴스 자체를 만들어 instanceof 검사를 실제로 통과시킨다 */
 function makeP2002Error() {
@@ -611,5 +636,377 @@ describe("authService.oauthSignup", () => {
 
     // Assertion
     await expect(result).rejects.toBe(unknownError);
+  });
+});
+
+describe("authService.findEmail", () => {
+  const dto = { role: "CUSTOMER" as const, name: "김코드", phoneNumber: "01012345678" };
+
+  test("일치하는 계정의 이메일을 가려서 가입 경로와 함께 반환한다", async () => {
+    // Setup
+    mockedRepository.findAccountsByNameAndPhone.mockResolvedValue([
+      { email: "abcdef@naver.com", provider: "LOCAL" },
+      { email: "abcdef@naver.com", provider: "KAKAO" },
+    ] as never);
+
+    // Exercise
+    const result = await authService.findEmail(dto);
+
+    // Assertion
+    expect(mockedRepository.findAccountsByNameAndPhone).toHaveBeenCalledWith(
+      "CUSTOMER",
+      "김코드",
+      "01012345678"
+    );
+    expect(result).toEqual({
+      accounts: [
+        { email: "ab***@naver.com", provider: "LOCAL" },
+        { email: "ab***@naver.com", provider: "KAKAO" },
+      ],
+    });
+  });
+
+  test("아이디가 2자 이하면 앞 1자만 남기고, 별표 개수는 길이와 관계없이 3개로 고정한다", async () => {
+    // Setup
+    mockedRepository.findAccountsByNameAndPhone.mockResolvedValue([
+      { email: "ab@naver.com", provider: "LOCAL" },
+      { email: "a@naver.com", provider: "LOCAL" },
+      { email: "abcdefghij@naver.com", provider: "LOCAL" },
+    ] as never);
+
+    // Exercise
+    const result = await authService.findEmail(dto);
+
+    // Assertion
+    expect(result.accounts.map((a) => a.email)).toEqual([
+      "a***@naver.com",
+      "a***@naver.com",
+      "ab***@naver.com",
+    ]);
+  });
+
+  test("provider가 비어 있으면 이메일 가입 계정으로 보고 LOCAL로 채운다", async () => {
+    // Setup
+    mockedRepository.findAccountsByNameAndPhone.mockResolvedValue([
+      { email: "abcdef@naver.com", provider: null },
+    ] as never);
+
+    // Exercise
+    const result = await authService.findEmail(dto);
+
+    // Assertion
+    expect(result.accounts[0].provider).toBe("LOCAL");
+  });
+
+  test("일치하는 계정이 없으면 404가 아니라 빈 배열을 반환한다", async () => {
+    // Setup
+    mockedRepository.findAccountsByNameAndPhone.mockResolvedValue([]);
+
+    // Exercise
+    const result = await authService.findEmail(dto);
+
+    // Assertion
+    expect(result).toEqual({ accounts: [] });
+  });
+});
+
+describe("authService.sendPasswordResetCode", () => {
+  const dto = { role: "CUSTOMER" as const, email: "test@moving.com" };
+
+  test("가입된 계정이면 6자리 인증번호를 해시로 저장하고, 같은 번호를 메일로 보낸 뒤 true를 반환한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedMailer.sendMail.mockResolvedValue({} as never);
+    const before = Date.now();
+
+    // Exercise
+    const result = await authService.sendPasswordResetCode(dto);
+
+    // Assertion
+    expect(result).toBe(true);
+
+    const [code] = mockedHashUtil.hashResetCode.mock.calls[0];
+    expect(code).toMatch(/^\d{6}$/);
+
+    const [userId, codeHash, expiresAt] = mockedRepository.replacePasswordResetCode.mock.calls[0];
+    expect(userId).toBe(1);
+    expect(codeHash).toBe("hashed-code");
+    // 유효시간 5분
+    expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(5 * 60 * 1000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(5 * 60 * 1000);
+
+    const [mail] = mockedMailer.sendMail.mock.calls[0];
+    expect(mail.to).toBe("test@moving.com");
+    // DB엔 해시만, 메일엔 평문 — 해시한 원본과 메일 속 번호가 같아야 한다
+    expect(mail.text).toContain(`인증번호: ${code}`);
+  });
+
+  test("가입되지 않은 이메일이면 저장도 발송도 하지 않고 false를 반환한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue(null);
+
+    // Exercise
+    const result = await authService.sendPasswordResetCode(dto);
+
+    // Assertion
+    expect(result).toBe(false);
+    expect(mockedRepository.replacePasswordResetCode).not.toHaveBeenCalled();
+    expect(mockedMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test("같은 유저의 동시 요청으로 저장이 충돌하면 메일을 보내지 않고 false를 반환한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedRepository.replacePasswordResetCode.mockRejectedValue(makeP2002Error());
+
+    // Exercise
+    const result = await authService.sendPasswordResetCode(dto);
+
+    // Assertion
+    expect(result).toBe(false);
+    expect(mockedMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test("동시 요청 충돌이 아닌 다른 이유로 저장이 실패하면 에러를 그대로 전파한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    const unknownError = new Error("db down");
+    mockedRepository.replacePasswordResetCode.mockRejectedValue(unknownError);
+
+    // Exercise
+    const result = authService.sendPasswordResetCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toBe(unknownError);
+  });
+
+  test("메일 발송이 실패해도 에러를 던지지 않고 로그만 남긴 뒤 false를 반환한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    // clearAllMocks는 앞 테스트의 mockRejectedValue를 지우지 않으므로 저장 성공을 명시한다
+    mockedRepository.replacePasswordResetCode.mockResolvedValue({} as never);
+    mockedMailer.sendMail.mockRejectedValue(new Error("smtp down") as never);
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    // Exercise
+    const result = await authService.sendPasswordResetCode(dto);
+
+    // Assertion
+    expect(result).toBe(false);
+    expect(consoleError).toHaveBeenCalled();
+
+    // Teardown
+    consoleError.mockRestore();
+  });
+});
+
+describe("authService.verifyPasswordResetCode", () => {
+  const dto = { role: "CUSTOMER" as const, email: "test@moving.com", code: "123456" };
+
+  function makeResetCode(overrides = {}) {
+    return {
+      id: 7,
+      userId: 1,
+      codeHash: "hashed-code",
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      failedAttempts: 0,
+      usedAt: null,
+      createdAt: new Date(),
+      ...overrides,
+    };
+  }
+
+  test("인증번호가 맞으면 userId와 codeId를 담은 재설정 토큰을 발급한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedRepository.findPasswordResetCodeByUserId.mockResolvedValue(makeResetCode());
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+    mockedPasswordResetTokenUtil.create.mockReturnValue("reset-token");
+
+    // Exercise
+    const result = await authService.verifyPasswordResetCode(dto);
+
+    // Assertion
+    expect(mockedHashUtil.compareResetCode).toHaveBeenCalledWith("123456", "hashed-code");
+    expect(mockedPasswordResetTokenUtil.create).toHaveBeenCalledWith({ userId: 1, codeId: 7 });
+    expect(result).toBe("reset-token");
+    expect(mockedRepository.incrementResetCodeFailedAttempts).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["가입되지 않은 이메일", null, null],
+    ["발송 이력이 없는 계정", { id: 1 }, null],
+    ["이미 재설정에 사용한 인증번호", { id: 1 }, makeResetCode({ usedAt: new Date() })],
+  ])(
+    "%s이면 실제 불일치와 구분되지 않도록 같은 INVALID_RESET_CODE를 던진다",
+    async (_label, user, resetCode) => {
+      // Setup
+      mockedRepository.existsByEmailAndRole.mockResolvedValue(user as never);
+      mockedRepository.findPasswordResetCodeByUserId.mockResolvedValue(resetCode as never);
+
+      // Exercise
+      const result = authService.verifyPasswordResetCode(dto);
+
+      // Assertion
+      await expect(result).rejects.toMatchObject({
+        statusCode: 400,
+        code: ERROR_CODES.INVALID_RESET_CODE,
+        message: "인증번호가 일치하지 않습니다",
+      });
+      expect(mockedPasswordResetTokenUtil.create).not.toHaveBeenCalled();
+    }
+  );
+
+  test("유효시간이 지났으면 번호를 비교하지 않고 RESET_CODE_EXPIRED를 던진다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedRepository.findPasswordResetCodeByUserId.mockResolvedValue(
+      makeResetCode({ expiresAt: new Date(Date.now() - 1000) })
+    );
+
+    // Exercise
+    const result = authService.verifyPasswordResetCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.RESET_CODE_EXPIRED,
+    });
+    expect(mockedHashUtil.compareResetCode).not.toHaveBeenCalled();
+  });
+
+  test("이미 5번 틀린 인증번호면 맞는 번호를 넣어도 RESET_CODE_ATTEMPTS_EXCEEDED를 던진다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedRepository.findPasswordResetCodeByUserId.mockResolvedValue(
+      makeResetCode({ failedAttempts: 5 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+
+    // Exercise
+    const result = authService.verifyPasswordResetCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.RESET_CODE_ATTEMPTS_EXCEEDED,
+    });
+    expect(mockedPasswordResetTokenUtil.create).not.toHaveBeenCalled();
+  });
+
+  test("틀렸지만 기회가 남아 있으면(증가 후 1~4) 틀린 횟수를 올리고 INVALID_RESET_CODE를 던진다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedRepository.findPasswordResetCodeByUserId.mockResolvedValue(
+      makeResetCode({ failedAttempts: 3 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementResetCodeFailedAttempts.mockResolvedValue(4);
+
+    // Exercise
+    const result = authService.verifyPasswordResetCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ code: ERROR_CODES.INVALID_RESET_CODE });
+    expect(mockedRepository.incrementResetCodeFailedAttempts).toHaveBeenCalledWith(7, 5);
+  });
+
+  test("이번이 5번째로 틀린 것이면(증가 후 5) 그 인증번호를 무효로 보고 RESET_CODE_ATTEMPTS_EXCEEDED를 던진다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedRepository.findPasswordResetCodeByUserId.mockResolvedValue(
+      makeResetCode({ failedAttempts: 4 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementResetCodeFailedAttempts.mockResolvedValue(5);
+
+    // Exercise
+    const result = authService.verifyPasswordResetCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      code: ERROR_CODES.RESET_CODE_ATTEMPTS_EXCEEDED,
+    });
+  });
+
+  test("동시 요청이 먼저 상한을 채워 횟수를 올리지 못했으면(null) RESET_CODE_ATTEMPTS_EXCEEDED를 던진다", async () => {
+    // Setup: 읽은 시점엔 4였지만, 그 사이 다른 요청이 5를 채운 상황
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+    mockedRepository.findPasswordResetCodeByUserId.mockResolvedValue(
+      makeResetCode({ failedAttempts: 4 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementResetCodeFailedAttempts.mockResolvedValue(null);
+
+    // Exercise
+    const result = authService.verifyPasswordResetCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      code: ERROR_CODES.RESET_CODE_ATTEMPTS_EXCEEDED,
+    });
+  });
+});
+
+describe("authService.resetPassword", () => {
+  const token = "reset-token";
+  const dto = { newPassword: "NewPass1!" };
+
+  test("재설정 토큰이 유효하면 새 비밀번호를 해시해서 사용 처리와 함께 저장한다", async () => {
+    // Setup
+    mockedPasswordResetTokenUtil.verify.mockReturnValue({ userId: 1, codeId: 7 });
+    mockedHashUtil.hashPassword.mockResolvedValue("hashed-new-password");
+    mockedRepository.completePasswordReset.mockResolvedValue(true);
+
+    // Exercise
+    const result = authService.resetPassword(token, dto);
+
+    // Assertion
+    await expect(result).resolves.toBeUndefined();
+    expect(mockedPasswordResetTokenUtil.verify).toHaveBeenCalledWith("reset-token");
+    expect(mockedHashUtil.hashPassword).toHaveBeenCalledWith("NewPass1!");
+    expect(mockedRepository.completePasswordReset).toHaveBeenCalledWith(
+      7,
+      1,
+      "hashed-new-password"
+    );
+  });
+
+  test("토큰이 만료·위조됐으면 비밀번호를 해시하거나 저장하지 않고 401을 던진다", async () => {
+    // Setup
+    mockedPasswordResetTokenUtil.verify.mockImplementation(() => {
+      throw new Error("jwt expired");
+    });
+
+    // Exercise
+    const result = authService.resetPassword(token, dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 401,
+      code: ERROR_CODES.INVALID_OR_EXPIRED_RESET_TOKEN,
+    });
+    expect(mockedHashUtil.hashPassword).not.toHaveBeenCalled();
+    expect(mockedRepository.completePasswordReset).not.toHaveBeenCalled();
+  });
+
+  test("이미 사용했거나 재발송으로 바뀐 인증 건의 토큰이면 같은 401을 던진다", async () => {
+    // Setup: 토큰 서명·만료는 멀쩡하지만 DB에서 사용 처리할 행이 없는 상황
+    mockedPasswordResetTokenUtil.verify.mockReturnValue({ userId: 1, codeId: 7 });
+    mockedHashUtil.hashPassword.mockResolvedValue("hashed-new-password");
+    mockedRepository.completePasswordReset.mockResolvedValue(false);
+
+    // Exercise
+    const result = authService.resetPassword(token, dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 401,
+      code: ERROR_CODES.INVALID_OR_EXPIRED_RESET_TOKEN,
+    });
   });
 });
