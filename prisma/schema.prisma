@@ -137,11 +137,31 @@ model User {
   favorites         Favorite[]         @relation("FavoriteCustomer")
   favoritedBy       Favorite[]         @relation("FavoriteMover")
   notifications     Notification[]
+  passwordResetCode PasswordResetCode?
 
   @@unique([role, provider, providerId])
   /// 로그인 조회용 — 유니크를 뺐으므로 인덱스는 별도로 유지합니다
   @@index([role, email])
   @@map("user")
+}
+
+/// 비밀번호 재설정 인증번호 — 유저당 한 행만 유지합니다.
+/// 재발송 시 upsert가 아니라 삭제 후 생성해야 id가 바뀌어 이전 재설정 토큰(codeId)이 무효화됩니다.
+model PasswordResetCode {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @unique @map("user_id")
+  /// 인증번호 평문은 저장하지 않습니다
+  codeHash       String    @map("code_hash")
+  expiresAt      DateTime  @map("expires_at")
+  /// 틀린 입력 횟수 — 상한 도달 시 이 코드는 무효
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  /// 재설정 완료 시각 — 값이 있으면 재설정 토큰 재사용 거부
+  usedAt         DateTime? @map("used_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_code")
 }
 
 /// row 존재 여부가 곧 "프로필 등록 완료" 여부입니다.
