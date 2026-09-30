@@ -1,0 +1,46 @@
+name: CI
+
+# PR이 열리거나 갱신될 때 검사합니다.
+# dev·main에 직접 push는 룰셋으로 막혀 있어 PR만 걸어두면 충분합니다.
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  verify:
+    name: 타입체크 · 린트 · 테스트
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 레포지토리 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          # EC2와 같은 메이저로 고정합니다 (2026-09-30 기준 EC2 v24.21.0)
+          node-version: "24"
+          cache: "npm"
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # generated/ 는 gitignore 대상이라 체크아웃 직후에는 없습니다.
+      # 이걸 빠뜨리면 타입체크부터 import 에러로 전부 실패합니다.
+      - name: Prisma Client 생성
+        run: npx prisma generate
+
+      - name: 타입 체크
+        run: npm run typecheck
+
+      - name: 린트
+        run: npm run lint
+
+      - name: 포맷 검사
+        run: npx prettier --check "src/**/*.ts" "prisma/**/*.ts"
+
+      # DB 없이 도는 단위 테스트입니다(모킹 기반). 현재 332개.
+      - name: 테스트
+        run: npm test
