@@ -49,6 +49,8 @@ jobs:
           JWT_SECRET=ci-dummy-secret
           JWT_REFRESH_SECRET=ci-dummy-refresh-secret
           OAUTH_SIGNUP_TOKEN_SECRET=ci-dummy-oauth-secret
+          PASSWORD_RESET_TOKEN_SECRET=ci-dummy-reset-token-secret
+          PASSWORD_RESET_CODE_SECRET=ci-dummy-reset-code-secret
           EOF
 
       - name: 타입 체크

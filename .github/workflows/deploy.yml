@@ -33,16 +33,50 @@ jobs:
       - name: Prisma Client 생성
         run: npx prisma generate
 
+      # `config/env.ts` 가 모듈 로드 시점에 필수 환경변수를 검증해서,
+      # `.env` 없이는 `profile.service.test.ts` 가 import 단계에서 실패합니다.
+      # 단위 테스트는 전부 모킹이라 실제 값이 필요 없습니다 (ci.yml과 같은 이유).
+      - name: 테스트용 더미 .env 생성
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci
+          AWS_REGION=ap-northeast-2
+          AWS_ACCESS_KEY_ID=ci-dummy
+          AWS_SECRET_ACCESS_KEY=ci-dummy
+          AWS_PUBLIC_BUCKET_NAME=ci-dummy
+          JWT_SECRET=ci-dummy-secret
+          JWT_REFRESH_SECRET=ci-dummy-refresh-secret
+          OAUTH_SIGNUP_TOKEN_SECRET=ci-dummy-oauth-secret
+          PASSWORD_RESET_TOKEN_SECRET=ci-dummy-reset-token-secret
+          PASSWORD_RESET_CODE_SECRET=ci-dummy-reset-code-secret
+          EOF
+
       # 배포 전 마지막 방어선입니다. 여기서 실패하면 EC2에 올라가지 않습니다.
       - name: 테스트
         run: npm test
 
-      # 빌드는 러너에서 확인만 하고, 실제 산출물은 EC2에서 다시 만듭니다.
-      # (EC2에 .git이 있어 git pull 방식을 유지 — Prisma가 schema.prisma를 필요로 합니다)
-      - name: 빌드 확인
+      # ⚠️ 빌드는 **러너에서** 합니다. EC2는 메모리가 작아 tsc가 OOM으로 터질 수 있습니다
+      # (CI/CD 특강 지적사항). 러너는 넉넉하니 여기서 만들고 결과물만 보냅니다.
+      - name: 빌드
         run: npm run build
 
-      - name: SSH로 EC2 접속해 배포
+      # dist  — 빌드 결과
+      # generated — Prisma Client (EC2에서 만들면 또 CPU를 씁니다)
+      # prisma — schema·마이그레이션 (migrate deploy를 돌릴 때 필요)
+      # package*.json — EC2에서 `npm ci --omit=dev` 용
+      - name: 배포 파일 압축
+        run: tar -czf deploy.tar.gz dist generated prisma package.json package-lock.json
+
+      - name: EC2로 전송
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          source: deploy.tar.gz
+          target: /home/ec2-user/moving-deploy
+
+      - name: SSH로 EC2 접속해 실행
         uses: appleboy/ssh-action@v1.0.3
         env:
           ENV: ${{ secrets.ENV }}
@@ -55,21 +89,23 @@ jobs:
           script_stop: true
           script: |
             cd /home/ec2-user/moving-deploy
-            git fetch origin main
-            git reset --hard origin/main
 
-            # ⚠️ .env를 **통째로 덮어씁니다.**
+            # 러너에서 만든 dist·generated를 풀어 기존 파일을 갈아끼웁니다.
+            tar -xzf deploy.tar.gz
+            rm -f deploy.tar.gz
+
+            # ⚠️ .env를 **통째로 덮어씁니다.** 압축을 푼 뒤에 써야 tar가 덮어쓰지 않습니다.
             # 환경변수를 추가·수정할 일이 생기면 EC2에서 직접 고치지 말고
             # 반드시 GitHub Secrets의 `ENV`를 고치세요. EC2에서 고쳐봐야 다음 배포에 날아갑니다.
             echo "$ENV" > .env
 
-            npm ci
-
-            # generated/ 는 gitignore 대상이라 배포할 때마다 다시 만들어야 합니다.
-            # 빠뜨리면 서버가 import 에러로 안 뜹니다.
-            npx prisma generate
-
-            npm run build
+            # 빌드는 러너에서 끝났으니 런타임 의존성만 받습니다.
+            # devDependencies(typescript·prisma CLI·jest 등)는 EC2에 필요 없습니다.
+            #
+            # --ignore-scripts: package.json의 prepare가 husky를 부르는데
+            # husky는 devDependency라 --omit=dev 환경에는 없습니다. 없으면 설치가 실패합니다.
+            # 서버 실행에 postinstall이 필요한 패키지도 없어 안전합니다.
+            npm ci --omit=dev --ignore-scripts
 
             # 이미 떠 있으면 재시작, 없으면 새로 시작합니다.
             #
