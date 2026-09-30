@@ -1,4 +1,4 @@
-import { getExpireBaseDate } from "./expireRequests.util";
+import { addUtcDays, getExpireBaseDate } from "./expireRequests.util";
 
 // 입력은 모두 UTC(Z)로 명시합니다.
 // new Date(2026, 8, 4)처럼 로컬 생성자를 쓰면 테스트가 프로세스 타임존을 타서
@@ -41,5 +41,17 @@ describe("getExpireBaseDate", () => {
     expect(result.getUTCMinutes()).toBe(0);
     expect(result.getUTCSeconds()).toBe(0);
     expect(result.getUTCMilliseconds()).toBe(0);
+  });
+});
+
+describe("addUtcDays", () => {
+  it("UTC 자정 기준으로 하루를 더한다", () => {
+    const today = new Date("2026-09-04T00:00:00.000Z");
+    expect(addUtcDays(today, 1).toISOString()).toBe("2026-09-05T00:00:00.000Z");
+  });
+
+  it("월 경계를 넘긴다", () => {
+    const today = new Date("2026-09-30T00:00:00.000Z");
+    expect(addUtcDays(today, 1).toISOString()).toBe("2026-10-01T00:00:00.000Z");
   });
 });

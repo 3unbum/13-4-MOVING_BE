@@ -116,6 +116,7 @@ async function save(quotationRequestId: number, moverId: number, price: number, 
     where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
   });
 
+  // 실시간 신호는 repository.save가 커밋에 성공한 뒤에만 보냅니다
   return estimateRepository.save(
     { quotationRequestId, moverId, price, comment },
     Boolean(targetedRequest)
@@ -140,6 +141,7 @@ async function confirm(estimateId: number, userId: number) {
     throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 요청입니다");
   }
 
+  // 실시간 신호는 repository.confirm이 커밋에 성공한 뒤에만 보냅니다
   return estimateRepository.confirm(estimateId, estimate.moverId);
 }
 

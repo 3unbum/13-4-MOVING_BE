@@ -3,6 +3,7 @@ import authRouter from "../modules/auth/auth.route";
 import estimateRouter from "../modules/estimate/estimate.route";
 import moverRouter from "../modules/mover/mover.route";
 import favoriteRouter from "../modules/favorite/favorite.route";
+import notificationRouter from "../modules/notification/notification.route";
 import quotationRequestRouter from "../modules/quotation-request/quotation-request.route";
 import profileRouter from "../modules/profile/profile.route";
 import reviewRouter from "../modules/review/review.route";
@@ -22,6 +23,6 @@ router.use(estimateRouter);
 router.use(reviewRouter);
 router.use("/movers", moverRouter);
 router.use("/favorites", favoriteRouter);
-// router.use("/notifications", notificationRouter);
+router.use("/notifications", notificationRouter);
 
 export default router;
