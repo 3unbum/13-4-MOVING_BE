@@ -229,6 +229,7 @@ router.post("/find-email", validate(findEmailSchema), authController.findEmail);
  *       (role, email)의 이메일 가입(LOCAL) 계정이 있으면 6자리 인증번호를 메일로 보냅니다(유효 5분).
  *       재발송하면 이전 인증번호는 무효가 됩니다.
  *       가입 여부가 드러나지 않도록 미가입 이메일·소셜 계정·발송 실패 모두 같은 204로 응답합니다.
+ *       응답 시간으로도 구분되지 않도록 조회·발송 전에 먼저 응답하며, 메일은 응답 후에 발송됩니다.
  *       안내 문구는 프론트에서 표시합니다.
  *     security: []
  *     requestBody:

@@ -280,14 +280,15 @@ describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", ()
     const res = makeRes();
     await resetCodeDailyMailLimiter(req, res, jest.fn());
     mockedSendPasswordResetCode.mockRejectedValueOnce(new Error("db down"));
-    const next = jest.fn();
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
 
     // Exercise
-    await authController.sendPasswordResetCode(req, res, next);
+    await authController.sendPasswordResetCode(req, res, jest.fn());
 
-    // Assertion
-    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    // Assertion: 응답은 이미 204로 나갔으므로 에러는 로그로만 남고, 미리 센 한 통은 되돌린다
+    expect(consoleError).toHaveBeenCalled();
     expect(await totalHits()).toBe(0);
+    consoleError.mockRestore();
   });
 
   test("메일 발송 도중 연결이 끊겨도, 메일을 보냈다면 카운트를 되돌리지 않는다", async () => {

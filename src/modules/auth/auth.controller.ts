@@ -110,17 +110,19 @@ export const authController = {
   }) as RequestHandler,
 
   /**
-   * 가입 여부가 드러나지 않도록 발송 여부와 관계없이 항상 204로 응답합니다.
-   * 일일 발송 상한 limiter가 미리 센 한 통은 발송 결과로만 되돌립니다 — 응답이나 연결 상태와
-   * 무관하게, 서비스 호출이 끝난 뒤 실제로 보내지 않았을 때만 환불합니다.
+   * 가입 여부가 드러나지 않도록 조회·발송 전에 먼저 204로 응답합니다 — 발송을 기다린 뒤 응답하면
+   * 가입된 계정만 Gmail 발송 시간만큼 늦게 응답해, 응답 시간으로 가입 여부를 알 수 있습니다.
+   * 응답을 이미 보냈으므로 에러는 로그로만 남기고, 일일 발송 상한 limiter가 미리 센 한 통은
+   * 실제로 보내지 않았을 때만 되돌립니다.
    */
-  sendPasswordResetCode: (async (req, res, next) => {
+  sendPasswordResetCode: (async (req, res) => {
+    res.status(204).send();
+
     let sent = false;
     try {
       sent = await authService.sendPasswordResetCode(req.body);
-      res.status(204).send();
     } catch (error) {
-      next(error);
+      console.error("[passwordReset] 인증번호 발송 처리 실패", error);
     } finally {
       if (!sent) await refundResetCodeMailCount();
     }
