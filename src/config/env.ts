@@ -39,6 +39,11 @@ export const env = {
   OAUTH_SIGNUP_TOKEN_SECRET: required("OAUTH_SIGNUP_TOKEN_SECRET"),
   OAUTH_SIGNUP_TOKEN_EXPIRES_IN: optional("OAUTH_SIGNUP_TOKEN_EXPIRES_IN", "10m"),
 
+  PASSWORD_RESET_TOKEN_SECRET: required("PASSWORD_RESET_TOKEN_SECRET"),
+  PASSWORD_RESET_TOKEN_EXPIRES_IN: optional("PASSWORD_RESET_TOKEN_EXPIRES_IN", "10m"),
+  /** 비어 있어도 HMAC이 에러 없이 계산돼 보안만 약해지므로 required */
+  PASSWORD_RESET_CODE_SECRET: required("PASSWORD_RESET_CODE_SECRET"),
+
   /**
    * provider별 자격증명은 optional로 둡니다 — 필수로 두면 하나라도 콘솔 등록 전엔
    * 다른 도메인 담당자의 서버 기동까지 막혀버립니다. 값이 비어있으면 해당 provider
@@ -50,6 +55,9 @@ export const env = {
   NAVER_CLIENT_SECRET: optional("NAVER_CLIENT_SECRET", ""),
   KAKAO_CLIENT_ID: optional("KAKAO_CLIENT_ID", ""),
   KAKAO_CLIENT_SECRET: optional("KAKAO_CLIENT_SECRET", ""),
+
+  SMTP_USER: optional("SMTP_USER", ""),
+  SMTP_PASS: optional("SMTP_PASS", ""),
 } as const;
 
 export const isProduction = env.NODE_ENV === "production";
