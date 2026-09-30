@@ -32,6 +32,25 @@ jobs:
       - name: Prisma Client 생성
         run: npx prisma generate
 
+      # `config/env.ts` 가 모듈 로드 시점에 필수 환경변수를 검증합니다.
+      # `profile.service` 처럼 s3 설정을 import하는 테스트는 이게 없으면
+      # 테스트가 돌기도 전에 import 단계에서 터집니다.
+      #
+      # 단위 테스트는 전부 모킹 기반이라 **실제 값이 필요 없습니다.**
+      # 형식만 맞는 더미로 채웁니다 — 실제 비밀값을 CI에 넣지 않습니다.
+      - name: 테스트용 더미 .env 생성
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci
+          AWS_REGION=ap-northeast-2
+          AWS_ACCESS_KEY_ID=ci-dummy
+          AWS_SECRET_ACCESS_KEY=ci-dummy
+          AWS_PUBLIC_BUCKET_NAME=ci-dummy
+          JWT_SECRET=ci-dummy-secret
+          JWT_REFRESH_SECRET=ci-dummy-refresh-secret
+          OAUTH_SIGNUP_TOKEN_SECRET=ci-dummy-oauth-secret
+          EOF
+
       - name: 타입 체크
         run: npm run typecheck
 
