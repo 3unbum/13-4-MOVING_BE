@@ -219,7 +219,7 @@ export const authService = {
       await mailer.sendMail({
         from: MAIL_FROM,
         to: dto.email,
-        ...buildResetCodeMail(code, RESET_CODE_TTL_MINUTES),
+        ...(await buildResetCodeMail(code, RESET_CODE_TTL_MINUTES)),
       });
       return true;
     } catch (error) {

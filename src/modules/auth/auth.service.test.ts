@@ -60,6 +60,11 @@ jest.mock("../../config/mailer", () => ({
   MAIL_FROM: '"무빙" <noreply@test.com>',
 }));
 
+// react-email의 render는 내부에서 dynamic import를 써서 Jest(--experimental-vm-modules 없이)에서 실행되지 않는다
+jest.mock("@react-email/components", () => ({
+  render: async () => "<html>rendered</html>",
+}));
+
 jest.mock("./password-reset/passwordResetToken.util", () => ({
   __esModule: true,
   default: {
@@ -740,6 +745,7 @@ describe("authService.sendPasswordResetCode", () => {
     expect(mail.to).toBe("test@moving.com");
     // DB엔 해시만, 메일엔 평문 — 해시한 원본과 메일 속 번호가 같아야 한다
     expect(mail.text).toContain(`인증번호: ${code}`);
+    expect(mail.html).toBe("<html>rendered</html>");
   });
 
   test("가입되지 않은 이메일이면 저장도 발송도 하지 않고 false를 반환한다", async () => {
