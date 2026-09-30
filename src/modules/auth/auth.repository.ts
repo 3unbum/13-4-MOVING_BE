@@ -68,10 +68,6 @@ export const authRepository = {
     });
   },
 
-  /**
-   * 아이디 찾기용. 다른 조회와 달리 LOCAL로 좁히지 않고 소셜 계정도 함께 조회합니다.
-   * 같은 role 안에서도 이메일 가입 계정과 소셜 계정이 공존할 수 있어 여러 건이 나올 수 있습니다.
-   */
   findAccountsByNameAndPhone(role: UserRole, name: string, phoneNumber: string) {
     return prisma.user.findMany({
       where: { role, name, phoneNumber },
@@ -80,10 +76,7 @@ export const authRepository = {
     });
   },
 
-  /**
-   * 유저당 한 행만 유지하므로 재발송 시 기존 행을 지우고 새로 만듭니다.
-   * upsert로 덮어쓰면 id가 그대로 남아, 이전에 발급한 재설정 토큰(codeId)이 다시 유효해집니다.
-   */
+  /** upsert 금지(삭제 후 생성) — id가 유지되면 이전 재설정 토큰이 다시 유효해짐 */
   replacePasswordResetCode(userId: number, codeHash: string, expiresAt: Date) {
     return prisma.$transaction(async (tx) => {
       await tx.passwordResetCode.deleteMany({ where: { userId } });
@@ -95,11 +88,7 @@ export const authRepository = {
     return prisma.passwordResetCode.findUnique({ where: { userId } });
   },
 
-  /**
-   * 상한 미만일 때만 1 올립니다. 조건 확인과 증가를 한 쿼리로 해야
-   * 틀린 코드를 동시에 여러 개 보내도 상한을 넘지 않습니다.
-   * 올린 뒤의 값을 반환하고, 이미 상한에 도달해 있어 올리지 못했으면 null
-   */
+  /** 조건 확인과 증가를 한 쿼리로 — 동시 요청에도 상한을 넘지 않게. 상한이면 null */
   async incrementResetCodeFailedAttempts(id: number, maxAttempts: number): Promise<number | null> {
     // update는 조건에 맞는 행이 없으면 예외(P2025)와 함께 prisma:error 로그를 남기므로, 빈 배열을 주는 쪽을 씁니다
     const updated = await prisma.passwordResetCode.updateManyAndReturn({
@@ -110,11 +99,7 @@ export const authRepository = {
     return updated.length > 0 ? updated[0].failedAttempts : null;
   },
 
-  /**
-   * 재설정 토큰 1회 사용 처리 + 비밀번호 변경 + 다른 기기 세션 무효화를 한 트랜잭션으로 합니다.
-   * usedAt 조건을 건 updateMany로 사용 처리를 먼저 해서, 같은 토큰으로 동시에 요청해도 하나만 통과합니다.
-   * 처리했으면 true, 이미 사용됐거나 없는 코드면 false
-   */
+  /** usedAt 조건으로 먼저 사용 처리 — 같은 토큰 동시 요청 중 하나만 통과. 처리했으면 true */
   completePasswordReset(codeId: number, userId: number, hashedPassword: string) {
     return prisma.$transaction(async (tx) => {
       const { count } = await tx.passwordResetCode.updateMany({

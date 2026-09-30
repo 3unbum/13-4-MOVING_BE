@@ -33,10 +33,7 @@ const createAuthTokens = async (userId: User["id"], role: User["role"]) => {
   return { accessToken, refreshToken };
 };
 
-/**
- * 미가입 이메일·코드 없음·이미 사용한 코드도 이 에러로 묶어, 실제 불일치와 구분되지 않게 합니다.
- * 남은 횟수는 실제 계정에서만 계산할 수 있어 가입 여부가 드러나므로 문구에 넣지 않습니다.
- */
+/** 미가입·코드 없음·사용된 코드도 같은 에러 — 가입 여부 숨김 */
 const invalidResetCodeError = () =>
   AppError.badRequest(ERROR_CODES.INVALID_RESET_CODE, "인증번호가 일치하지 않습니다");
 
@@ -46,10 +43,8 @@ const resetCodeAttemptsExceededError = () =>
     "인증번호를 여러 번 틀려 무효가 되었습니다. 인증번호를 다시 받아주세요"
   );
 
-/** 000000~999999. randomInt는 암호학적으로 안전한 난수라 Math.random 대신 씁니다. */
 const generateResetCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
-/** 아이디 앞 2자(2자 이하면 1자) + 고정 *** + 도메인. 별표 개수로 아이디 길이가 드러나지 않게 고정합니다. */
 const maskEmail = (email: string) => {
   const [local, domain] = email.split("@");
   const visible = local.length <= 2 ? 1 : 2;
@@ -183,18 +178,11 @@ export const authService = {
     return {
       accounts: users.map((user) => ({
         email: maskEmail(user.email),
-        // provider는 스키마상 nullable이지만 비어있다면 이메일 가입 계정뿐이라 LOCAL로 채웁니다
         provider: user.provider ?? "LOCAL",
       })),
     };
   },
 
-  /**
-   * LOCAL 계정이면 인증번호를 저장하고 메일을 보냅니다.
-   * 가입 여부가 드러나지 않도록 컨트롤러는 결과와 관계없이 같은 응답을 주고,
-   * 이 반환값은 서비스 전체 일일 발송 상한을 "실제로 보낸 메일"만으로 세는 데 씁니다.
-   * Gmail SMTP가 발송을 접수했으면 true
-   */
   async sendPasswordResetCode(dto: SendResetCodeDto): Promise<boolean> {
     const user = await authRepository.existsByEmailAndRole(dto.email, dto.role);
     if (!user) return false;
@@ -229,10 +217,6 @@ export const authService = {
     }
   },
 
-  /**
-   * 인증번호가 맞으면 새 비밀번호 설정에 쓸 재설정 토큰을 발급합니다.
-   * 만료·횟수 초과는 사용자가 재발송해야 한다는 걸 알 수 있도록 따로 알립니다.
-   */
   async verifyPasswordResetCode(dto: VerifyResetCodeDto): Promise<string> {
     const user = await authRepository.existsByEmailAndRole(dto.email, dto.role);
     if (!user) throw invalidResetCodeError();
@@ -265,11 +249,6 @@ export const authService = {
     return passwordResetTokenUtil.create({ userId: user.id, codeId: resetCode.id });
   },
 
-  /**
-   * 재설정 토큰으로 새 비밀번호를 설정합니다. 토큰이 만료·위조됐거나 이미 사용한 경우 모두 같은 401 —
-   * 어느 쪽이든 사용자가 할 일은 인증번호를 다시 받는 것뿐이라 구분하지 않습니다.
-   * 다른 기기 로그인도 함께 끊기도록 refreshToken을 비웁니다.
-   */
   async resetPassword(passwordResetToken: string, dto: ResetPasswordDto): Promise<void> {
     const invalidTokenError = new AppError(
       401,

@@ -1,10 +1,6 @@
 import { render } from "@react-email/components";
 import { ResetCodeEmail } from "./resetCodeMail.template";
 
-/**
- * 비밀번호 재설정 인증번호 메일. 디자인을 입힌 HTML과 함께, HTML을 못 여는 메일 클라이언트용 텍스트도 보냅니다.
- * 메일이 다른 사람에게 전달돼도 드러나는 정보를 줄이려고 이름·계정 유형은 넣지 않습니다.
- */
 export const buildResetCodeMail = async (code: string, ttlMinutes: number) => ({
   subject: "[무빙] 비밀번호 재설정 인증번호",
   html: await render(<ResetCodeEmail code={code} ttlMinutes={ttlMinutes} />),

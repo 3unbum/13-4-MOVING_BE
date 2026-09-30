@@ -39,13 +39,9 @@ export const env = {
   OAUTH_SIGNUP_TOKEN_SECRET: required("OAUTH_SIGNUP_TOKEN_SECRET"),
   OAUTH_SIGNUP_TOKEN_EXPIRES_IN: optional("OAUTH_SIGNUP_TOKEN_EXPIRES_IN", "10m"),
 
-  /** 인증번호 확인 후 새 비밀번호 설정까지 쓰는 임시 토큰. */
   PASSWORD_RESET_TOKEN_SECRET: required("PASSWORD_RESET_TOKEN_SECRET"),
   PASSWORD_RESET_TOKEN_EXPIRES_IN: optional("PASSWORD_RESET_TOKEN_EXPIRES_IN", "10m"),
-  /**
-   * 인증번호 HMAC 키. 비어 있어도 HMAC은 에러 없이 계산돼 조용히 보안만 약해지므로
-   * optional로 두지 않습니다. 6자리(100만 가지)라 키 없는 해시는 DB 유출 시 바로 풀립니다.
-   */
+  /** 비어 있어도 HMAC이 에러 없이 계산돼 보안만 약해지므로 required */
   PASSWORD_RESET_CODE_SECRET: required("PASSWORD_RESET_CODE_SECRET"),
 
   /**
@@ -60,11 +56,6 @@ export const env = {
   KAKAO_CLIENT_ID: optional("KAKAO_CLIENT_ID", ""),
   KAKAO_CLIENT_SECRET: optional("KAKAO_CLIENT_SECRET", ""),
 
-  /**
-   * 비밀번호 재설정 인증번호 발송용 Gmail 계정. OAuth 자격증명과 같은 이유로 optional —
-   * 비어있으면 서버는 뜨고, 메일 발송 시점에만 Gmail 인증 실패로 떨어집니다.
-   * SMTP_PASS는 Gmail 로그인 비밀번호가 아니라 앱 비밀번호(16자리)입니다.
-   */
   SMTP_USER: optional("SMTP_USER", ""),
   SMTP_PASS: optional("SMTP_PASS", ""),
 } as const;

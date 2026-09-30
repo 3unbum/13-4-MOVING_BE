@@ -2,7 +2,6 @@ import { z } from "zod";
 
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
-/** 회원가입과 비밀번호 재설정이 같은 규칙을 쓰도록 한곳에 둡니다. */
 const passwordSchema = z
   .string()
   .regex(PASSWORD_RULE, "비밀번호는 8자 이상이며 영문·숫자·특수문자를 포함해야 합니다")
@@ -35,7 +34,6 @@ export const findEmailSchema = z.object({
   phoneNumber: z.string().regex(/^01[016789]\d{7,8}$/, "올바른 전화번호 형식이 아닙니다"),
 });
 
-/** 요청 형태가 이메일 중복 확인과 같아 공유, 한쪽만 필드가 바뀌면 그때 분리 */
 export const sendResetCodeSchema = checkEmailSchema;
 
 export const verifyResetCodeSchema = checkEmailSchema.extend({

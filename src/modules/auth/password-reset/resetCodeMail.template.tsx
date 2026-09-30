@@ -1,6 +1,5 @@
 import { Body, Container, Head, Hr, Html, Preview, Section, Text } from "@react-email/components";
 
-/** FE globals.css의 브랜드 색상과 맞춥니다 (orange-400/100, black-400, gray-500, background-200, line-100) */
 const COLORS = {
   brand: "#f9502e",
   brandLight: "#feeeea",
@@ -17,10 +16,6 @@ interface ResetCodeEmailProps {
   ttlMinutes: number;
 }
 
-/**
- * 메일 클라이언트마다 CSS 지원이 달라서 react-email 컴포넌트(table 레이아웃)와 인라인 스타일만 씁니다.
- * 로고 이미지는 외부 이미지 차단 시 깨져 보이므로 텍스트 로고로 대신합니다.
- */
 export const ResetCodeEmail = ({ code, ttlMinutes }: ResetCodeEmailProps) => (
   <Html lang="ko">
     <Head />

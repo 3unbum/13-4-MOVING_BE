@@ -109,12 +109,7 @@ export const authController = {
     }
   }) as RequestHandler,
 
-  /**
-   * 가입 여부가 드러나지 않도록 조회·발송 전에 먼저 204로 응답합니다 — 발송을 기다린 뒤 응답하면
-   * 가입된 계정만 Gmail 발송 시간만큼 늦게 응답해, 응답 시간으로 가입 여부를 알 수 있습니다.
-   * 응답을 이미 보냈으므로 에러는 로그로만 남기고, 일일 발송 상한 limiter가 미리 센 한 통은
-   * 실제로 보내지 않았을 때만 되돌립니다.
-   */
+  /** 발송 전에 먼저 응답 — 기다리면 가입된 계정만 늦게 응답해 응답 시간으로 가입 여부가 드러남 */
   sendPasswordResetCode: (async (req, res) => {
     res.status(204).send();
 
@@ -128,7 +123,6 @@ export const authController = {
     }
   }) as RequestHandler,
 
-  /** 인증번호가 맞으면 재설정 토큰을 httpOnly 쿠키로만 내려줍니다(응답 바디에는 없음). */
   verifyPasswordResetCode: (async (req, res, next) => {
     try {
       const passwordResetToken = await authService.verifyPasswordResetCode(req.body);
@@ -139,10 +133,6 @@ export const authController = {
     }
   }) as RequestHandler,
 
-  /**
-   * 재설정이 끝나면 재설정 토큰 쿠키를 지우고, 자동 로그인 없이 로그인 페이지로 보내도록 204만 응답합니다.
-   * 서버의 refreshToken이 비워져 이 브라우저에 남은 로그인 쿠키도 곧 무효가 되므로 함께 지웁니다.
-   */
   resetPassword: (async (req, res, next) => {
     try {
       await authService.resetPassword(getPasswordResetTokenOrThrow(req), req.body);

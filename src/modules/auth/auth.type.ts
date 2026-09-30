@@ -19,10 +19,6 @@ export interface AuthResult {
   hasProfile: boolean;
 }
 
-/**
- * 아이디 찾기 응답. 소셜 계정도 포함해 "가입한 적 없다"고 오해해 중복 가입하는 것을 막습니다.
- * email은 마스킹된 값입니다.
- */
 export interface FindEmailResult {
   accounts: { email: string; provider: SocialProvider }[];
 }

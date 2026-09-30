@@ -41,14 +41,11 @@ const hashRefreshToken = (token: string) => createHash("sha256").update(token).d
 const compareRefreshToken = (token: string, hashedToken: string) =>
   hashRefreshToken(token) === hashedToken;
 
-/**
- * 비밀번호 재설정 인증번호(6자리) 해싱 전용. sha256만 쓰면 100만 가지를 전부 계산해
- * DB 유출 시 바로 풀리므로, 서버에만 있는 키를 섞는 HMAC을 씁니다.
- */
+/** 6자리는 sha256이면 DB 유출 시 전부 계산돼 풀리므로 HMAC */
 const hashResetCode = (code: string) =>
   createHmac("sha256", env.PASSWORD_RESET_CODE_SECRET).update(code).digest("hex");
 
-/** 문자열 === 비교는 앞에서부터 다른 글자를 만나면 바로 끝나 응답 시간 차이가 생기므로 고정 시간 비교를 씁니다. */
+/** 고정 시간 비교(타이밍 공격 방지) */
 const compareResetCode = (code: string, hashedCode: string) => {
   const actual = Buffer.from(hashResetCode(code));
   const expected = Buffer.from(hashedCode);
