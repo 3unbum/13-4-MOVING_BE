@@ -7,7 +7,13 @@ import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { exchangeOAuthCode, toSocialProvider, type OAuthProviderName } from "./oauth/dispatcher";
 import oauthSignupTokenUtil from "./oauth/oauthSignupToken.util";
-import type { SignupDto, LoginDto, CheckEmailDto, OAuthLoginDto, OAuthSignupDto } from "./auth.schema";
+import type {
+  SignupDto,
+  LoginDto,
+  CheckEmailDto,
+  OAuthLoginDto,
+  OAuthSignupDto,
+} from "./auth.schema";
 import type { AuthResult, OAuthLoginResult } from "./auth.type";
 
 /** access/refresh 토큰을 발급하고, refreshToken 해시를 DB에 저장 */
@@ -210,7 +216,10 @@ export const authService = {
       payload.role
     );
     if (existing) {
-      throw AppError.conflict(ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED, "이미 가입된 계정입니다");
+      throw AppError.conflict(
+        ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED,
+        "이미 가입된 계정입니다"
+      );
     }
 
     let user: User;
@@ -226,7 +235,10 @@ export const authService = {
     } catch (error) {
       // findBySocialAndRole 조회 이후 동시 요청이 먼저 저장하면 (role, provider, providerId) 유니크가 막고 P2002를 던짐
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw AppError.conflict(ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED, "이미 가입된 계정입니다");
+        throw AppError.conflict(
+          ERROR_CODES.PROVIDER_ACCOUNT_ALREADY_LINKED,
+          "이미 가입된 계정입니다"
+        );
       }
       throw error;
     }

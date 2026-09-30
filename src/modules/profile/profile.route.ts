@@ -39,7 +39,13 @@ function uploadSingleImage(req: Request, res: Response, next: NextFunction) {
 
     if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
       const maxMb = PROFILE_IMAGE_MAX_SIZE_BYTES / (1024 * 1024);
-      next(new AppError(400, ERROR_CODES.VALIDATION_ERROR, `이미지 용량은 ${maxMb}MB를 초과할 수 없습니다.`));
+      next(
+        new AppError(
+          400,
+          ERROR_CODES.VALIDATION_ERROR,
+          `이미지 용량은 ${maxMb}MB를 초과할 수 없습니다.`
+        )
+      );
       return;
     }
 
