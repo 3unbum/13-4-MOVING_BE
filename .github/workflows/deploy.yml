@@ -1,11 +1,15 @@
 name: Deploy To EC2
 
-# main에 머지되면 자동 배포합니다.
-# dev는 개발 통합 브랜치라 배포하지 않습니다.
+# dev에 머지되면 자동 배포합니다.
+#
+# 이 프로젝트의 배포 브랜치는 `main`이 아니라 `dev`입니다.
+# - 레포 기본 브랜치가 `dev`이고, `main`은 8/29 초기 커밋(README 수준)에 멈춰 있습니다
+# - 프론트엔드 Vercel도 Production Branch가 `dev`로 잡혀 있습니다
+# `main` 기준으로 두면 워크플로가 영원히 실행되지 않습니다.
 on:
   push:
     branches:
-      - main
+      - dev
 
 # 배포가 겹치면 pm2 재시작 중에 다음 배포가 끼어들 수 있어 직렬화합니다.
 concurrency:
