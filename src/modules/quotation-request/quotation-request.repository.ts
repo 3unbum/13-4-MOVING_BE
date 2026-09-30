@@ -2,8 +2,9 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import type { PrismaTransaction } from "@/config/prisma";
+import { runAfterCommitPublish } from "@/modules/notification/notification.publish";
 import { Prisma } from "../../../generated/prisma/client";
-import type { RegionType } from "../../../generated/prisma/enums";
+import type { RegionType, ServiceType } from "../../../generated/prisma/enums";
 import type { QuotationRequestCreateInput } from "./quotation-request.type";
 
 const TARGET_LIMIT = 3;
@@ -39,10 +40,19 @@ async function save(input: QuotationRequestCreateInput, tx: PrismaTransaction = 
   });
 }
 
-/** 출발지 지역에서 활동하는 기사님 id 목록 - NEW_REQUEST 알림 대상 */
-async function findMoverIdsByRegion(region: RegionType, tx: PrismaTransaction = prisma) {
+/**
+ * 출발지 지역 + 이사 유형이 모두 맞는 기사님 id 목록 - NEW_REQUEST 알림 대상.
+ *
+ * 지역만 보면 소형이사만 하는 기사님에게 사무실이사 요청 알림이 갑니다.
+ * 알림 요약("내 지역의 소형이사 견적 N건")도 이 교집합을 전제로 집계합니다.
+ */
+async function findMoverIdsByRegionAndService(
+  region: RegionType,
+  service: ServiceType,
+  tx: PrismaTransaction = prisma
+) {
   const rows = await tx.moverRegion.findMany({
-    where: { region },
+    where: { region, mover: { moverServices: { some: { service } } } },
     select: { moverId: true },
   });
   return rows.map((row) => row.moverId);
@@ -97,6 +107,8 @@ async function findMoverById(moverId: number) {
  *
  * 3명 상한은 count 후 create라 그냥 두면 동시 요청 시 초과합니다.
  * Serializable로 묶어 원자적으로 처리하고 직렬화 충돌(P2034)은 재시도합니다.
+ * 재시도마다 커밋 후 발행 대기열을 새로 엽니다. 루프 전체를 감싸면
+ * 롤백된 시도의 SSE 신호가 다음 커밋과 함께 나갑니다.
  * (estimate.repository.save와 같은 패턴)
  * 중복 지정은 (quotation_request_id, mover_id) 유니크가 P2002로 막습니다.
  */
@@ -107,37 +119,39 @@ async function saveTargetedRequest(
 ) {
   for (let attempt = 1; attempt <= TARGET_MAX_RETRIES; attempt++) {
     try {
-      return await prisma.$transaction(
-        async (tx) => {
-          // service의 상태 검증은 트랜잭션 밖이라, 그 사이 배치가 요청을 만료시켰을 수 있습니다.
-          // Serializable이 순서를 보장하므로 재조회만으로 충분합니다 (FOR UPDATE 불필요.)
-          const target = await tx.quotationRequest.findUnique({
-            where: { id: quotationRequestId },
-            select: { quotationStatus: true },
-          });
-          // service와 같은 기준이어야 합니다 — 한쪽만 PENDING으로 좁히면 그 사이
-          // 확정된 요청이 트랜잭션을 통과합니다 (QA #7)
-          if (!target || target.quotationStatus !== "PENDING") {
-            throw AppError.badRequest(
-              ERROR_CODES.NO_ACTIVE_REQUEST,
-              "이미 기사님이 확정되었거나 종료된 견적 요청입니다."
-            );
-          }
+      return await runAfterCommitPublish(() =>
+        prisma.$transaction(
+          async (tx) => {
+            // service의 상태 검증은 트랜잭션 밖이라, 그 사이 배치가 요청을 만료시켰을 수 있습니다.
+            // Serializable이 순서를 보장하므로 재조회만으로 충분합니다 (FOR UPDATE 불필요.)
+            const target = await tx.quotationRequest.findUnique({
+              where: { id: quotationRequestId },
+              select: { quotationStatus: true },
+            });
+            // service와 같은 기준이어야 합니다 — 한쪽만 PENDING으로 좁히면 그 사이
+            // 확정된 요청이 트랜잭션을 통과합니다 (QA #7)
+            if (!target || target.quotationStatus !== "PENDING") {
+              throw AppError.badRequest(
+                ERROR_CODES.NO_ACTIVE_REQUEST,
+                "이미 기사님이 확정되었거나 종료된 견적 요청입니다."
+              );
+            }
 
-          const count = await tx.targetedRequest.count({ where: { quotationRequestId } });
-          if (count >= TARGET_LIMIT) {
-            throw AppError.badRequest(
-              ERROR_CODES.TARGET_LIMIT_EXCEEDED,
-              `지정 견적 요청은 최대 ${TARGET_LIMIT}명까지 가능합니다.`
-            );
-          }
-          const created = await tx.targetedRequest.create({
-            data: { quotationRequestId, moverId },
-          });
-          await onCreated(tx, created.id); // 알림도 같은 트랜잭션
-          return created;
-        },
-        { isolationLevel: "Serializable" }
+            const count = await tx.targetedRequest.count({ where: { quotationRequestId } });
+            if (count >= TARGET_LIMIT) {
+              throw AppError.badRequest(
+                ERROR_CODES.TARGET_LIMIT_EXCEEDED,
+                `지정 견적 요청은 최대 ${TARGET_LIMIT}명까지 가능합니다.`
+              );
+            }
+            const created = await tx.targetedRequest.create({
+              data: { quotationRequestId, moverId },
+            });
+            await onCreated(tx, created.id); // 알림도 같은 트랜잭션
+            return created;
+          },
+          { isolationLevel: "Serializable" }
+        )
       );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -171,7 +185,7 @@ export {
   findById,
   findManyByUserId,
   findMoverById,
-  findMoverIdsByRegion,
+  findMoverIdsByRegionAndService,
   save,
   saveTargetedRequest,
 };

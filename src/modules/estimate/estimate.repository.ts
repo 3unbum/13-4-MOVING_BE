@@ -2,7 +2,11 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import { Prisma } from "../../../generated/prisma/client.ts";
-import { createNotification } from "../notification/notification.service";
+import { createManyNotifications, createNotification } from "../notification/notification.service";
+import {
+  enqueueNotificationPublish,
+  runAfterCommitPublish,
+} from "../notification/notification.publish";
 import {
   EstimateGetAllByMoverParams,
   EstimateGetAllByQuotationRequestParams,
@@ -79,7 +83,8 @@ export const estimateInclude = {
 async function save(estimate: EstimateInputField, isTargeted: boolean) {
   for (let attempt = 1; attempt <= SAVE_MAX_RETRIES; attempt++) {
     try {
-      return await prisma.$transaction(
+      return await runAfterCommitPublish(() =>
+        prisma.$transaction(
         async (tx) => {
           if (!isTargeted) {
             const targetedMovers = await tx.targetedRequest.findMany({
@@ -100,7 +105,7 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
             }
           }
 
-          return tx.estimate.create({
+          const created = await tx.estimate.create({
             data: {
               price: estimate.price,
               comment: estimate.comment,
@@ -108,8 +113,24 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
               mover: { connect: { id: estimate.moverId } },
             },
           });
+
+          // 견적을 요청한 고객에게 알립니다. 요청자 조회도 트랜잭션 안에서 해야
+          // 상한 검증과 같은 스냅샷을 봅니다.
+          const request = await tx.quotationRequest.findUniqueOrThrow({
+            where: { id: estimate.quotationRequestId },
+            select: { userId: true },
+          });
+          await createNotification(tx, {
+            userId: request.userId,
+            estimateId: created.id,
+            type: "NEW_ESTIMATE",
+          });
+          enqueueNotificationPublish([request.userId], "NEW_ESTIMATE");
+
+          return created;
         },
         { isolationLevel: "Serializable" }
+      )
       );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -190,10 +211,12 @@ async function getById(id: number) {
 // 견적 확정(배정) — estimate CONFIRMED, quotationRequest ASSIGNED, mover confirmedCount+1, notification 생성을 한 트랜잭션으로 처리
 // COMPLETED는 이사일 경과 후 expireRequests.job.ts가 처리 (여기서 건드리지 않음)
 async function confirm(estimateId: number, moverId: number) {
-  return prisma.$transaction(async (tx) => {
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
     const existing = await tx.estimate.findUnique({
       where: { id: estimateId },
-      select: { quotationRequestId: true },
+      // 확정 알림은 고객도 받으므로 요청자 id를 함께 읽습니다
+      select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
     });
     if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
 
@@ -219,10 +242,19 @@ async function confirm(estimateId: number, moverId: number) {
       where: { userId: moverId },
       data: { confirmedCount: { increment: 1 } },
     });
-    await createNotification(tx, { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" });
+    // 확정은 기사님·고객 양쪽이 받습니다. 같은 type이라 문구 분기는 FE가 자기 role로 처리합니다
+    await createManyNotifications(tx, [
+      { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" },
+      { userId: existing.quotationRequest.userId, estimateId, type: "ESTIMATE_CONFIRMED" },
+    ]);
+    enqueueNotificationPublish(
+      [moverId, existing.quotationRequest.userId],
+      "ESTIMATE_CONFIRMED"
+    );
 
     return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
-  });
+    })
+  );
 }
 
 export default { confirm, getAllByMover, getAllByQuotationRequest, getById, reject, save };
