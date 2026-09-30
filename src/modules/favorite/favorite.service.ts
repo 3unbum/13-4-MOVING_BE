@@ -1,5 +1,6 @@
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
+import { REGION_LABELS, SERVICE_LABELS } from "../mover/mover.type";
 import { favoriteRepository } from "./favorite.repository";
 import type { FavoriteListResult, FavoriteMoverCard } from "./favorite.type";
 
@@ -28,8 +29,8 @@ function toCard(
     reviewCount: profile.reviewCount,
     confirmedCount: profile.confirmedCount,
     favoriteCount: profile.favoriteCount,
-    services: row.mover.moverServices.map((item) => item.service),
-    regions: row.mover.moverRegions.map((item) => item.region),
+    services: row.mover.moverServices.map((item) => SERVICE_LABELS[item.service]),
+    regions: row.mover.moverRegions.map((item) => REGION_LABELS[item.region]),
   };
 }
 
