@@ -84,7 +84,10 @@ describe("exchangeOAuthCode", () => {
 
   test("provider가 AppError를 던지면 그대로 전파한다", async () => {
     // Setup
-    const providerError = AppError.badRequest(ERROR_CODES.INVALID_OAUTH_CODE, "인가 코드가 유효하지 않습니다");
+    const providerError = AppError.badRequest(
+      ERROR_CODES.INVALID_OAUTH_CODE,
+      "인가 코드가 유효하지 않습니다"
+    );
     mockedGoogle.exchangeCodeForProfile.mockRejectedValue(providerError);
 
     // Exercise

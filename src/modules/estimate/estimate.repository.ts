@@ -85,52 +85,52 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
     try {
       return await runAfterCommitPublish(() =>
         prisma.$transaction(
-        async (tx) => {
-          if (!isTargeted) {
-            const targetedMovers = await tx.targetedRequest.findMany({
-              where: { quotationRequestId: estimate.quotationRequestId },
-              select: { moverId: true },
-            });
-            const generalCount = await tx.estimate.count({
-              where: {
-                quotationRequestId: estimate.quotationRequestId,
-                moverId: { notIn: targetedMovers.map((t) => t.moverId) },
+          async (tx) => {
+            if (!isTargeted) {
+              const targetedMovers = await tx.targetedRequest.findMany({
+                where: { quotationRequestId: estimate.quotationRequestId },
+                select: { moverId: true },
+              });
+              const generalCount = await tx.estimate.count({
+                where: {
+                  quotationRequestId: estimate.quotationRequestId,
+                  moverId: { notIn: targetedMovers.map((t) => t.moverId) },
+                },
+              });
+              if (generalCount >= 5) {
+                throw AppError.badRequest(
+                  ERROR_CODES.ESTIMATE_LIMIT_EXCEEDED,
+                  "이 견적 요청에 이미 일반 견적이 5건 도착했습니다"
+                );
+              }
+            }
+
+            const created = await tx.estimate.create({
+              data: {
+                price: estimate.price,
+                comment: estimate.comment,
+                quotationRequest: { connect: { id: estimate.quotationRequestId } },
+                mover: { connect: { id: estimate.moverId } },
               },
             });
-            if (generalCount >= 5) {
-              throw AppError.badRequest(
-                ERROR_CODES.ESTIMATE_LIMIT_EXCEEDED,
-                "이 견적 요청에 이미 일반 견적이 5건 도착했습니다"
-              );
-            }
-          }
 
-          const created = await tx.estimate.create({
-            data: {
-              price: estimate.price,
-              comment: estimate.comment,
-              quotationRequest: { connect: { id: estimate.quotationRequestId } },
-              mover: { connect: { id: estimate.moverId } },
-            },
-          });
+            // 견적을 요청한 고객에게 알립니다. 요청자 조회도 트랜잭션 안에서 해야
+            // 상한 검증과 같은 스냅샷을 봅니다.
+            const request = await tx.quotationRequest.findUniqueOrThrow({
+              where: { id: estimate.quotationRequestId },
+              select: { userId: true },
+            });
+            await createNotification(tx, {
+              userId: request.userId,
+              estimateId: created.id,
+              type: "NEW_ESTIMATE",
+            });
+            enqueueNotificationPublish([request.userId], "NEW_ESTIMATE");
 
-          // 견적을 요청한 고객에게 알립니다. 요청자 조회도 트랜잭션 안에서 해야
-          // 상한 검증과 같은 스냅샷을 봅니다.
-          const request = await tx.quotationRequest.findUniqueOrThrow({
-            where: { id: estimate.quotationRequestId },
-            select: { userId: true },
-          });
-          await createNotification(tx, {
-            userId: request.userId,
-            estimateId: created.id,
-            type: "NEW_ESTIMATE",
-          });
-          enqueueNotificationPublish([request.userId], "NEW_ESTIMATE");
-
-          return created;
-        },
-        { isolationLevel: "Serializable" }
-      )
+            return created;
+          },
+          { isolationLevel: "Serializable" }
+        )
       );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -213,46 +213,43 @@ async function getById(id: number) {
 async function confirm(estimateId: number, moverId: number) {
   return runAfterCommitPublish(() =>
     prisma.$transaction(async (tx) => {
-    const existing = await tx.estimate.findUnique({
-      where: { id: estimateId },
-      // 확정 알림은 고객도 받으므로 요청자 id를 함께 읽습니다
-      select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
-    });
-    if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
+      const existing = await tx.estimate.findUnique({
+        where: { id: estimateId },
+        // 확정 알림은 고객도 받으므로 요청자 id를 함께 읽습니다
+        select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
+      });
+      if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
 
-    // PENDING 조건부 갱신 — 동시에 두 번 확정 시도해도 하나만 성공하도록 (count로 검증)
-    const estimateUpdate = await tx.estimate.updateMany({
-      where: { id: estimateId, estimateStatus: "PENDING" },
-      data: { estimateStatus: "CONFIRMED" },
-    });
-    if (estimateUpdate.count !== 1) {
-      throw AppError.badRequest(ERROR_CODES.ESTIMATE_ALREADY_PROCESSED, "이미 처리된 견적입니다");
-    }
+      // PENDING 조건부 갱신 — 동시에 두 번 확정 시도해도 하나만 성공하도록 (count로 검증)
+      const estimateUpdate = await tx.estimate.updateMany({
+        where: { id: estimateId, estimateStatus: "PENDING" },
+        data: { estimateStatus: "CONFIRMED" },
+      });
+      if (estimateUpdate.count !== 1) {
+        throw AppError.badRequest(ERROR_CODES.ESTIMATE_ALREADY_PROCESSED, "이미 처리된 견적입니다");
+      }
 
-    // 같은 요청의 다른 견적이 먼저 확정됐을 수 있으므로 여기도 PENDING 조건부 갱신
-    const requestUpdate = await tx.quotationRequest.updateMany({
-      where: { id: existing.quotationRequestId, quotationStatus: "PENDING" },
-      data: { quotationStatus: "ASSIGNED" },
-    });
-    if (requestUpdate.count !== 1) {
-      throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 요청입니다");
-    }
+      // 같은 요청의 다른 견적이 먼저 확정됐을 수 있으므로 여기도 PENDING 조건부 갱신
+      const requestUpdate = await tx.quotationRequest.updateMany({
+        where: { id: existing.quotationRequestId, quotationStatus: "PENDING" },
+        data: { quotationStatus: "ASSIGNED" },
+      });
+      if (requestUpdate.count !== 1) {
+        throw AppError.badRequest(ERROR_CODES.NO_ACTIVE_REQUEST, "이미 종료된 요청입니다");
+      }
 
-    await tx.moverProfile.update({
-      where: { userId: moverId },
-      data: { confirmedCount: { increment: 1 } },
-    });
-    // 확정은 기사님·고객 양쪽이 받습니다. 같은 type이라 문구 분기는 FE가 자기 role로 처리합니다
-    await createManyNotifications(tx, [
-      { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" },
-      { userId: existing.quotationRequest.userId, estimateId, type: "ESTIMATE_CONFIRMED" },
-    ]);
-    enqueueNotificationPublish(
-      [moverId, existing.quotationRequest.userId],
-      "ESTIMATE_CONFIRMED"
-    );
+      await tx.moverProfile.update({
+        where: { userId: moverId },
+        data: { confirmedCount: { increment: 1 } },
+      });
+      // 확정은 기사님·고객 양쪽이 받습니다. 같은 type이라 문구 분기는 FE가 자기 role로 처리합니다
+      await createManyNotifications(tx, [
+        { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" },
+        { userId: existing.quotationRequest.userId, estimateId, type: "ESTIMATE_CONFIRMED" },
+      ]);
+      enqueueNotificationPublish([moverId, existing.quotationRequest.userId], "ESTIMATE_CONFIRMED");
 
-    return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
+      return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
     })
   );
 }

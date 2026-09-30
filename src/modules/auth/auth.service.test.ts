@@ -162,7 +162,12 @@ describe("authService.signup", () => {
       provider: "LOCAL",
     });
     expect(result.hasProfile).toBe(false);
-    expect(result.user).toEqual({ id: 1, role: "CUSTOMER", name: "김코드", email: "test@moving.com" });
+    expect(result.user).toEqual({
+      id: 1,
+      role: "CUSTOMER",
+      name: "김코드",
+      email: "test@moving.com",
+    });
     expect(result.accessToken).toBe("access-token");
     expect(result.refreshToken).toBe("refresh-token");
     expect(mockedJwtUtil.createToken).toHaveBeenCalledWith(1, "CUSTOMER", "access");
