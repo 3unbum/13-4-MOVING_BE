@@ -19,6 +19,10 @@ export interface AuthResult {
   hasProfile: boolean;
 }
 
+export interface FindEmailResult {
+  accounts: { email: string; provider: SocialProvider }[];
+}
+
 /**
  * POST /auth/oauth/{provider} 응답.
  * 기존 회원이면 바로 로그인 처리, 신규 회원이면 oauthSignupToken을 발급해
