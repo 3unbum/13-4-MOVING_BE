@@ -3,6 +3,16 @@ import type { Request, Response, NextFunction } from "express";
 import { ERROR_CODES } from "../errors/errorCodes";
 import type { RateLimitRequestHandler } from "express-rate-limit";
 import { loginRateLimiter, resetCodeRateLimiters, resetCodeDailyMailLimiter } from "./rateLimit";
+import { authController } from "../../modules/auth/auth.controller";
+import { authService } from "../../modules/auth/auth.service";
+
+// 발송 상한 환불은 컨트롤러가 서비스 결과로 결정하므로, 서비스만 흉내내고 DB·S3 의존 모듈은 막는다
+jest.mock("../../modules/auth/auth.service", () => ({
+  authService: { sendPasswordResetCode: jest.fn() },
+}));
+jest.mock("../../modules/profile/profile.service", () => ({ profileService: {} }));
+
+const mockedSendPasswordResetCode = jest.mocked(authService.sendPasswordResetCode);
 
 type Role = "CUSTOMER" | "MOVER";
 
@@ -19,6 +29,7 @@ function makeRes() {
     return res;
   });
   res.json = jest.fn().mockReturnValue(res);
+  res.send = jest.fn().mockReturnValue(res);
   res.setHeader = jest.fn().mockReturnValue(res);
   res.headersSent = false;
   res.locals = {};
@@ -209,32 +220,90 @@ describe("resetCodeRateLimiters (계정 기준 인증번호 발송 제한)", () 
   });
 });
 
+/**
+ * 일일 발송 상한 limiter → 실제 컨트롤러로 인증번호 발송 요청 1회를 흉내냅니다.
+ * 환불은 컨트롤러가 발송 결과로 결정하므로 서비스만 mock하고 컨트롤러는 실제 코드를 씁니다.
+ * disconnect가 true면 메일 발송 도중 클라이언트가 연결을 끊은 상황(close)을 만듭니다.
+ */
+async function sendCode(
+  email: string,
+  { mailSent = false, disconnect = false }: { mailSent?: boolean; disconnect?: boolean } = {}
+) {
+  const req = makeReq(email);
+  const res = makeRes();
+  const next = jest.fn() as unknown as NextFunction;
+
+  await resetCodeDailyMailLimiter(req, res, next);
+  const passed = (next as jest.Mock).mock.calls.length > 0;
+
+  if (passed) {
+    mockedSendPasswordResetCode.mockImplementationOnce(async () => {
+      if (disconnect) {
+        res.emit("close");
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      return mailSent;
+    });
+    await authController.sendPasswordResetCode(req, res, jest.fn());
+  }
+  if (!disconnect) res.emit("finish");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  return { res, passed };
+}
+
 describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", () => {
   const GLOBAL_KEY = "password-reset-mail";
+  const totalHits = async () =>
+    (await resetCodeDailyMailLimiter.getKey(GLOBAL_KEY))?.totalHits ?? 0;
 
   // Setup/Teardown: 키가 하나뿐인 전역 limiter라 테스트끼리 카운트가 섞이지 않도록 매번 비운다
   beforeEach(async () => {
     await resetCodeDailyMailLimiter.resetKey(GLOBAL_KEY);
   });
 
-  test("실제로 메일을 보내지 않은 요청(미가입 이메일 등)은 응답 후 카운트를 되돌린다", async () => {
+  test("실제로 메일을 보내지 않은 요청(미가입 이메일 등)은 카운트를 되돌린다", async () => {
     // Exercise: 서로 다른 미가입 이메일로 상한(400)보다 많이 요청
     const results = [];
     for (let i = 0; i < 450; i++) {
-      results.push(await attempt(resetCodeDailyMailLimiter, makeReq(`nobody${i}@test.com`)));
+      results.push(await sendCode(`nobody${i}@test.com`));
     }
 
     // Assertion: 모두 통과하고 카운트는 0 — 아무 이메일로 상한을 소진하는 공격이 통하지 않는다
     expect(results.every((r) => r.passed)).toBe(true);
-    expect((await resetCodeDailyMailLimiter.getKey(GLOBAL_KEY))?.totalHits ?? 0).toBe(0);
+    expect(await totalHits()).toBe(0);
+  });
+
+  test("서비스가 에러를 던져 메일을 보내지 못한 요청도 카운트를 되돌린다", async () => {
+    // Setup
+    const req = makeReq("error@test.com");
+    const res = makeRes();
+    await resetCodeDailyMailLimiter(req, res, jest.fn());
+    mockedSendPasswordResetCode.mockRejectedValueOnce(new Error("db down"));
+    const next = jest.fn();
+
+    // Exercise
+    await authController.sendPasswordResetCode(req, res, next);
+
+    // Assertion
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(await totalHits()).toBe(0);
+  });
+
+  test("메일 발송 도중 연결이 끊겨도, 메일을 보냈다면 카운트를 되돌리지 않는다", async () => {
+    // Exercise: 요청 후 응답 전에 연결을 끊는 방식으로 상한 우회를 시도
+    await sendCode("disconnect@test.com", { mailSent: true, disconnect: true });
+
+    // Assertion: 메일은 나갔으므로 한 통으로 남는다
+    expect(await totalHits()).toBe(1);
   });
 
   test("실제 발송이 400통에 도달하면 이후 요청은 계정과 관계없이 429로 막는다", async () => {
     // Exercise
     for (let i = 0; i < 400; i++) {
-      await attempt(resetCodeDailyMailLimiter, makeReq(`user${i}@test.com`), { mailSent: true });
+      await sendCode(`user${i}@test.com`, { mailSent: true });
     }
-    const { res, passed } = await attempt(resetCodeDailyMailLimiter, makeReq("new@test.com"));
+    const { res, passed } = await sendCode("new@test.com");
 
     // Assertion
     expect(passed).toBe(false);

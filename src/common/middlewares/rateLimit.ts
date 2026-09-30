@@ -1,4 +1,4 @@
-import rateLimit, { type Options } from "express-rate-limit";
+import rateLimit, { MemoryStore, type Options } from "express-rate-limit";
 import type { Request } from "express";
 import { ERROR_CODES } from "../errors/errorCodes";
 
@@ -66,21 +66,28 @@ export const resetCodeRateLimiters = [
   resetCodeAccountLimiter(DAY, 10, RESET_CODE_LIMIT_MESSAGE),
 ];
 
+const RESET_CODE_MAIL_KEY = "password-reset-mail";
+const resetCodeMailStore = new MemoryStore();
+
 /**
  * 비밀번호 재설정 인증번호 발송 — 서비스 전체 일일 상한. Gmail 하루 약 500통 한도 소진 방지.
  * 미가입 이메일에는 메일을 보내지 않으므로, 모든 요청을 세면 아무 이메일로 400번 요청하는 것만으로
- * 상한이 소진됩니다. 컨트롤러가 실제로 보냈을 때만 res.locals.mailSent를 표시하고,
- * 응답이 끝난 뒤 표시가 없는 요청은 카운트를 되돌립니다.
+ * 상한이 소진됩니다. 그래서 요청이 들어올 때 한 통을 미리 세고, 컨트롤러가 발송 결과를 보고
+ * 보내지 않았을 때만 refundResetCodeMailCount로 되돌립니다.
+ * skipFailedRequests를 쓰지 않는 이유: 응답 전에 연결이 끊기면 발송 여부와 관계없이 카운트를
+ * 되돌리는데, 메일은 연결과 무관하게 계속 발송되므로 요청 후 바로 끊는 것만으로 상한을 우회할 수 있습니다.
  */
 export const resetCodeDailyMailLimiter = rateLimit({
   windowMs: DAY,
   limit: 400,
   standardHeaders: false,
   legacyHeaders: false,
-  keyGenerator: () => "password-reset-mail",
-  skipFailedRequests: true,
-  requestWasSuccessful: (_req, res) => res.locals.mailSent === true,
+  store: resetCodeMailStore,
+  keyGenerator: () => RESET_CODE_MAIL_KEY,
   handler: tooManyRequestsHandler(
     "일시적으로 인증번호를 보낼 수 없습니다. 잠시 후 다시 시도해주세요"
   ),
 });
+
+/** 메일을 보내지 않은 요청(미가입 이메일·발송 실패·에러)이 미리 센 한 통을 되돌립니다. */
+export const refundResetCodeMailCount = () => resetCodeMailStore.decrement(RESET_CODE_MAIL_KEY);

@@ -15,6 +15,7 @@ import {
 } from "../../common/utils/cookie.util";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
+import { refundResetCodeMailCount } from "../../common/middlewares/rateLimit";
 import type { OAuthProviderName } from "./oauth/dispatcher";
 
 const getRefreshTokenOrThrow = (req: Request): string => {
@@ -110,16 +111,18 @@ export const authController = {
 
   /**
    * 가입 여부가 드러나지 않도록 발송 여부와 관계없이 항상 204로 응답합니다.
-   * mailSent는 응답 전에 표시해야 합니다 — 일일 발송 상한 limiter가 응답이 끝난 뒤 이 값을 읽어
-   * 실제로 보낸 메일만 카운트에 남깁니다.
+   * 일일 발송 상한 limiter가 미리 센 한 통은 발송 결과로만 되돌립니다 — 응답이나 연결 상태와
+   * 무관하게, 서비스 호출이 끝난 뒤 실제로 보내지 않았을 때만 환불합니다.
    */
   sendPasswordResetCode: (async (req, res, next) => {
+    let sent = false;
     try {
-      const sent = await authService.sendPasswordResetCode(req.body);
-      if (sent) res.locals.mailSent = true;
+      sent = await authService.sendPasswordResetCode(req.body);
       res.status(204).send();
     } catch (error) {
       next(error);
+    } finally {
+      if (!sent) await refundResetCodeMailCount();
     }
   }) as RequestHandler,
 
