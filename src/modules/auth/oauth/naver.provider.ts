@@ -41,7 +41,9 @@ const exchangeCode = async (code: string): Promise<string> => {
   return data.access_token;
 };
 
-const fetchProfile = async (accessToken: string): Promise<Required<NaverProfileResponse>["response"]> => {
+const fetchProfile = async (
+  accessToken: string
+): Promise<Required<NaverProfileResponse>["response"]> => {
   const response = await fetch(PROFILE_URL, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

@@ -90,14 +90,16 @@ describe("POST /api/favorites", () => {
       reviewCount: 12,
       confirmedCount: 8,
       favoriteCount: 4,
-      services: ["HOME"],
-      regions: ["SEOUL"],
+      services: ["가정이사"],
+      regions: ["서울"],
     });
 
     const res = await request(buildApp()).post("/api/favorites").send({ moverId: 10 });
 
     expect(res.status).toBe(201);
     expect(res.body.data.id).toBe(10);
+    expect(res.body.data.services).toEqual(["가정이사"]);
+    expect(res.body.data.regions).toEqual(["서울"]);
     expect(mockedService.create).toHaveBeenCalledWith(1, 10);
   });
 
@@ -119,7 +121,9 @@ describe("DELETE /api/favorites", () => {
       deletedMoverIds: [10, 11],
     });
 
-    const res = await request(buildApp()).delete("/api/favorites").send({ moverIds: [10, 11] });
+    const res = await request(buildApp())
+      .delete("/api/favorites")
+      .send({ moverIds: [10, 11] });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({

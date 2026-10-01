@@ -67,4 +67,52 @@ export const authRepository = {
       select: { id: true },
     });
   },
+
+  findAccountsByNameAndPhone(role: UserRole, name: string, phoneNumber: string) {
+    return prisma.user.findMany({
+      where: { role, name, phoneNumber },
+      select: { email: true, provider: true },
+      orderBy: { createdAt: "asc" },
+    });
+  },
+
+  /** upsert 금지(삭제 후 생성) — id가 유지되면 이전 재설정 토큰이 다시 유효해짐 */
+  replacePasswordResetCode(userId: number, codeHash: string, expiresAt: Date) {
+    return prisma.$transaction(async (tx) => {
+      await tx.passwordResetCode.deleteMany({ where: { userId } });
+      return tx.passwordResetCode.create({ data: { userId, codeHash, expiresAt } });
+    });
+  },
+
+  findPasswordResetCodeByUserId(userId: number) {
+    return prisma.passwordResetCode.findUnique({ where: { userId } });
+  },
+
+  /** 조건 확인과 증가를 한 쿼리로 — 동시 요청에도 상한을 넘지 않게. 상한이면 null */
+  async incrementResetCodeFailedAttempts(id: number, maxAttempts: number): Promise<number | null> {
+    // update는 조건에 맞는 행이 없으면 예외(P2025)와 함께 prisma:error 로그를 남기므로, 빈 배열을 주는 쪽을 씁니다
+    const updated = await prisma.passwordResetCode.updateManyAndReturn({
+      where: { id, failedAttempts: { lt: maxAttempts } },
+      data: { failedAttempts: { increment: 1 } },
+      select: { failedAttempts: true },
+    });
+    return updated.length > 0 ? updated[0].failedAttempts : null;
+  },
+
+  /** usedAt 조건으로 먼저 사용 처리 — 같은 토큰 동시 요청 중 하나만 통과. 처리했으면 true */
+  completePasswordReset(codeId: number, userId: number, hashedPassword: string) {
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.passwordResetCode.updateMany({
+        where: { id: codeId, userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      if (count !== 1) return false;
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { password: hashedPassword, refreshToken: null },
+      });
+      return true;
+    });
+  },
 };

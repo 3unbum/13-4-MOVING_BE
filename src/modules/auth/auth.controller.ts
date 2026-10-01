@@ -7,11 +7,15 @@ import {
   clearAuthCookies,
   setOAuthSignupTokenCookie,
   clearOAuthSignupTokenCookie,
+  setPasswordResetTokenCookie,
+  clearPasswordResetTokenCookie,
   REFRESH_TOKEN_COOKIE,
   OAUTH_SIGNUP_TOKEN_COOKIE,
+  PASSWORD_RESET_TOKEN_COOKIE,
 } from "../../common/utils/cookie.util";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
+import { refundResetCodeMailCount } from "../../common/middlewares/rateLimit";
 import type { OAuthProviderName } from "./oauth/dispatcher";
 
 const getRefreshTokenOrThrow = (req: Request): string => {
@@ -32,6 +36,18 @@ const getOAuthSignupTokenOrThrow = (req: Request): string => {
     );
   }
   return oauthSignupToken;
+};
+
+const getPasswordResetTokenOrThrow = (req: Request): string => {
+  const passwordResetToken = req.cookies?.[PASSWORD_RESET_TOKEN_COOKIE];
+  if (!passwordResetToken) {
+    throw new AppError(
+      401,
+      ERROR_CODES.INVALID_OR_EXPIRED_RESET_TOKEN,
+      "인증 시간이 만료되었습니다. 인증번호를 다시 받아주세요"
+    );
+  }
+  return passwordResetToken;
 };
 
 export const authController = {
@@ -79,6 +95,50 @@ export const authController = {
     try {
       const result = await authService.checkEmail(req.body);
       res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  findEmail: (async (req, res, next) => {
+    try {
+      const result = await authService.findEmail(req.body);
+      res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  /** 발송 전에 먼저 응답 — 기다리면 가입된 계정만 늦게 응답해 응답 시간으로 가입 여부가 드러남 */
+  sendPasswordResetCode: (async (req, res) => {
+    res.status(204).send();
+
+    let sent = false;
+    try {
+      sent = await authService.sendPasswordResetCode(req.body);
+    } catch (error) {
+      console.error("[passwordReset] 인증번호 발송 처리 실패", error);
+    } finally {
+      if (!sent) await refundResetCodeMailCount();
+    }
+  }) as RequestHandler,
+
+  verifyPasswordResetCode: (async (req, res, next) => {
+    try {
+      const passwordResetToken = await authService.verifyPasswordResetCode(req.body);
+      setPasswordResetTokenCookie(res, passwordResetToken);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  resetPassword: (async (req, res, next) => {
+    try {
+      await authService.resetPassword(getPasswordResetTokenOrThrow(req), req.body);
+      clearPasswordResetTokenCookie(res);
+      clearAuthCookies(res);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

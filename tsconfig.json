@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2016",
+    "jsx": "react-jsx",
     "module": "CommonJS",
     "moduleResolution": "bundler",
     "outDir": "./dist",
@@ -19,6 +20,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "generated/**/*.ts", "tests/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "generated/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

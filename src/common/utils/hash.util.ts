@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "../../config/env";
 import { AppError } from "../errors/AppError";
 import { ERROR_CODES } from "../errors/errorCodes";
 
@@ -40,4 +41,22 @@ const hashRefreshToken = (token: string) => createHash("sha256").update(token).d
 const compareRefreshToken = (token: string, hashedToken: string) =>
   hashRefreshToken(token) === hashedToken;
 
-export default { hashPassword, verifyPassword, hashRefreshToken, compareRefreshToken };
+/** 6자리는 sha256이면 DB 유출 시 전부 계산돼 풀리므로 HMAC */
+const hashResetCode = (code: string) =>
+  createHmac("sha256", env.PASSWORD_RESET_CODE_SECRET).update(code).digest("hex");
+
+/** 고정 시간 비교(타이밍 공격 방지) */
+const compareResetCode = (code: string, hashedCode: string) => {
+  const actual = Buffer.from(hashResetCode(code));
+  const expected = Buffer.from(hashedCode);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+};
+
+export default {
+  hashPassword,
+  verifyPassword,
+  hashRefreshToken,
+  compareRefreshToken,
+  hashResetCode,
+  compareResetCode,
+};

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import hashUtil from "./hash.util";
 import { ERROR_CODES } from "../errors/errorCodes";
 
@@ -99,6 +100,45 @@ describe("hashRefreshToken / compareRefreshToken", () => {
 
     // Exercise
     const isMatch = hashUtil.compareRefreshToken("token-b", hashed);
+
+    // Assertion
+    expect(isMatch).toBe(false);
+  });
+});
+
+describe("hashResetCode / compareResetCode", () => {
+  test("같은 인증번호면 항상 같은 해시를 만들고, 키 없는 sha256과는 다른 값이다", () => {
+    // Setup
+    const code = "482913";
+    const plainSha256 = createHash("sha256").update(code).digest("hex");
+
+    // Exercise
+    const hashed1 = hashUtil.hashResetCode(code);
+    const hashed2 = hashUtil.hashResetCode(code);
+
+    // Assertion: 서버 키가 섞였으므로 DB만 가진 사람이 sha256으로 100만 개를 계산해도 맞출 수 없다
+    expect(hashed1).toBe(hashed2);
+    expect(hashed1).not.toBe(plainSha256);
+  });
+
+  test("같은 인증번호면 compareResetCode가 true, 한 자리라도 다르면 false를 반환한다", () => {
+    // Setup
+    const hashed = hashUtil.hashResetCode("482913");
+
+    // Exercise
+    const same = hashUtil.compareResetCode("482913", hashed);
+    const different = hashUtil.compareResetCode("482914", hashed);
+
+    // Assertion
+    expect(same).toBe(true);
+    expect(different).toBe(false);
+  });
+
+  test("저장된 해시의 길이가 비정상이어도 에러 없이 false를 반환한다", () => {
+    // timingSafeEqual은 길이가 다르면 예외를 던지므로 길이 확인이 먼저 막아야 한다
+
+    // Exercise
+    const isMatch = hashUtil.compareResetCode("482913", "broken-hash");
 
     // Assertion
     expect(isMatch).toBe(false);

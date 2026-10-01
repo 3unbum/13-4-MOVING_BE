@@ -204,7 +204,10 @@ describe("moverService.list", () => {
 
   test("정확히 limit개만 반환되면 hasNext는 false다", async () => {
     // Setup — take(limit+1) 결과 길이가 limit이면 다음 페이지 없음
-    const profiles = [makeListProfile({ id: 1, userId: 10 }), makeListProfile({ id: 2, userId: 11 })];
+    const profiles = [
+      makeListProfile({ id: 1, userId: 10 }),
+      makeListProfile({ id: 2, userId: 11 }),
+    ];
     mockedRepository.findList.mockResolvedValue(profiles as never);
 
     // Exercise
