@@ -121,7 +121,9 @@ describe("DELETE /api/favorites", () => {
       deletedMoverIds: [10, 11],
     });
 
-    const res = await request(buildApp()).delete("/api/favorites").send({ moverIds: [10, 11] });
+    const res = await request(buildApp())
+      .delete("/api/favorites")
+      .send({ moverIds: [10, 11] });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
