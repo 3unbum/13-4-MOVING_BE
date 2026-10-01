@@ -2,7 +2,7 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import * as repository from "./quotation-request.repository";
 import * as service from "./quotation-request.service";
-import { createManyNotifications, createNotification } from "../notification/notification.service";
+import { createNotification } from "../notification/notification.service";
 import { publishNotification } from "../notification/notification.sse";
 
 // service.ts가 create()에서 prisma를 직접 import합니다.
@@ -27,7 +27,6 @@ jest.mock("./quotation-request.repository", () => ({
 // 알림은 트랜잭션 콜백 안에서 호출됩니다 - 여기선 호출 여부만 봅니다
 jest.mock("../notification/notification.service", () => ({
   createNotification: jest.fn(),
-  createManyNotifications: jest.fn(),
 }));
 
 jest.mock("../notification/notification.sse", () => ({
@@ -70,14 +69,14 @@ describe("create", () => {
     expect(mockedRepository.save).not.toHaveBeenCalled();
   });
 
-  it("출발지 지역과 이사 유형이 모두 맞는 기사님에게만 알림 대상을 조회한다", async () => {
+  it("출발지 지역과 이사 유형이 모두 맞는 기사님에게만 요약 갱신 대상을 조회한다", async () => {
     mockedRepository.findActiveByUserId.mockResolvedValue(null as never);
     mockedRepository.save.mockResolvedValue({ id: 100 } as never);
     mockedRepository.findMoverIdsByRegionAndService.mockResolvedValue([5, 6] as never);
 
     await service.create(input);
 
-    // 지역만 보면 소형이사를 안 하는 기사님에게도 알림이 갑니다
+    // 지역만 보면 소형이사를 안 하는 기사님에게도 요약이 갱신됩니다
     expect(mockedRepository.findMoverIdsByRegionAndService).toHaveBeenCalledWith(
       "SEOUL",
       "SMALL",
@@ -85,17 +84,14 @@ describe("create", () => {
     );
   });
 
-  it("대상 기사님 전원에게 알림을 한 번에 생성한다", async () => {
+  it("조건에 맞는 기사님에게는 알림을 만들지 않고 요약 갱신 신호만 보낸다", async () => {
     mockedRepository.findActiveByUserId.mockResolvedValue(null as never);
     mockedRepository.save.mockResolvedValue({ id: 100 } as never);
     mockedRepository.findMoverIdsByRegionAndService.mockResolvedValue([5, 6] as never);
 
     await service.create(input);
 
-    expect(createManyNotifications).toHaveBeenCalledWith(fakeTx, [
-      { userId: 5, type: "NEW_REQUEST", quotationRequestId: 100 },
-      { userId: 6, type: "NEW_REQUEST", quotationRequestId: 100 },
-    ]);
+    expect(createNotification).not.toHaveBeenCalled();
     expect(publishNotification).toHaveBeenCalledWith([5, 6], { type: "NEW_REQUEST" });
   });
 
@@ -107,7 +103,7 @@ describe("create", () => {
     const result = await service.create(input);
 
     expect(result).toEqual({ id: 100 });
-    expect(createManyNotifications).toHaveBeenCalledWith(fakeTx, []);
+    expect(createNotification).not.toHaveBeenCalled();
     expect(publishNotification).toHaveBeenCalledWith([], { type: "NEW_REQUEST" });
   });
 });

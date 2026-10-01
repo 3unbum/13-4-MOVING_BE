@@ -21,7 +21,7 @@ const router = Router();
  *     summary: 견적 요청 생성 (#15)
  *     description: |
  *       활성 요청(PENDING·ASSIGNED)이 이미 있으면 생성할 수 없습니다.
- *       생성 후 출발지 지역 기사님들에게 NEW_REQUEST 알림이 발송됩니다.
+ *       생성 후 지역·이사유형이 맞는 기사님에게는 알림 카드를 만들지 않고, 오늘 새 요청 요약만 다시 받도록 신호를 보냅니다.
  *     requestBody:
  *       required: true
  *       content:

@@ -41,10 +41,10 @@ async function save(input: QuotationRequestCreateInput, tx: PrismaTransaction = 
 }
 
 /**
- * 출발지 지역 + 이사 유형이 모두 맞는 기사님 id 목록 - NEW_REQUEST 알림 대상.
+ * 출발지 지역 + 이사 유형이 모두 맞는 기사님 id 목록.
  *
- * 지역만 보면 소형이사만 하는 기사님에게 사무실이사 요청 알림이 갑니다.
- * 알림 요약("내 지역의 소형이사 견적 N건")도 이 교집합을 전제로 집계합니다.
+ * 일반 견적 요청은 이 목록에 알림 카드를 만들지 않고, 오늘 새 요청 요약만 다시 받으라고 신호를 보냅니다.
+ * 지역만 보면 소형이사만 하는 기사님에게 사무실이사 요청까지 집계됩니다.
  */
 async function findMoverIdsByRegionAndService(
   region: RegionType,
