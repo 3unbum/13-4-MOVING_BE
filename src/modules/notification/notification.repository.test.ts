@@ -1,10 +1,13 @@
 import { prisma } from "../../config/prisma";
-import { notificationRepository } from "./notification.repository";
+import { kstTodayRange, notificationRepository } from "./notification.repository";
 
 jest.mock("../../config/prisma", () => ({
   prisma: {
     notification: { count: jest.fn() },
     $queryRaw: jest.fn(),
+    moverRegion: { findMany: jest.fn() },
+    moverService: { findMany: jest.fn() },
+    quotationRequest: { groupBy: jest.fn() },
   },
 }));
 
@@ -43,18 +46,70 @@ describe("notificationRepository.countUnread", () => {
   });
 });
 
+describe("kstTodayRange", () => {
+  it("KST 낮에는 그날 00:00부터 다음 날 00:00 전까지를 반환한다", () => {
+    // UTC 09-04 04:30 = KST 09-04 13:30
+    expect(kstTodayRange(new Date("2026-09-04T04:30:00.000Z"))).toEqual({
+      start: new Date("2026-09-03T15:00:00.000Z"),
+      end: new Date("2026-09-04T15:00:00.000Z"),
+    });
+  });
+
+  it("KST 자정 직후는 새 날로 넘어간다", () => {
+    // UTC 09-04 15:10 = KST 09-05 00:10
+    expect(kstTodayRange(new Date("2026-09-04T15:10:00.000Z"))).toEqual({
+      start: new Date("2026-09-04T15:00:00.000Z"),
+      end: new Date("2026-09-05T15:00:00.000Z"),
+    });
+  });
+
+  it("KST 자정 직전은 아직 그날이다", () => {
+    // UTC 09-04 14:59 = KST 09-04 23:59
+    expect(kstTodayRange(new Date("2026-09-04T14:59:00.000Z"))).toEqual({
+      start: new Date("2026-09-03T15:00:00.000Z"),
+      end: new Date("2026-09-04T15:00:00.000Z"),
+    });
+  });
+});
+
 describe("notificationRepository.summarizeUnreadNewRequests", () => {
-  it("DB에 저장된 enum 라벨을 API enum으로 변환한다", async () => {
-    mockedPrisma.$queryRaw.mockResolvedValue([
-      { region: "경기", category: "소형이사", count: 3 },
-      { region: "서울", category: "가정이사", count: 2 },
-    ]);
+  it("오늘 만든 견적 요청을 기사님 지역·이사유형으로 센다", async () => {
+    // UTC 09-04 04:30 = KST 09-04 13:30
+    const now = new Date("2026-09-04T04:30:00.000Z");
+    mockedPrisma.moverRegion.findMany.mockResolvedValue([{ region: "GYEONGGI" }] as never);
+    mockedPrisma.moverService.findMany.mockResolvedValue([{ service: "SMALL" }] as never);
+    mockedPrisma.quotationRequest.groupBy.mockResolvedValue([
+      { fromRegion: "GYEONGGI", category: "SMALL", _count: { _all: 3 } },
+    ] as never);
+
+    const rows = await notificationRepository.summarizeUnreadNewRequests(7, now);
+
+    expect(rows).toEqual([{ region: "GYEONGGI", category: "SMALL", count: 3 }]);
+    expect(mockedPrisma.quotationRequest.groupBy).toHaveBeenCalledWith({
+      by: ["fromRegion", "category"],
+      where: {
+        createdAt: {
+          gte: new Date("2026-09-03T15:00:00.000Z"),
+          lt: new Date("2026-09-04T15:00:00.000Z"),
+        },
+        fromRegion: { in: ["GYEONGGI"] },
+        category: { in: ["SMALL"] },
+        quotationStatus: "PENDING",
+        estimates: { none: { moverId: 7 } },
+        movingDate: { gt: new Date("2026-09-04T00:00:00.000Z") },
+      },
+      _count: { _all: true },
+    });
+    expect(mockedPrisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("지역이나 이사유형이 없으면 요청을 세지 않는다", async () => {
+    mockedPrisma.moverRegion.findMany.mockResolvedValue([] as never);
+    mockedPrisma.moverService.findMany.mockResolvedValue([{ service: "SMALL" }] as never);
 
     const rows = await notificationRepository.summarizeUnreadNewRequests(7);
 
-    expect(rows).toEqual([
-      { region: "GYEONGGI", category: "SMALL", count: 3 },
-      { region: "SEOUL", category: "HOME", count: 2 },
-    ]);
+    expect(rows).toEqual([]);
+    expect(mockedPrisma.quotationRequest.groupBy).not.toHaveBeenCalled();
   });
 });

@@ -23,10 +23,10 @@ router.use(requireAuth);
  *     description: |
  *       최신순 커서 페이지네이션. 문구는 저장하지 않으며 `type` + `payload`로 내려갑니다.
  *       payload는 type에 따라 달라집니다.
- *       - `NEW_REQUEST`: category, fromRegion, movingDate
+ *       - `NEW_REQUEST`: customerName, category, fromRegion, movingDate
  *       - `NEW_ESTIMATE`: moverNickName, category, price
  *       - `ESTIMATE_CONFIRMED`: moverNickName, customerName, category
- *       - `MOVING_DAY_BEFORE` / `MOVING_DAY`: fromAddress, toAddress, movingDate
+ *       - `MOVING_DAY_BEFORE` / `MOVING_DAY`: fromRegion, toRegion, fromAddress, toAddress, movingDate
  *     parameters:
  *       - $ref: '#/components/parameters/cursor'
  *       - $ref: '#/components/parameters/take'
@@ -96,13 +96,14 @@ router.get("/stream", notificationController.stream);
  * /notifications/summary:
  *   get:
  *     tags: [Notifications]
- *     summary: 미확인 견적 요청 요약 (기사님 전용)
+ *     summary: 오늘 견적 요청 요약 (기사님 전용)
  *     description: |
- *       읽지 않은 `NEW_REQUEST`를 출발지 지역·이사유형으로 묶어 건수를 돌려줍니다.
- *       로그인 직후 "내가 선택한 지역의 소형이사 견적이 N건" 안내에 사용합니다.
+ *       한국 시간 오늘 만들어진 견적 요청 중, 기사님의 서비스 지역·이사유형에 맞는 건을 묶습니다.
+ *       받은 요청 목록과 같은 대상이라 알림 읽음·삭제와 무관합니다.
+ *       로그인 직후 "오늘 새 요청" 안내에 사용합니다.
  *     responses:
  *       200:
- *         description: 지역·유형별 미확인 건수
+ *         description: 지역·유형별 오늘 건수
  *         content:
  *           application/json:
  *             schema:

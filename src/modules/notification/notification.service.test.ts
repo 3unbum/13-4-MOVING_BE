@@ -45,9 +45,11 @@ function row(overrides: Record<string, unknown>) {
 const quotationRequest = {
   category: "SMALL",
   fromRegion: "GYEONGGI",
+  toRegion: "SEOUL",
   fromAddress: "경기 고양시 일산동구",
   toAddress: "서울 영등포구",
   movingDate,
+  user: { name: "김가나" },
 };
 
 const estimate = {
@@ -129,7 +131,12 @@ describe("notificationService.list", () => {
         createdAt,
         estimateId: null,
         quotationRequestId: 9,
-        payload: { category: "SMALL", fromRegion: "GYEONGGI", movingDate },
+        payload: {
+          customerName: "김가나",
+          category: "SMALL",
+          fromRegion: "GYEONGGI",
+          movingDate,
+        },
       },
       {
         id: 3,
@@ -156,7 +163,13 @@ describe("notificationService.list", () => {
         createdAt,
         estimateId: null,
         quotationRequestId: 9,
-        payload: { fromAddress: "경기 고양시 일산동구", toAddress: "서울 영등포구", movingDate },
+        payload: {
+          fromRegion: "GYEONGGI",
+          toRegion: "SEOUL",
+          fromAddress: "경기 고양시 일산동구",
+          toAddress: "서울 영등포구",
+          movingDate,
+        },
       },
       {
         id: 0,
@@ -165,7 +178,13 @@ describe("notificationService.list", () => {
         createdAt,
         estimateId: null,
         quotationRequestId: 9,
-        payload: { fromAddress: "경기 고양시 일산동구", toAddress: "서울 영등포구", movingDate },
+        payload: {
+          fromRegion: "GYEONGGI",
+          toRegion: "SEOUL",
+          fromAddress: "경기 고양시 일산동구",
+          toAddress: "서울 영등포구",
+          movingDate,
+        },
       },
     ]);
     expect(result.nextCursor).toBeNull();
@@ -276,7 +295,7 @@ describe("notificationService.summarize", () => {
     });
   });
 
-  it("미확인이 없으면 빈 요약을 돌려준다", async () => {
+  it("오늘 요청이 없으면 빈 요약을 돌려준다", async () => {
     // Setup
     mockedRepository.summarizeUnreadNewRequests.mockResolvedValue([] as never);
 

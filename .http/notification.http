@@ -10,7 +10,7 @@ GET {{baseUrl}}/notifications?take=10
 ### 다음 페이지 (직전 응답의 nextCursor)
 GET {{baseUrl}}/notifications?take=10&cursor={{notifications.response.body.$.data.nextCursor}}
 
-### 미확인 견적 요청 요약 (MOVER 전용)
+### 오늘 견적 요청 요약 (MOVER 전용)
 GET {{baseUrl}}/notifications/summary
 
 ### 알림 실시간 스트림 (SSE, 쿠키 인증)

@@ -1,27 +1,31 @@
 import { prisma } from "../../config/prisma";
 import type { PrismaTransaction } from "../../config/prisma";
 import { Prisma } from "../../../generated/prisma/client.ts";
-import type { RegionType, ServiceType } from "../../../generated/prisma/enums.ts";
-import { parseRegionLabel, parseServiceLabel } from "../mover/mover.type";
+import { getExpireBaseDate } from "../../jobs/expireRequests.util";
 import type { CreateNotificationParams } from "./notification.type";
 
 const DEFAULT_TAKE = 10;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** raw query가 돌려준 DB enum 라벨을 API enum으로 바꿉니다. 라벨 표는 schema @map과 같습니다. */
-function toRegionType(value: string): RegionType {
-  const region = parseRegionLabel(value);
-  if (!region) {
-    throw new Error(`알림 요약의 지역 값을 변환할 수 없습니다: ${value}`);
-  }
-  return region;
-}
+const kstDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
-function toServiceType(value: string): ServiceType {
-  const category = parseServiceLabel(value);
-  if (!category) {
-    throw new Error(`알림 요약의 이사유형 값을 변환할 수 없습니다: ${value}`);
-  }
-  return category;
+/**
+ * 한국 시간 오늘 00:00 이상, 내일 00:00 미만.
+ * 끝은 exclusive라 23:59:59.999까지 오늘에 포함됩니다.
+ *
+ * getExpireBaseDate는 달력일을 UTC 자정으로 표현해서 @db.Date 비교에만 씁니다.
+ * created_at은 시각이라, KST 자정을 실제 시각(UTC-9시간)으로 잡아야 합니다.
+ */
+export function kstTodayRange(now: Date = new Date()): { start: Date; end: Date } {
+  const [year, month, day] = kstDateFormatter.format(now).split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, day) - KST_OFFSET_MS);
+  return { start, end: new Date(start.getTime() + DAY_MS) };
 }
 
 /**
@@ -53,9 +57,11 @@ const notificationDetailInclude = {
     select: {
       category: true,
       fromRegion: true,
+      toRegion: true,
       fromAddress: true,
       toAddress: true,
       movingDate: true,
+      user: { select: { name: true } },
     },
   },
 } as const;
@@ -84,7 +90,7 @@ export const notificationRepository = {
     return tx.notification.create({ data: toCreateData(params) });
   },
 
-  /** 지역 기사님 전원에게 보내는 NEW_REQUEST처럼 대상이 여러 명일 때 왕복을 1회로 줄입니다 */
+  /** 확정·이사 알림처럼 대상이 여러 명일 때 왕복을 1회로 줄입니다 */
   createMany(paramsList: CreateNotificationParams[], tx: PrismaTransaction = prisma) {
     return tx.notification.createMany({ data: paramsList.map(toCreateData) });
   },
@@ -162,32 +168,47 @@ export const notificationRepository = {
   },
 
   /**
-   * 미확인 NEW_REQUEST를 지역·이사유형으로 집계합니다.
+   * 오늘 만들어진 견적 요청을 기사님 지역·이사유형으로 집계합니다.
+   * 알림을 조인하지 않아서 읽음·전체 삭제와 무관합니다.
    *
-   * Prisma groupBy는 relation 필드를 기준으로 묶을 수 없어 raw SQL을 씁니다.
-   * 알림을 전부 읽어와 메모리에서 세면 미확인이 많은 기사님에서 응답이 커지므로
-   * 집계를 DB에 맡깁니다. COUNT(*)는 bigint라 ::int로 캐스팅해야 number로 옵니다.
-   * type은 Postgres enum이라 바인딩 파라미터에 명시적 캐스트가 필요합니다.
-   *
-   * $queryRaw는 @map을 적용하지 않습니다. region_type·service_type은 DB에
-   * "경기", "소형이사"로 저장되므로, 응답 전에 API enum으로 바꿉니다.
+   * 대상은 받은 요청 목록과 같습니다. PENDING이고, 이 기사님이 아직 견적을 내지 않았고,
+   * 이사일이 오늘(KST)보다 뒤인 요청만 셉니다.
+   * 거기에 기사님의 서비스 지역·이사유형 교집합과 오늘 생성 시각을 더합니다.
    */
-  async summarizeUnreadNewRequests(userId: number) {
-    const rows = await prisma.$queryRaw<{ region: string; category: string; count: number }[]>`
-      SELECT qr.from_region AS region, qr.category AS category, COUNT(*)::int AS count
-      FROM notification n
-      JOIN quotation_request qr ON qr.id = n.quotation_request_id
-      WHERE n.user_id = ${userId}
-        AND n.type = CAST(${"NEW_REQUEST"} AS notification_type)
-        AND n.is_read = false
-      GROUP BY qr.from_region, qr.category
-      ORDER BY count DESC, region ASC, category ASC
-    `;
+  async summarizeUnreadNewRequests(userId: number, now: Date = new Date()) {
+    const { start, end } = kstTodayRange(now);
+    const [regions, services] = await Promise.all([
+      prisma.moverRegion.findMany({ where: { moverId: userId }, select: { region: true } }),
+      prisma.moverService.findMany({ where: { moverId: userId }, select: { service: true } }),
+    ]);
+    const regionList = regions.map((row) => row.region);
+    const serviceList = services.map((row) => row.service);
+    if (regionList.length === 0 || serviceList.length === 0) return [];
 
-    return rows.map((row) => ({
-      region: toRegionType(row.region),
-      category: toServiceType(row.category),
-      count: row.count,
-    }));
+    const rows = await prisma.quotationRequest.groupBy({
+      by: ["fromRegion", "category"],
+      where: {
+        createdAt: { gte: start, lt: end },
+        fromRegion: { in: regionList },
+        category: { in: serviceList },
+        quotationStatus: "PENDING",
+        estimates: { none: { moverId: userId } },
+        movingDate: { gt: getExpireBaseDate(now) },
+      },
+      _count: { _all: true },
+    });
+
+    return rows
+      .map((row) => ({
+        region: row.fromRegion,
+        category: row.category,
+        count: row._count._all,
+      }))
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          a.region.localeCompare(b.region) ||
+          a.category.localeCompare(b.category)
+      );
   },
 };

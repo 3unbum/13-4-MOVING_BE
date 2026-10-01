@@ -1,10 +1,7 @@
 import { prisma } from "@/config/prisma";
 import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
-import {
-  createManyNotifications,
-  createNotification,
-} from "@/modules/notification/notification.service";
+import { createNotification } from "@/modules/notification/notification.service";
 import {
   enqueueNotificationPublish,
   runAfterCommitPublish,
@@ -16,7 +13,7 @@ import type { QuotationRequestCreateInput } from "./quotation-request.type";
  * 견적 요청 생성.
  *
  * 1. 활성 요청(PENDING·ASSIGNED) 중복 검증 - 유저당 1건
- * 2. 요청 생성과 알림을 한 트랜잭션으로 묶습니다
+ * 2. 요청을 만들고, 지역·이사유형이 맞는 기사님에게는 오늘 새 요청 요약 갱신 신호만 보냅니다
  */
 async function create(input: QuotationRequestCreateInput) {
   const active = await repository.findActiveByUserId(input.userId);
@@ -31,22 +28,13 @@ async function create(input: QuotationRequestCreateInput) {
     prisma.$transaction(async (tx) => {
       const saved = await repository.save(input, tx);
 
-      // 출발지 지역 + 이사 유형이 맞는 기사님들에게 NEW_REQUEST 알림.
-      // 대상이 수십 명일 수 있어 한 건씩 await하지 않고 createMany로 넣습니다.
+      // 지역·이사유형이 맞는 기사님에게는 알림 카드를 만들지 않습니다.
+      // 오늘 새 요청 숫자만 다시 받도록 신호만 보냅니다. 알림 카드는 지정 요청에서만 갑니다.
       const targetMoverIds = await repository.findMoverIdsByRegionAndService(
         input.from.region,
         input.category,
         tx
       );
-      await createManyNotifications(
-        tx,
-        targetMoverIds.map((moverId) => ({
-          userId: moverId,
-          type: "NEW_REQUEST" as const,
-          quotationRequestId: saved.id,
-        }))
-      );
-      // 커밋이 성공한 뒤에만 신호가 나갑니다. 롤백되면 대기열은 버려집니다.
       enqueueNotificationPublish(targetMoverIds, "NEW_REQUEST");
 
       return saved;

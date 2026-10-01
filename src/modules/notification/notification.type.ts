@@ -20,8 +20,9 @@ export interface CreateNotificationParams {
   message?: string;
 }
 
-/** 기사님 수신 — "경기 지역의 소형이사 견적 요청이 도착했어요" */
+/** 기사님 수신 — "{name} 고객님이 지정 견적 요청을 보냈어요" */
 export interface NewRequestPayload {
+  customerName: string;
   category: ServiceType;
   fromRegion: RegionType;
   movingDate: Date;
@@ -43,6 +44,8 @@ export interface EstimateConfirmedPayload {
 
 /** 고객·기사님 수신 — type으로 전날/당일을 가릅니다 */
 export interface MovingDayPayload {
+  fromRegion: RegionType;
+  toRegion: RegionType;
   fromAddress: string;
   toAddress: string;
   movingDate: Date;
@@ -70,7 +73,7 @@ export interface NotificationListResult {
   unreadCount: number;
 }
 
-/** 로그인 직후 요약 한 줄 — "경기 지역의 소형이사 견적 3건" */
+/** 오늘 올라온 견적 요청 한 줄 — "경기 지역의 소형이사 견적 3건" */
 export interface NotificationSummaryItem {
   region: RegionType;
   category: ServiceType;

@@ -36,7 +36,7 @@ export async function createNotification(
 /**
  * 알림 여러 건을 한 번에 생성합니다.
  *
- * 출발지 지역 기사님 전원에게 보내는 NEW_REQUEST처럼 대상이 N명일 때
+ * 확정·이사 알림처럼 대상이 N명일 때
  * createNotification을 N번 await하면 트랜잭션 점유가 그만큼 길어집니다.
  */
 export async function createManyNotifications(
@@ -85,6 +85,7 @@ function toItem(row: NotificationRow): NotificationItem | null {
         ...base,
         type: "NEW_REQUEST",
         payload: {
+          customerName: request.user.name,
           category: request.category,
           fromRegion: request.fromRegion,
           movingDate: request.movingDate,
@@ -126,6 +127,8 @@ function toItem(row: NotificationRow): NotificationItem | null {
         ...base,
         type: row.type,
         payload: {
+          fromRegion: request.fromRegion,
+          toRegion: request.toRegion,
           fromAddress: request.fromAddress,
           toAddress: request.toAddress,
           movingDate: request.movingDate,
@@ -165,7 +168,7 @@ export const notificationService = {
     };
   },
 
-  /** 로그인 직후 "내 지역·이사유형의 미확인 견적 요청" 요약 (기사님 전용) */
+  /** 오늘 올라온 견적 요청을 기사님 지역·이사유형별로 묶습니다 (기사님 전용) */
   async summarize(userId: number): Promise<NotificationSummaryResult> {
     const rows = await notificationRepository.summarizeUnreadNewRequests(userId);
 
