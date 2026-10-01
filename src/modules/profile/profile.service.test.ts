@@ -133,7 +133,9 @@ describe("profileService.registerCustomerProfile", () => {
   it("이미 프로필이 있으면 409를 던진다", async () => {
     mockedRepository.exists.mockResolvedValue(true);
 
-    await expect(profileService.registerCustomerProfile(10, makeCustomerDto())).rejects.toMatchObject({
+    await expect(
+      profileService.registerCustomerProfile(10, makeCustomerDto())
+    ).rejects.toMatchObject({
       statusCode: 409,
       code: ERROR_CODES.PROFILE_ALREADY_EXISTS,
     });
@@ -144,7 +146,9 @@ describe("profileService.registerCustomerProfile", () => {
     mockedRepository.exists.mockResolvedValue(false);
     mockedRepository.createCustomerProfile.mockRejectedValue(makeP2002Error());
 
-    await expect(profileService.registerCustomerProfile(10, makeCustomerDto())).rejects.toMatchObject({
+    await expect(
+      profileService.registerCustomerProfile(10, makeCustomerDto())
+    ).rejects.toMatchObject({
       statusCode: 409,
       code: ERROR_CODES.PROFILE_ALREADY_EXISTS,
     });
@@ -223,7 +227,9 @@ describe("profileService.registerMoverProfile", () => {
     const unknownError = new Error("db down");
     mockedRepository.createMoverProfile.mockRejectedValue(unknownError);
 
-    await expect(profileService.registerMoverProfile(20, makeMoverDto())).rejects.toBe(unknownError);
+    await expect(profileService.registerMoverProfile(20, makeMoverDto())).rejects.toBe(
+      unknownError
+    );
   });
 });
 
@@ -381,7 +387,10 @@ describe("profileService.updateCustomerAccount", () => {
       );
 
     // Exercise
-    const result = await profileService.updateCustomerAccount(1, { name: "홍길순", region: "BUSAN" });
+    const result = await profileService.updateCustomerAccount(1, {
+      name: "홍길순",
+      region: "BUSAN",
+    });
 
     // Assertion
     expect(mockedRepository.updateCustomerAccount).toHaveBeenCalledWith(1, {

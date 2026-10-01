@@ -1,0 +1,3 @@
+export const RESET_CODE_TTL_MINUTES = 5;
+
+export const RESET_CODE_MAX_FAILED_ATTEMPTS = 5;

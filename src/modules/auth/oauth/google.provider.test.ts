@@ -73,7 +73,9 @@ describe("googleOAuthProvider.exchangeCodeForProfile", () => {
     // Setup
     mockedFetch()
       .mockResolvedValueOnce(makeFetchResponse(true, { access_token: "google-access-token" }))
-      .mockResolvedValueOnce(makeFetchResponse(true, { sub: "google-user-id", email: "test@moving.com" }));
+      .mockResolvedValueOnce(
+        makeFetchResponse(true, { sub: "google-user-id", email: "test@moving.com" })
+      );
 
     // Exercise
     const result = await googleOAuthProvider.exchangeCodeForProfile(

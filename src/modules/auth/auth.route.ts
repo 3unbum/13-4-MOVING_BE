@@ -1,11 +1,19 @@
 import { Router } from "express";
 import { requireAuth } from "../../common/middlewares/auth";
 import { validate } from "../../common/middlewares/validate";
-import { loginRateLimiter } from "../../common/middlewares/rateLimit";
+import {
+  loginRateLimiter,
+  resetCodeRateLimiters,
+  resetCodeDailyMailLimiter,
+} from "../../common/middlewares/rateLimit";
 import {
   signupSchema,
   loginSchema,
   checkEmailSchema,
+  findEmailSchema,
+  sendResetCodeSchema,
+  verifyResetCodeSchema,
+  resetPasswordSchema,
   oauthProviderParamSchema,
   oauthLoginSchema,
   oauthSignupSchema,
@@ -158,6 +166,187 @@ router.post("/refresh", authController.refresh);
  *         description: 유효성 검사 실패
  */
 router.post("/check-email", validate(checkEmailSchema), authController.checkEmail);
+
+/**
+ * @swagger
+ * /auth/find-email:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 아이디(이메일) 찾기
+ *     description: |
+ *       role + 이름 + 전화번호가 일치하는 계정의 이메일을 마스킹해서 돌려줍니다(예: ab***@naver.com).
+ *       이메일 가입(LOCAL) 계정뿐 아니라 소셜 계정도 포함하며, provider로 가입 경로를 알려줍니다 —
+ *       소셜로 가입한 걸 잊은 사용자가 이메일로 중복 가입하지 않도록 하기 위함입니다.
+ *       같은 role 안에서도 LOCAL과 소셜 계정이 함께 있을 수 있어 여러 건이 나올 수 있습니다.
+ *       일치하는 계정이 없으면 404가 아니라 빈 배열로 응답합니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, name, phoneNumber]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               name: { type: string, minLength: 1, description: "앞뒤 공백은 제거 후 비교" }
+ *               phoneNumber: { type: string, description: "01[016789]XXXXXXX(X) 형식" }
+ *     responses:
+ *       200:
+ *         description: 조회 완료 — 일치하는 계정이 없으면 accounts가 빈 배열
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     accounts:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           email: { type: string, example: "ab***@naver.com" }
+ *                           provider: { type: string, enum: [LOCAL, GOOGLE, KAKAO, NAVER] }
+ *             example:
+ *               data:
+ *                 accounts:
+ *                   - { email: "ab***@naver.com", provider: LOCAL }
+ *                   - { email: "ab***@naver.com", provider: KAKAO }
+ *       400:
+ *         description: 유효성 검사 실패
+ */
+router.post("/find-email", validate(findEmailSchema), authController.findEmail);
+
+/**
+ * @swagger
+ * /auth/password-reset/code:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 비밀번호 재설정 인증번호 발송
+ *     description: |
+ *       (role, email)의 이메일 가입(LOCAL) 계정이 있으면 6자리 인증번호를 메일로 보냅니다(유효 5분).
+ *       재발송하면 이전 인증번호는 무효가 됩니다.
+ *       가입 여부가 드러나지 않도록 미가입 이메일·소셜 계정·발송 실패 모두 같은 204로 응답합니다.
+ *       응답 시간으로도 구분되지 않도록 조회·발송 전에 먼저 응답하며, 메일은 응답 후에 발송됩니다.
+ *       안내 문구는 프론트에서 표시합니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email }
+ *     responses:
+ *       204:
+ *         description: 요청 처리 완료 (실제 발송 여부와 무관)
+ *       400:
+ *         description: 유효성 검사 실패
+ *       429:
+ *         description: |
+ *           요청 횟수 초과 (TOO_MANY_REQUESTS). 가입 여부와 무관하게 모든 요청을 셉니다.
+ *           - 같은 계정(role + 이메일): 1분 1회 / 1시간 5회 / 하루 10회
+ *           - 서비스 전체: 하루 400통 (실제로 발송한 메일만 셈)
+ *           retryAfterSeconds로 재발송 버튼 카운트다운을 표시할 수 있습니다.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     code: { type: string, example: TOO_MANY_REQUESTS }
+ *                     message: { type: string }
+ *                     retryAfterSeconds: { type: integer }
+ */
+router.post(
+  "/password-reset/code",
+  validate(sendResetCodeSchema),
+  ...resetCodeRateLimiters,
+  resetCodeDailyMailLimiter,
+  authController.sendPasswordResetCode
+);
+
+/**
+ * @swagger
+ * /auth/password-reset/verify:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 비밀번호 재설정 인증번호 확인
+ *     description: |
+ *       메일로 받은 6자리 인증번호가 맞으면 재설정 토큰(10분 유효)을 httpOnly 쿠키(passwordResetToken)로 발급합니다.
+ *       응답 바디에는 토큰이 없습니다. 이 쿠키로 POST /auth/password-reset을 호출해 새 비밀번호를 설정합니다.
+ *       인증번호 하나에 5번까지 틀릴 수 있고, 5번째로 틀리면 그 인증번호는 무효가 되어 다시 받아야 합니다.
+ *       코드 추측은 이 횟수 제한과 발송 limiter가 막으므로 이 엔드포인트에는 limiter를 두지 않습니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email, code]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email, description: "인증번호를 요청할 때 입력한 이메일" }
+ *               code: { type: string, pattern: "^\\d{6}$", example: "482913" }
+ *     responses:
+ *       204:
+ *         description: 인증 성공 — passwordResetToken 쿠키 발급
+ *       400:
+ *         description: |
+ *           - VALIDATION_ERROR: 요청 형식 오류
+ *           - INVALID_RESET_CODE: 인증번호 불일치 (미가입 이메일·발송 이력 없음도 같은 코드로 응답)
+ *           - RESET_CODE_EXPIRED: 발송 후 5분 경과 → 다시 받아야 함
+ *           - RESET_CODE_ATTEMPTS_EXCEEDED: 5번 틀려 무효 → 다시 받아야 함
+ */
+router.post(
+  "/password-reset/verify",
+  validate(verifyResetCodeSchema),
+  authController.verifyPasswordResetCode
+);
+
+/**
+ * @swagger
+ * /auth/password-reset:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 새 비밀번호 설정
+ *     description: |
+ *       POST /auth/password-reset/verify에서 발급된 passwordResetToken 쿠키(10분 유효, 1회용)로 새 비밀번호를 설정합니다.
+ *       성공하면 다른 기기의 로그인이 모두 끊기고(refreshToken 삭제), 이 브라우저의 로그인 쿠키와 재설정 토큰 쿠키도 지웁니다.
+ *       자동 로그인은 하지 않으므로 프론트는 로그인 페이지로 이동시키면 됩니다.
+ *     security:
+ *       - passwordResetTokenAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newPassword]
+ *             properties:
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 8
+ *                 description: 영문 + 숫자 + 특수문자 포함, 72바이트 이하 (회원가입과 같은 규칙)
+ *     responses:
+ *       204:
+ *         description: 비밀번호 변경 완료
+ *       400:
+ *         description: 비밀번호 규칙 위반 (VALIDATION_ERROR)
+ *       401:
+ *         description: |
+ *           재설정 토큰 쿠키가 없거나 만료·위조됐거나 이미 사용함 (INVALID_OR_EXPIRED_RESET_TOKEN)
+ *           → 인증번호를 다시 받아야 함
+ */
+router.post("/password-reset", validate(resetPasswordSchema), authController.resetPassword);
 
 /**
  * @swagger

@@ -48,6 +48,7 @@ export const swaggerSpec = swaggerJsdoc({
         cookieAuth: { type: "apiKey", in: "cookie", name: "accessToken" },
         refreshTokenAuth: { type: "apiKey", in: "cookie", name: "refreshToken" },
         oauthSignupTokenAuth: { type: "apiKey", in: "cookie", name: "oauthSignupToken" },
+        passwordResetTokenAuth: { type: "apiKey", in: "cookie", name: "passwordResetToken" },
       },
       parameters: {
         cursor: {
