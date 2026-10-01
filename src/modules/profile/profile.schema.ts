@@ -23,7 +23,11 @@ export const customerProfileCreateSchema = z.object({
 export const moverProfileCreateSchema = z.object({
   image: z.string().optional(),
   nickName: z.string().min(1, "닉네임을 입력해주세요"),
-  career: z.number().int().min(0, "경력은 0 이상이어야 합니다"),
+  career: z
+    .number()
+    .int()
+    .min(0, "경력은 0 이상이어야 합니다")
+    .max(60, "경력은 60년을 넘을 수 없습니다"),
   bio: z.string().min(1, "한 줄 소개를 입력해주세요"),
   description: z.string().min(1, "상세 설명을 입력해주세요"),
   services: z
@@ -53,6 +57,11 @@ export const customerProfileUpdateSchema = z
   .refine((data) => !data.newPassword || !!data.currentPassword, {
     message: "새 비밀번호를 변경하려면 현재 비밀번호가 필요합니다",
     path: ["currentPassword"],
+  })
+  // #91: 새 비밀번호가 현재 비밀번호와 같은 값이면 거부 (FE 검증만으로는 우회 가능하므로 서버에서도 재검증)
+  .refine((data) => !data.newPassword || data.newPassword !== data.currentPassword, {
+    message: "새 비밀번호는 현재 비밀번호와 달라야 합니다",
+    path: ["newPassword"],
   });
 
 export const moverProfileUpdateSchema = z
@@ -63,7 +72,12 @@ export const moverProfileUpdateSchema = z
     newPassword: newPasswordField.optional(),
     image: z.string().optional(),
     nickName: z.string().min(1, "닉네임을 입력해주세요").optional(),
-    career: z.number().int().min(0, "경력은 0 이상이어야 합니다").optional(),
+    career: z
+      .number()
+      .int()
+      .min(0, "경력은 0 이상이어야 합니다")
+      .max(60, "경력은 60년을 넘을 수 없습니다")
+      .optional(),
     bio: z.string().min(1, "한 줄 소개를 입력해주세요").optional(),
     description: z.string().min(1, "상세 설명을 입력해주세요").optional(),
     // avgRating은 의도적으로 스키마에 없음 — 리뷰 작성 시 서버가 재계산하므로 이 API로 수정 불가
@@ -81,6 +95,11 @@ export const moverProfileUpdateSchema = z
   .refine((data) => !data.newPassword || !!data.currentPassword, {
     message: "새 비밀번호를 변경하려면 현재 비밀번호가 필요합니다",
     path: ["currentPassword"],
+  })
+  // #91: 새 비밀번호가 현재 비밀번호와 같은 값이면 거부 (FE 검증만으로는 우회 가능하므로 서버에서도 재검증)
+  .refine((data) => !data.newPassword || data.newPassword !== data.currentPassword, {
+    message: "새 비밀번호는 현재 비밀번호와 달라야 합니다",
+    path: ["newPassword"],
   });
 
 export type CustomerProfileCreateDto = z.infer<typeof customerProfileCreateSchema>;

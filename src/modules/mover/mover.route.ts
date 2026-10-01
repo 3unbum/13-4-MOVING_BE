@@ -203,8 +203,16 @@ router.get(
  *                     reviewCount: { type: integer }
  *                     confirmedCount: { type: integer }
  *                     favoriteCount: { type: integer }
- *                     services: { type: array, items: { type: string } }
- *                     regions: { type: array, items: { type: string } }
+ *                     services:
+ *                       type: array
+ *                       description: 한글 서비스 라벨 (기사님 목록과 동일)
+ *                       items: { type: string, example: 가정이사 }
+ *                       example: [가정이사, 소형이사]
+ *                     regions:
+ *                       type: array
+ *                       description: 한글 지역 라벨 (기사님 목록과 동일)
+ *                       items: { type: string, example: 서울 }
+ *                       example: [서울, 경기]
  *       400:
  *         description: 자기 자신 찜 시도 등
  *       401:

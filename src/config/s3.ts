@@ -10,3 +10,28 @@ export const s3Client = new S3Client({
 });
 
 export const S3_BUCKET_NAME = env.AWS_PUBLIC_BUCKET_NAME;
+
+/**
+ * 업로드한 파일의 공개 URL을 만듭니다.
+ *
+ * `CDN_URL`이 있으면 CloudFront를 거칩니다. 운영 버킷은 퍼블릭 액세스를 차단하고
+ * CloudFront(OAC)에만 읽기를 허용하므로, 배포 환경에서는 **이 경로가 유일한 입구**입니다.
+ *
+ * 값이 없으면 S3 직접 URL로 떨어집니다 — CDN 설정 전이나 퍼블릭 버킷을 쓰는
+ * 로컬 환경에서도 동작하게 두려는 폴백입니다.
+ *
+ * ⚠️ 지금은 DB에 이 **전체 URL**이 저장됩니다. 교안 기준으로는 key만 저장하고
+ * 응답할 때 URL을 만드는 쪽이 맞지만, 그러려면 스키마와 FE 계약을 함께 바꿔야 합니다.
+ * 그때 고칠 지점이 여기 한 곳이 되도록 URL 조립을 모아뒀습니다.
+ */
+export function buildPublicFileUrl(key: string): string {
+  if (env.CDN_URL) {
+    // 환경변수 끝에 슬래시가 붙어 와도 `//`가 되지 않게 다듬습니다.
+    const base = env.CDN_URL.replace(/\/+$/, "");
+    // 스킴 없이 도메인만 넣는 실수가 잦아, 없으면 https를 붙입니다.
+    // (스킴이 빠지면 `new URL()`이 던져서 이미지가 아니라 요청 자체가 실패합니다)
+    const origin = /^https?:\/\//.test(base) ? base : `https://${base}`;
+    return `${origin}/${key}`;
+  }
+  return `https://${S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com/${key}`;
+}

@@ -6,7 +6,7 @@
 
 코드잇 스프린트 13기 · 파트4 고급 프로젝트 · 4팀
 
-[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-20.19+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Express](https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white)](https://expressjs.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
@@ -30,7 +30,7 @@
 
 | 구분           | 기술                                     |
 | -------------- | ---------------------------------------- |
-| **Runtime**    | Node.js 20+                              |
+| **Runtime**    | Node.js 20.19+ (배포·CI는 24)            |
 | **Language**   | TypeScript 6                             |
 | **Framework**  | Express 5                                |
 | **Database**   | PostgreSQL 16                            |
@@ -80,7 +80,7 @@ Review             PENDING ──▶ CONFIRMED
 
 ### 요구 사항
 
-- Node.js 20 이상
+- Node.js **20.19 이상** (`@prisma/client`·`@sentry/node`가 요구). 배포 서버와 CI는 24를 씁니다
 - PostgreSQL 16 이상
 
 ### 설치 및 실행
