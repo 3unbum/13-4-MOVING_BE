@@ -55,8 +55,8 @@ describe("favoriteService.list", () => {
       reviewCount: 12,
       confirmedCount: 8,
       favoriteCount: 3,
-      services: ["HOME", "SMALL"],
-      regions: ["SEOUL", "GYEONGGI"],
+      services: ["가정이사", "소형이사"],
+      regions: ["서울", "경기"],
     });
   });
 
