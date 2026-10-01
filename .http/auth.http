@@ -1,0 +1,176 @@
+@baseUrl = http://localhost:3001/api
+
+### 회원가입 - CUSTOMER
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "김고객",
+  "email": "customer1@test.com",
+  "phoneNumber": "01012345678",
+  "password": "Password1!"
+}
+
+### 회원가입 - MOVER
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "role": "MOVER",
+  "name": "이기사",
+  "email": "mover1@test.com",
+  "phoneNumber": "01087654321",
+  "password": "Password1!"
+}
+
+### 로그인 - CUSTOMER
+# @name loginCustomer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "customer1@test.com",
+  "password": "Password1!"
+}
+
+### 로그인 - MOVER
+# @name loginMover
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "role": "MOVER",
+  "email": "mover1@test.com",
+  "password": "Password1!"
+}
+
+### 내 계정 정보 조회 (accessToken 쿠키 필요 - 바로 위에서 로그인한 role에 맞는 응답이 내려옴)
+# role을 몰라도 호출 가능. 프로필 미등록(hasProfile false)이어도 200, 쿠키 없으면 401(403 아님)
+GET {{baseUrl}}/auth/me
+
+### 이메일 중복 확인
+POST {{baseUrl}}/auth/check-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "customer1@test.com"
+}
+
+### 아이디(이메일) 찾기 - 시드 계정 customer@moving.test → 200, cu***@moving.test (LOCAL)
+# 일치하는 계정이 없어도 404가 아니라 accounts 빈 배열. 소셜 계정도 provider와 함께 포함됨
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "김소비",
+  "phoneNumber": "01011112222"
+}
+
+### 아이디 찾기 - 이름 앞뒤 공백 → 공백 제거 후 비교되어 위와 같은 결과
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "  김소비 ",
+  "phoneNumber": "01011112222"
+}
+
+### 아이디 찾기 - role 불일치 → 200, accounts 빈 배열
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "MOVER",
+  "name": "김소비",
+  "phoneNumber": "01011112222"
+}
+
+### 아이디 찾기 - 전화번호 형식 오류 → 400 VALIDATION_ERROR
+POST {{baseUrl}}/auth/find-email
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "name": "김소비",
+  "phoneNumber": "010-1111-2222"
+}
+
+### ─────────── 비밀번호 재설정 (발송 → 확인 → 재설정) ───────────
+# 시드 계정(@moving.test)은 메일을 받을 수 없으므로, 본인이 받을 수 있는 이메일로 먼저 회원가입한 뒤
+# 아래 resetEmail을 그 주소로 바꿔서 순서대로 실행하세요.
+@resetEmail = your-email@example.com
+
+### 1) 인증번호 발송 → 항상 204 (미가입 이메일도 같은 응답, 실제로는 메일만 안 감)
+# 같은 계정 기준 1분 1회 · 1시간 5회 · 하루 10회. 넘으면 429 + retryAfterSeconds
+POST {{baseUrl}}/auth/password-reset/code
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "{{resetEmail}}"
+}
+
+### 2) 인증번호 확인 → 204 + passwordResetToken 쿠키(10분, httpOnly) 발급
+# 메일로 받은 6자리를 code에 넣으세요. 틀리면 400 INVALID_RESET_CODE,
+# 5번째로 틀리면 RESET_CODE_ATTEMPTS_EXCEEDED, 5분이 지나면 RESET_CODE_EXPIRED → 1)부터 다시
+# @name verifyResetCode
+POST {{baseUrl}}/auth/password-reset/verify
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "{{resetEmail}}",
+  "code": "000000"
+}
+
+### 3) 새 비밀번호 설정 → 204
+# 쿠키가 자동으로 넘어가지 않아, 2)의 응답 Set-Cookie를 그대로 Cookie 헤더로 보냅니다.
+# 반드시 2)를 방금 성공(204)시킨 뒤 실행하세요 — 2)가 실패했거나 안 했으면 401
+# 성공하면 다른 기기 로그인도 끊기고 로그인·재설정 쿠키가 지워짐. 같은 토큰으로 다시 부르면 401
+POST {{baseUrl}}/auth/password-reset
+Content-Type: application/json
+Cookie: {{verifyResetCode.response.headers.Set-Cookie}}
+
+{
+  "newPassword": "NewPassword1!"
+}
+
+### 4) 새 비밀번호로 로그인 확인 → 200
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "{{resetEmail}}",
+  "password": "NewPassword1!"
+}
+
+### 토큰 갱신 (refreshToken 쿠키 필요 - 로그인 후 쿠키 자동 첨부)
+POST {{baseUrl}}/auth/refresh
+
+### 로그아웃 (refreshToken 쿠키 필요)
+POST {{baseUrl}}/auth/logout
+
+### 소셜 로그인 진입/콜백 (provider: google | kakao | naver)
+# 프론트가 provider 인가 URL로 리다이렉트 후 받은 code/redirectUri 필요 - 실제 code 없이는 401
+POST {{baseUrl}}/auth/oauth/google
+Content-Type: application/json
+
+{
+  "code": "PROVIDER_AUTH_CODE",
+  "redirectUri": "http://localhost:3000/oauth/callback/google",
+  "role": "CUSTOMER"
+}
+
+### OAuth 회원가입 완료 (신규회원 판별 시 발급되는 oauthSignupToken 쿠키 필요 - 위 요청 후 쿠키 자동 첨부)
+POST {{baseUrl}}/auth/oauth/signup
+Content-Type: application/json
+
+{
+  "phoneNumber": "01012345678"
+}

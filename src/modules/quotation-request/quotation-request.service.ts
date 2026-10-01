@@ -1,0 +1,106 @@
+import { prisma } from "@/config/prisma";
+import { AppError } from "@/common/errors/AppError";
+import { ERROR_CODES } from "@/common/errors/errorCodes";
+import { createNotification } from "@/modules/notification/notification.service";
+import {
+  enqueueNotificationPublish,
+  runAfterCommitPublish,
+} from "@/modules/notification/notification.publish";
+import * as repository from "./quotation-request.repository";
+import type { QuotationRequestCreateInput } from "./quotation-request.type";
+
+/**
+ * 견적 요청 생성.
+ *
+ * 1. 활성 요청(PENDING·ASSIGNED) 중복 검증 - 유저당 1건
+ * 2. 요청을 만들고, 지역·이사유형이 맞는 기사님에게는 오늘 새 요청 요약 갱신 신호만 보냅니다
+ */
+async function create(input: QuotationRequestCreateInput) {
+  const active = await repository.findActiveByUserId(input.userId);
+  if (active) {
+    throw AppError.conflict(
+      ERROR_CODES.ACTIVE_REQUEST_EXISTS,
+      "이미 진행 중인 견적 요청이 있습니다."
+    );
+  }
+
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const saved = await repository.save(input, tx);
+
+      // 지역·이사유형이 맞는 기사님에게는 알림 카드를 만들지 않습니다.
+      // 오늘 새 요청 숫자만 다시 받도록 신호만 보냅니다. 알림 카드는 지정 요청에서만 갑니다.
+      const targetMoverIds = await repository.findMoverIdsByRegionAndService(
+        input.from.region,
+        input.category,
+        tx
+      );
+      enqueueNotificationPublish(targetMoverIds, "NEW_REQUEST");
+
+      return saved;
+    })
+  );
+}
+
+/** 활성 요청 조회. 없으면 null을 반환합니다(에러 아님). */
+async function findActive(userId: number) {
+  return repository.findActiveByUserId(userId);
+}
+
+/** 요청 상세 조회. 본인 요청이 아니면 403입니다. */
+async function findById(id: number, userId: number) {
+  const found = await repository.findById(id);
+
+  if (!found) {
+    throw AppError.notFound("견적 요청을 찾을 수 없습니다.");
+  }
+  if (found.userId !== userId) {
+    throw AppError.forbidden("본인의 견적 요청만 조회할 수 있습니다.");
+  }
+
+  return found;
+}
+
+/** 내 요청 이력 (페이지네이션) */
+async function findMany(userId: number, page: number, limit: number) {
+  const [items, totalCount] = await Promise.all([
+    repository.findManyByUserId(userId, page, limit),
+    repository.countByUserId(userId),
+  ]);
+
+  return {
+    data: items,
+    page,
+    totalPages: Math.ceil(totalCount / limit),
+    totalCount,
+  };
+}
+
+async function createTargetedRequest(quotationRequestId: number, userId: number, moverId: number) {
+  const found = await repository.findById(quotationRequestId);
+
+  if (!found) throw AppError.notFound("견적 요청을 찾을 수 없습니다.");
+  if (found.userId !== userId) {
+    throw AppError.forbidden("본인의 견적 요청에만 기사님을 지정할 수 있습니다.");
+  }
+  // ASSIGNED는 "기사님 확정, 이사 전"이라 스키마 주석상 활성이지만, 이미 기사님이
+  // 정해진 요청에 새 지정을 받을 이유가 없습니다. 1차 QA #7에서 실제로 지정이
+  // 들어가는 게 확인돼 PENDING만 허용합니다.
+  if (found.quotationStatus !== "PENDING") {
+    throw AppError.badRequest(
+      ERROR_CODES.NO_ACTIVE_REQUEST,
+      "이미 기사님이 확정되었거나 종료된 견적 요청입니다."
+    );
+  }
+
+  const mover = await repository.findMoverById(moverId);
+  if (!mover) throw AppError.notFound("기사님을 찾을 수 없습니다.");
+
+  // 재시도 루프 안의 각 트랜잭션이 대기열을 새로 엽니다. 여기서 감싸면 롤백된 신호가 남습니다.
+  return repository.saveTargetedRequest(quotationRequestId, moverId, async (tx) => {
+    await createNotification(tx, { userId: moverId, type: "NEW_REQUEST", quotationRequestId });
+    enqueueNotificationPublish([moverId], "NEW_REQUEST");
+  });
+}
+
+export { create, createTargetedRequest, findActive, findById, findMany };

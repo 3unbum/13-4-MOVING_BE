@@ -1,0 +1,151 @@
+name: Deploy To EC2
+
+# main에 머지되면 자동 배포합니다.
+# dev는 개발 통합 브랜치라 배포하지 않습니다.
+on:
+  push:
+    branches:
+      - main
+
+# 배포가 겹치면 pm2 재시작 중에 다음 배포가 끼어들 수 있어 직렬화합니다.
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: EC2 배포
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 레포지토리 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: Prisma Client 생성
+        run: npx prisma generate
+
+      # `config/env.ts` 가 모듈 로드 시점에 필수 환경변수를 검증해서,
+      # `.env` 없이는 `profile.service.test.ts` 가 import 단계에서 실패합니다.
+      # 단위 테스트는 전부 모킹이라 실제 값이 필요 없습니다 (ci.yml과 같은 이유).
+      - name: 테스트용 더미 .env 생성
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci
+          AWS_REGION=ap-northeast-2
+          AWS_ACCESS_KEY_ID=ci-dummy
+          AWS_SECRET_ACCESS_KEY=ci-dummy
+          AWS_PUBLIC_BUCKET_NAME=ci-dummy
+          JWT_SECRET=ci-dummy-secret
+          JWT_REFRESH_SECRET=ci-dummy-refresh-secret
+          OAUTH_SIGNUP_TOKEN_SECRET=ci-dummy-oauth-secret
+          PASSWORD_RESET_TOKEN_SECRET=ci-dummy-reset-token-secret
+          PASSWORD_RESET_CODE_SECRET=ci-dummy-reset-code-secret
+          EOF
+
+      # 배포 전 마지막 방어선입니다. 여기서 실패하면 EC2에 올라가지 않습니다.
+      - name: 테스트
+        run: npm test
+
+      # ⚠️ 빌드는 **러너에서** 합니다. EC2는 메모리가 작아 tsc가 OOM으로 터질 수 있습니다
+      # (CI/CD 특강 지적사항). 러너는 넉넉하니 여기서 만들고 결과물만 보냅니다.
+      - name: 빌드
+        run: npm run build
+
+      # dist  — 빌드 결과
+      # generated — Prisma Client (EC2에서 만들면 또 CPU를 씁니다)
+      # prisma — schema·마이그레이션 (migrate deploy를 돌릴 때 필요)
+      # package*.json — EC2에서 `npm ci --omit=dev` 용
+      - name: 배포 파일 압축
+        run: tar -czf deploy.tar.gz dist generated prisma package.json package-lock.json
+
+      - name: EC2로 전송
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          source: deploy.tar.gz
+          target: /home/ec2-user/moving-deploy
+
+      - name: SSH로 EC2 접속해 실행
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          ENV: ${{ secrets.ENV }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          envs: ENV
+          # 한 줄이라도 실패하면 배포를 중단합니다
+          script_stop: true
+          script: |
+            cd /home/ec2-user/moving-deploy
+
+            # 러너에서 만든 dist·generated를 풀어 기존 파일을 갈아끼웁니다.
+            tar -xzf deploy.tar.gz
+            rm -f deploy.tar.gz
+
+            # ⚠️ .env를 **통째로 덮어씁니다.** 압축을 푼 뒤에 써야 tar가 덮어쓰지 않습니다.
+            # 환경변수를 추가·수정할 일이 생기면 EC2에서 직접 고치지 말고
+            # 반드시 GitHub Secrets의 `ENV`를 고치세요. EC2에서 고쳐봐야 다음 배포에 날아갑니다.
+            echo "$ENV" > .env
+
+            # `ENV` Secret에서 줄이 빠지면 해당 기능이 조용히 꺼집니다.
+            # 값은 찍지 않고 존재 여부만 로그로 남겨, 배포 로그에서 바로 확인할 수 있게 합니다.
+            #
+            # 필수 키가 하나라도 없으면 **배포를 중단**합니다. 특히 `CDN_URL`이 비면
+            # 이미지 URL이 S3 직접 주소로 만들어지는데, 운영 버킷은 비공개라 전부 403이 됩니다.
+            # 서버는 멀쩡히 뜨고 이미지만 깨지므로 알아채기 어렵습니다.
+            missing=""
+            for key in DATABASE_URL JWT_SECRET NODE_ENV CDN_URL; do
+              if grep -q "^$key=.\+" .env; then
+                echo "  ✅ $key"
+              else
+                echo "  ❌ $key 없음"
+                missing="$missing $key"
+              fi
+            done
+
+            # 없어도 서비스는 도는 키 — 경고만 남깁니다.
+            for key in SENTRY_DSN; do
+              if grep -q "^$key=.\+" .env; then
+                echo "  ✅ $key"
+              else
+                echo "  ⚠️  $key 없음 — 해당 기능만 비활성화됩니다"
+              fi
+            done
+
+            if [ -n "$missing" ]; then
+              echo "::error::필수 환경변수가 없어 배포를 중단합니다 —$missing (GitHub Secrets의 ENV를 확인하세요)"
+              exit 1
+            fi
+
+            # 빌드는 러너에서 끝났으니 런타임 의존성만 받습니다.
+            # devDependencies(typescript·prisma CLI·jest 등)는 EC2에 필요 없습니다.
+            #
+            # --ignore-scripts: package.json의 prepare가 husky를 부르는데
+            # husky는 devDependency라 --omit=dev 환경에는 없습니다. 없으면 설치가 실패합니다.
+            # 서버 실행에 postinstall이 필요한 패키지도 없어 안전합니다.
+            npm ci --omit=dev --ignore-scripts
+
+            # 이미 떠 있으면 재시작, 없으면 새로 시작합니다.
+            #
+            # ⚠️ 현재 fork_mode라 reload도 실제로는 restart입니다(1~2초 끊김).
+            # 무중단이 필요하면 cluster 모드로 바꿔야 하는데, 그건 별도 작업입니다.
+            # 그래도 `pm2 kill`보다 낫습니다 — kill은 다른 프로세스까지 전부 죽입니다.
+            #
+            # 시작 명령은 현재 EC2에 떠 있는 것과 동일하게 맞췄습니다
+            # (script path: /home/ec2-user/moving-deploy/dist/src/server.js).
+            # 여기가 어긋나면 pm2가 초기화된 뒤 첫 배포에서 다른 방식으로 떠버립니다.
+            pm2 reload moving-backend --update-env \
+              || pm2 start dist/src/server.js --name moving-backend
+            pm2 save
