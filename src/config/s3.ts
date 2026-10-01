@@ -27,7 +27,11 @@ export const S3_BUCKET_NAME = env.AWS_PUBLIC_BUCKET_NAME;
 export function buildPublicFileUrl(key: string): string {
   if (env.CDN_URL) {
     // 환경변수 끝에 슬래시가 붙어 와도 `//`가 되지 않게 다듬습니다.
-    return `${env.CDN_URL.replace(/\/+$/, "")}/${key}`;
+    const base = env.CDN_URL.replace(/\/+$/, "");
+    // 스킴 없이 도메인만 넣는 실수가 잦아, 없으면 https를 붙입니다.
+    // (스킴이 빠지면 `new URL()`이 던져서 이미지가 아니라 요청 자체가 실패합니다)
+    const origin = /^https?:\/\//.test(base) ? base : `https://${base}`;
+    return `${origin}/${key}`;
   }
   return `https://${S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com/${key}`;
 }
