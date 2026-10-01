@@ -101,7 +101,7 @@ jobs:
 
             # `ENV` Secret에서 줄이 빠지면 해당 기능이 조용히 꺼집니다.
             # 값은 찍지 않고 존재 여부만 로그로 남겨, 배포 로그에서 바로 확인할 수 있게 합니다.
-            for key in DATABASE_URL JWT_SECRET NODE_ENV SENTRY_DSN; do
+            for key in DATABASE_URL JWT_SECRET NODE_ENV SENTRY_DSN CDN_URL; do
               if grep -q "^$key=.\+" .env; then
                 echo "  ✅ $key"
               else

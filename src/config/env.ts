@@ -60,6 +60,15 @@ export const env = {
   SMTP_PASS: optional("SMTP_PASS", ""),
 
   /**
+   * CloudFront 배포 도메인 (예: `https://dxxxx.cloudfront.net`).
+   *
+   * 비어 있으면 S3 직접 URL로 떨어집니다 — CDN 설정 전이나 로컬 개발에서도 동작합니다.
+   * ⚠️ 운영 버킷은 퍼블릭 액세스를 차단했으므로, 배포 환경에서 이 값이 비면
+   * 이미지가 403이 됩니다. Secrets의 `ENV`에 반드시 넣으세요.
+   */
+  CDN_URL: optional("CDN_URL", ""),
+
+  /**
    * Sentry DSN. 비어 있으면 Sentry를 초기화하지 않습니다.
    *
    * 로컬 개발·CI에서는 값이 없으니 자동으로 꺼지고, 배포 환경에만 Secrets로 주입합니다.

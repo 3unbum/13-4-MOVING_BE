@@ -1,7 +1,6 @@
 import { randomUUID } from "crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { s3Client, S3_BUCKET_NAME } from "../../config/s3";
-import { env } from "../../config/env";
+import { s3Client, S3_BUCKET_NAME, buildPublicFileUrl } from "../../config/s3";
 import { Prisma } from "../../../generated/prisma/client";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
@@ -66,7 +65,7 @@ export const profileService = {
       })
     );
 
-    return { imageUrl: `https://${S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com/${key}` };
+    return { imageUrl: buildPublicFileUrl(key) };
   },
 
   async registerCustomerProfile(
