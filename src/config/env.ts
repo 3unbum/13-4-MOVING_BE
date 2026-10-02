@@ -33,6 +33,7 @@ export const env = {
   JWT_EXPIRES_IN: optional("JWT_EXPIRES_IN", "1h"),
   JWT_REFRESH_EXPIRES_IN: optional("JWT_REFRESH_EXPIRES_IN", "14d"),
 
+  /** CORS 허용 origin. **쉼표로 여러 개**를 넣을 수 있습니다 (`app.ts` 에서 분리). */
   CLIENT_URL: optional("CLIENT_URL", "http://localhost:3000"),
 
   /** OAuth 신규가입 2단계 임시 토큰. 세 provider 공용이라 JWT_SECRET급으로 필수 취급합니다. */
