@@ -116,6 +116,23 @@ jobs:
             #
             # 10/1 첫 배포 때 `PASSWORD_RESET_*` 2개가 빠졌는데 검사 목록에 없어
             # **두 번 실패**했습니다(한 번에 다 못 잡음). 전부 넣어 한 번에 드러나게 합니다.
+
+            # 값이 **실질적으로 비어 있는지** 봅니다.
+            #   KEY=            → 누락
+            #   KEY=""  KEY=''  → 🔴 누락. dotenv 가 따옴표를 벗기면 빈 문자열이고
+            #                      `required()` 는 빈 문자열을 거부합니다(`!value`).
+            #                      `.\+` 만 쓰면 따옴표 2글자 때문에 통과해버립니다.
+            #   KEY="   "       → 누락. 공백만 있는 것도 값이 아닙니다.
+            has_value() {
+              # `=` 뒤를 꺼내 따옴표와 공백을 벗긴 뒤 남는 게 있는지 본다
+              local v
+              v=$(grep -m1 "^$1=" .env | cut -d= -f2-)
+              v=${v%\"}; v=${v#\"}
+              v=${v%\'}; v=${v#\'}
+              v=$(echo "$v" | tr -d '[:space:]')
+              [ -n "$v" ]
+            }
+
             missing=""
             for key in \
               DATABASE_URL \
@@ -124,7 +141,7 @@ jobs:
               OAUTH_SIGNUP_TOKEN_SECRET \
               PASSWORD_RESET_TOKEN_SECRET PASSWORD_RESET_CODE_SECRET \
               NODE_ENV CDN_URL; do
-              if grep -q "^$key=.\+" .env; then
+              if has_value "$key"; then
                 echo "  ✅ $key"
               else
                 echo "  ❌ $key 없음"
@@ -136,7 +153,7 @@ jobs:
             # SMTP_* 가 없으면 비밀번호 재설정 메일이 안 나가고, CLIENT_URL 이 없으면
             # CORS 기본값(localhost:3000)이라 배포된 FE 요청이 전부 막힙니다.
             for key in SENTRY_DSN CLIENT_URL SMTP_USER SMTP_PASS; do
-              if grep -q "^$key=.\+" .env; then
+              if has_value "$key"; then
                 echo "  ✅ $key"
               else
                 echo "  ⚠️  $key 없음 — 해당 기능만 비활성화됩니다"
