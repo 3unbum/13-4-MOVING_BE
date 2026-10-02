@@ -44,6 +44,10 @@ export const ERROR_CODES = {
   // 찜
   ALREADY_FAVORITED: "ALREADY_FAVORITED",
 
+  // 채팅
+  /** 이사 완료 후 14일이 지난 방 — 지난 대화는 볼 수 있지만 보낼 수는 없습니다 */
+  CHAT_ROOM_CLOSED: "CHAT_ROOM_CLOSED",
+
   // 공통
   VALIDATION_ERROR: "VALIDATION_ERROR",
   NOT_FOUND: "NOT_FOUND",

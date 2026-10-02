@@ -248,6 +248,10 @@ async function confirm(estimateId: number, moverId: number) {
         { userId: existing.quotationRequest.userId, estimateId, type: "ESTIMATE_CONFIRMED" },
       ]);
       enqueueNotificationPublish([moverId, existing.quotationRequest.userId], "ESTIMATE_CONFIRMED");
+      // 확정된 고객·기사님 1:1 채팅방 (estimateId unique)
+      await tx.chatRoom.create({
+        data: { estimateId, customerId: existing.quotationRequest.userId, moverId },
+      });
 
       return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
     })

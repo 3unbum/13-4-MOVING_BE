@@ -3,7 +3,7 @@ import { kstTodayRange, notificationRepository } from "./notification.repository
 
 jest.mock("../../config/prisma", () => ({
   prisma: {
-    notification: { count: jest.fn() },
+    notification: { count: jest.fn(), findMany: jest.fn() },
     $queryRaw: jest.fn(),
     moverRegion: { findMany: jest.fn() },
     moverService: { findMany: jest.fn() },
@@ -40,9 +40,21 @@ describe("notificationRepository.countUnread", () => {
             type: { in: ["NEW_ESTIMATE", "ESTIMATE_CONFIRMED"] },
             estimateId: { not: null },
           },
+          { type: "NEW_CHAT_MESSAGE", chatRoomId: { not: null } },
         ],
       },
     });
+  });
+});
+
+describe("notificationRepository.findManyByUserId", () => {
+  it("닫힌 방도 지난 대화를 볼 수 있어 채팅 알림을 그대로 목록에 둔다", async () => {
+    mockedPrisma.notification.findMany.mockResolvedValue([]);
+
+    await notificationRepository.findManyByUserId(7, undefined, 11);
+
+    const args = mockedPrisma.notification.findMany.mock.calls[0][0];
+    expect(args?.where).toEqual({ userId: 7 });
   });
 });
 

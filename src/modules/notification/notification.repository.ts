@@ -64,6 +64,14 @@ const notificationDetailInclude = {
       user: { select: { name: true } },
     },
   },
+  // 채팅 알림 — 받는 사람 기준으로 상대 이름을 고르려고 양쪽 참가자를 읽습니다
+  chatRoom: {
+    select: {
+      customerId: true,
+      customer: { select: { name: true } },
+      mover: { select: { name: true, moverProfile: { select: { nickName: true } } } },
+    },
+  },
 } as const;
 
 function listArgs(cursor?: number, take = DEFAULT_TAKE) {
@@ -121,6 +129,10 @@ export const notificationRepository = {
           {
             type: { in: ["NEW_ESTIMATE", "ESTIMATE_CONFIRMED"] },
             estimateId: { not: null },
+          },
+          {
+            type: "NEW_CHAT_MESSAGE",
+            chatRoomId: { not: null },
           },
         ],
       },

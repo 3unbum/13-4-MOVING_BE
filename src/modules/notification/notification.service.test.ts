@@ -394,3 +394,45 @@ describe("notificationService.bulkDelete", () => {
     expect(result).toEqual({ deletedCount: 0, deletedIds: [] });
   });
 });
+
+describe("notificationService.list — NEW_CHAT_MESSAGE", () => {
+  const chatRoom = {
+    customerId: 7,
+    customer: { name: "김가나" },
+    mover: { name: "김기사", moverProfile: { nickName: "김코드" } },
+  };
+
+  it("받는 사람이 고객이면 기사님 닉네임, 기사님이면 고객 이름을 보낸 사람으로 준다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValueOnce([
+      row({ id: 2, userId: 7, type: "NEW_CHAT_MESSAGE", chatRoomId: 3, chatRoom }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(1);
+    const asCustomer = await notificationService.list(7, {});
+
+    mockedRepository.findManyByUserId.mockResolvedValueOnce([
+      row({ id: 3, userId: 5, type: "NEW_CHAT_MESSAGE", chatRoomId: 3, chatRoom }),
+    ] as never);
+    const asMover = await notificationService.list(5, {});
+
+    expect(asCustomer.items[0]).toMatchObject({
+      type: "NEW_CHAT_MESSAGE",
+      chatRoomId: 3,
+      payload: { roomId: 3, senderName: "김코드" },
+    });
+    expect(asMover.items[0]).toMatchObject({
+      type: "NEW_CHAT_MESSAGE",
+      payload: { roomId: 3, senderName: "김가나" },
+    });
+  });
+
+  it("방을 읽지 못한 알림은 목록에서 제외한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({ id: 2, userId: 7, type: "NEW_CHAT_MESSAGE", chatRoomId: null, chatRoom: null }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(0);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toEqual([]);
+  });
+});

@@ -4,6 +4,7 @@ import estimateRouter from "../modules/estimate/estimate.route";
 import moverRouter from "../modules/mover/mover.route";
 import favoriteRouter from "../modules/favorite/favorite.route";
 import notificationRouter from "../modules/notification/notification.route";
+import chatRouter from "../modules/chat/chat.route";
 import quotationRequestRouter from "../modules/quotation-request/quotation-request.route";
 import profileRouter from "../modules/profile/profile.route";
 import reviewRouter from "../modules/review/review.route";
@@ -24,5 +25,6 @@ router.use(reviewRouter);
 router.use("/movers", moverRouter);
 router.use("/favorites", favoriteRouter);
 router.use("/notifications", notificationRouter);
+router.use("/chat-rooms", chatRouter);
 
 export default router;

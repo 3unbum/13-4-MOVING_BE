@@ -51,12 +51,23 @@ export interface MovingDayPayload {
   movingDate: Date;
 }
 
+/**
+ * 고객·기사님 수신 — "{senderName}님이 메시지를 보냈어요".
+ * 메시지 내용은 싣지 않습니다. 알림 목록은 계속 화면에 보이고 개인정보가 담길 수 있어서입니다.
+ */
+export interface ChatMessagePayload {
+  roomId: number;
+  /** 보낸 사람 — 고객이 받으면 기사님 닉네임(없으면 이름), 기사님이 받으면 고객 이름 */
+  senderName: string;
+}
+
 interface NotificationBase {
   id: number;
   isRead: boolean;
   createdAt: Date;
   estimateId: number | null;
   quotationRequestId: number | null;
+  chatRoomId: number | null;
 }
 
 /** type으로 payload가 갈리는 판별 유니온 — FE가 좁히기만 하면 됩니다 */
@@ -65,7 +76,8 @@ export type NotificationItem =
   | (NotificationBase & { type: "NEW_ESTIMATE"; payload: NewEstimatePayload })
   | (NotificationBase & { type: "ESTIMATE_CONFIRMED"; payload: EstimateConfirmedPayload })
   | (NotificationBase & { type: "MOVING_DAY_BEFORE"; payload: MovingDayPayload })
-  | (NotificationBase & { type: "MOVING_DAY"; payload: MovingDayPayload });
+  | (NotificationBase & { type: "MOVING_DAY"; payload: MovingDayPayload })
+  | (NotificationBase & { type: "NEW_CHAT_MESSAGE"; payload: ChatMessagePayload });
 
 export interface NotificationListResult {
   items: NotificationItem[];

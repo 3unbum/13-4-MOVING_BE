@@ -96,6 +96,7 @@ enum NotificationType {
   ESTIMATE_CONFIRMED /// 유저가 견적 확정 → 기사님 + 고객
   MOVING_DAY_BEFORE /// 이사 전날 09:00 배치 → 고객 + 확정 기사님
   MOVING_DAY /// 이사 당일 09:00 배치 → 고객 + 확정 기사님
+  NEW_CHAT_MESSAGE /// 채팅 메시지 도착 → 상대방. 방당 1건으로 합쳐 새 메시지가 오면 다시 읽지 않음으로 올립니다
 
   @@map("notification_type")
 }
@@ -126,19 +127,22 @@ model User {
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
 
-  customerProfile   CustomerProfile?
-  moverProfile      MoverProfile?
-  customerServices  CustomerService[]
-  moverServices     MoverService[]
-  moverRegions      MoverRegion[]
-  quotationRequests QuotationRequest[]
-  targetedRequests  TargetedRequest[]
-  estimates         Estimate[]
-  reviews           Review[]
-  favorites         Favorite[]         @relation("FavoriteCustomer")
-  favoritedBy       Favorite[]         @relation("FavoriteMover")
-  notifications     Notification[]
-  passwordResetCode PasswordResetCode?
+  customerProfile     CustomerProfile?
+  moverProfile        MoverProfile?
+  customerServices    CustomerService[]
+  moverServices       MoverService[]
+  moverRegions        MoverRegion[]
+  quotationRequests   QuotationRequest[]
+  targetedRequests    TargetedRequest[]
+  estimates           Estimate[]
+  reviews             Review[]
+  favorites           Favorite[]         @relation("FavoriteCustomer")
+  favoritedBy         Favorite[]         @relation("FavoriteMover")
+  notifications       Notification[]
+  passwordResetCode   PasswordResetCode?
+  chatRoomsAsCustomer ChatRoom[]         @relation("ChatRoomCustomer")
+  chatRoomsAsMover    ChatRoom[]         @relation("ChatRoomMover")
+  chatMessages        ChatMessage[]      @relation("ChatMessageSender")
 
   @@unique([role, provider, providerId])
   /// 로그인 조회용 — 유니크를 뺐으므로 인덱스는 별도로 유지합니다
@@ -328,6 +332,7 @@ model Estimate {
   mover            User             @relation(fields: [moverId], references: [id], onDelete: Cascade)
   review           Review?
   notifications    Notification[]
+  chatRoom         ChatRoom?
 
   @@unique([quotationRequestId, moverId])
   @@index([moverId, estimateStatus])
@@ -378,6 +383,8 @@ model Favorite {
 /// 이사 전날·당일 중복은 마이그레이션의 partial unique로만 막습니다
 /// (user_id, quotation_request_id, type WHERE type IN ('MOVING_DAY','MOVING_DAY_BEFORE')).
 /// NEW_REQUEST는 지역 알림 후 지정 요청이 한 번 더 갈 수 있어 같은 유니크를 걸지 않습니다.
+/// 채팅 알림은 (user_id, chat_room_id) partial unique(WHERE chat_room_id IS NOT NULL)로
+/// 받는 사람 × 방당 1건만 둡니다 — 메시지마다 행을 만들지 않고 같은 행을 갱신합니다.
 model Notification {
   id                 Int              @id @default(autoincrement())
   /// 수신자. 소비자·기사님 양쪽 모두 수신하므로 userId입니다
@@ -386,6 +393,8 @@ model Notification {
   estimateId         Int?             @map("estimate_id")
   /// "새 요청 / 이사 전날·당일" 알림일 때만
   quotationRequestId Int?             @map("quotation_request_id")
+  /// "새 채팅 메시지" 알림일 때만
+  chatRoomId         Int?             @map("chat_room_id")
   type               NotificationType
   message            String?
   isRead             Boolean          @default(false) @map("is_read")
@@ -394,7 +403,49 @@ model Notification {
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   estimate         Estimate?         @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   quotationRequest QuotationRequest? @relation(fields: [quotationRequestId], references: [id], onDelete: Cascade)
+  chatRoom         ChatRoom?         @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
   @@map("notification")
+}
+
+/// 확정된 견적당 1:1 채팅방. 고객·기사님만 참여합니다.
+model ChatRoom {
+  id                 Int      @id @default(autoincrement())
+  estimateId         Int      @unique @map("estimate_id")
+  customerId         Int      @map("customer_id")
+  /// estimate.moverId 복사
+  moverId            Int      @map("mover_id")
+  lastMessageAt      DateTime @default(now()) @map("last_message_at")
+  /// FK 없음 (ChatMessage와 순환 방지). 커지는 방향으로만 갱신
+  customerLastReadId Int?     @map("customer_last_read_id")
+  moverLastReadId    Int?     @map("mover_last_read_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  estimate      Estimate       @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  customer      User           @relation("ChatRoomCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  mover         User           @relation("ChatRoomMover", fields: [moverId], references: [id], onDelete: Cascade)
+  messages      ChatMessage[]
+  notifications Notification[]
+
+  @@index([customerId, lastMessageAt])
+  @@index([moverId, lastMessageAt])
+  @@map("chat_room")
+}
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  roomId    Int      @map("room_id")
+  senderId  Int      @map("sender_id")
+  /// 사진만 보낸 메시지는 빈 문자열
+  content   String
+  /// 사진 메시지일 때만. 한 메시지에 한 장
+  imageUrl  String?  @map("image_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender User     @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, id])
+  @@map("chat_message")
 }
