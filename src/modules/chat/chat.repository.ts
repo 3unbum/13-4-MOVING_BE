@@ -134,16 +134,22 @@ export const chatMessageRepository = {
         where: { id: roomId },
         data: { lastMessageAt: message.createdAt },
       });
-      // 행이 없으면 만들고(있으면 partial unique가 막아 건너뜁니다), 어느 쪽이든 읽지 않음으로 올립니다.
-      // 두 문장이라 동시에 두 메시지가 와도 중복 행이 생기지 않고, 트랜잭션도 중단되지 않습니다.
-      await tx.notification.createMany({
-        data: [{ userId: recipientId, chatRoomId: roomId, type: "NEW_CHAT_MESSAGE" }],
-        skipDuplicates: true,
-      });
-      await tx.notification.updateMany({
+      // 기존 행을 먼저 올립니다. 행이 있으면 여기서 끝나므로 partial unique 인덱스가 없는 DB에서도
+      // 메시지마다 알림이 쌓이지 않습니다.
+      const bump = {
         where: { userId: recipientId, chatRoomId: roomId },
         data: { isRead: false, createdAt: message.createdAt },
-      });
+      };
+      const { count } = await tx.notification.updateMany(bump);
+      if (count === 0) {
+        // 방의 첫 메시지 — 만듭니다. 동시에 첫 메시지가 둘 오면 partial unique가 하나를 건너뛰게 하고
+        // (트랜잭션은 중단되지 않습니다), 건너뛴 쪽도 다시 올려 읽지 않음·시각을 맞춥니다.
+        await tx.notification.createMany({
+          data: [{ userId: recipientId, chatRoomId: roomId, type: "NEW_CHAT_MESSAGE" }],
+          skipDuplicates: true,
+        });
+        await tx.notification.updateMany(bump);
+      }
       return message;
     });
   },

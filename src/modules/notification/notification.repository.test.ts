@@ -56,6 +56,17 @@ describe("notificationRepository.findManyByUserId", () => {
     const args = mockedPrisma.notification.findMany.mock.calls[0][0];
     expect(args?.where).toEqual({ userId: 7 });
   });
+
+  it("createdAt 내림차순(같으면 id 내림차순)으로 정렬해 갱신된 채팅 알림이 위로 올라온다", async () => {
+    mockedPrisma.notification.findMany.mockResolvedValue([]);
+
+    await notificationRepository.findManyByUserId(7, 42, 11);
+
+    const args = mockedPrisma.notification.findMany.mock.calls[0][0];
+    expect(args?.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
+    // 커서는 id 하나로 두고 Prisma가 정렬 값 기준으로 위치를 잡는다
+    expect(args).toMatchObject({ skip: 1, cursor: { id: 42 }, take: 11 });
+  });
 });
 
 describe("kstTodayRange", () => {

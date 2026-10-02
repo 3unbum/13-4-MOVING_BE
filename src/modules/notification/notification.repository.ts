@@ -74,10 +74,16 @@ const notificationDetailInclude = {
   },
 } as const;
 
+/**
+ * 최신순 = createdAt 내림차순, 같으면 id 내림차순.
+ * 채팅 알림은 방당 한 행을 재사용하며 새 메시지가 오면 createdAt을 올리므로(chat.repository.createMessage)
+ * id만으로 정렬하면 처음 만든 자리에 묻힙니다. 커서는 id 하나로 충분합니다 —
+ * Prisma가 커서 행의 정렬 값(createdAt, id)을 기준으로 다음 위치를 잡습니다.
+ */
 function listArgs(cursor?: number, take = DEFAULT_TAKE) {
   return {
     take,
-    orderBy: { id: "desc" as const },
+    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
   };
 }

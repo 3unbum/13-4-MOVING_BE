@@ -21,7 +21,7 @@ router.use(requireAuth);
  *     tags: [Notifications]
  *     summary: 내 알림 목록 조회
  *     description: |
- *       최신순 커서 페이지네이션. 문구는 저장하지 않으며 `type` + `payload`로 내려갑니다.
+ *       최신순(`createdAt` 내림차순, 같으면 `id` 내림차순) 커서 페이지네이션. 문구는 저장하지 않으며 `type` + `payload`로 내려갑니다.
  *       payload는 type에 따라 달라집니다.
  *       - `NEW_REQUEST`: customerName, category, fromRegion, movingDate
  *       - `NEW_ESTIMATE`: moverNickName, category, price
