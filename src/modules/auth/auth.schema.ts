@@ -21,6 +21,8 @@ export const loginSchema = z.object({
   role: z.enum(["CUSTOMER", "MOVER"]),
   email: z.email(),
   password: z.string().min(1),
+  /** Turnstile 토큰. 검증은 `verifyTurnstile`이 하고, 여기서 빼면 zod가 걸러 버려 미들웨어가 못 봅니다 */
+  turnstileToken: z.string().optional(),
 });
 
 export const checkEmailSchema = z.object({
