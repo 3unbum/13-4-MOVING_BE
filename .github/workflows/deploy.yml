@@ -152,7 +152,14 @@ jobs:
             # 없어도 서버는 뜨지만 해당 기능만 꺼지는 키 — 경고만 남깁니다.
             # SMTP_* 가 없으면 비밀번호 재설정 메일이 안 나가고, CLIENT_URL 이 없으면
             # CORS 기본값(localhost:3000)이라 배포된 FE 요청이 전부 막힙니다.
-            for key in SENTRY_DSN CLIENT_URL SMTP_USER SMTP_PASS; do
+            # 소셜 키는 빈 client_id 로 OAuth 요청을 보내 해당 provider 로그인만 실패합니다.
+            # 배포도 서버 기동도 성공해서, 사용자가 그 버튼을 눌러야 드러납니다.
+            for key in \
+              SENTRY_DSN CLIENT_URL \
+              SMTP_USER SMTP_PASS \
+              GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+              KAKAO_CLIENT_ID KAKAO_CLIENT_SECRET \
+              NAVER_CLIENT_ID NAVER_CLIENT_SECRET; do
               if has_value "$key"; then
                 echo "  ✅ $key"
               else
