@@ -102,12 +102,46 @@ jobs:
             # `ENV` Secret에서 줄이 빠지면 해당 기능이 조용히 꺼집니다.
             # 값은 찍지 않고 존재 여부만 로그로 남겨, 배포 로그에서 바로 확인할 수 있게 합니다.
             #
-            # 필수 키가 하나라도 없으면 **배포를 중단**합니다. 특히 `CDN_URL`이 비면
-            # 이미지 URL이 S3 직접 주소로 만들어지는데, 운영 버킷은 비공개라 전부 403이 됩니다.
-            # 서버는 멀쩡히 뜨고 이미지만 깨지므로 알아채기 어렵습니다.
+            # 필수 키가 하나라도 없으면 **배포를 중단**합니다.
+            #
+            # 목록은 `src/config/env.ts`의 `required()` 10개 + 운영 전용 2개입니다.
+            # ⚠️ `required()`에 키를 추가하면 **여기도 같이 추가하세요.** 안 그러면
+            # 배포는 통과하고 서버 기동에서 터져, pm2가 재시작을 반복합니다.
+            #
+            #   NODE_ENV  `required()`는 아니지만 없으면 development로 돌아
+            #             에러 스택이 응답에 그대로 나갑니다.
+            #   CDN_URL   비면 이미지 URL이 S3 직접 주소로 만들어지는데, 운영 버킷은
+            #             비공개라 전부 403입니다. 서버는 멀쩡히 뜨고 이미지만 깨져
+            #             알아채기 어렵습니다.
+            #
+            # 10/1 첫 배포 때 `PASSWORD_RESET_*` 2개가 빠졌는데 검사 목록에 없어
+            # **두 번 실패**했습니다(한 번에 다 못 잡음). 전부 넣어 한 번에 드러나게 합니다.
+
+            # 값이 **실질적으로 비어 있는지** 봅니다.
+            #   KEY=            → 누락
+            #   KEY=""  KEY=''  → 🔴 누락. dotenv 가 따옴표를 벗기면 빈 문자열이고
+            #                      `required()` 는 빈 문자열을 거부합니다(`!value`).
+            #                      `.\+` 만 쓰면 따옴표 2글자 때문에 통과해버립니다.
+            #   KEY="   "       → 누락. 공백만 있는 것도 값이 아닙니다.
+            has_value() {
+              # `=` 뒤를 꺼내 따옴표와 공백을 벗긴 뒤 남는 게 있는지 본다
+              local v
+              v=$(grep -m1 "^$1=" .env | cut -d= -f2-)
+              v=${v%\"}; v=${v#\"}
+              v=${v%\'}; v=${v#\'}
+              v=$(echo "$v" | tr -d '[:space:]')
+              [ -n "$v" ]
+            }
+
             missing=""
-            for key in DATABASE_URL JWT_SECRET NODE_ENV CDN_URL; do
-              if grep -q "^$key=.\+" .env; then
+            for key in \
+              DATABASE_URL \
+              AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_PUBLIC_BUCKET_NAME \
+              JWT_SECRET JWT_REFRESH_SECRET \
+              OAUTH_SIGNUP_TOKEN_SECRET \
+              PASSWORD_RESET_TOKEN_SECRET PASSWORD_RESET_CODE_SECRET \
+              NODE_ENV CDN_URL; do
+              if has_value "$key"; then
                 echo "  ✅ $key"
               else
                 echo "  ❌ $key 없음"
@@ -115,9 +149,11 @@ jobs:
               fi
             done
 
-            # 없어도 서비스는 도는 키 — 경고만 남깁니다.
-            for key in SENTRY_DSN; do
-              if grep -q "^$key=.\+" .env; then
+            # 없어도 서버는 뜨지만 해당 기능만 꺼지는 키 — 경고만 남깁니다.
+            # SMTP_* 가 없으면 비밀번호 재설정 메일이 안 나가고, CLIENT_URL 이 없으면
+            # CORS 기본값(localhost:3000)이라 배포된 FE 요청이 전부 막힙니다.
+            for key in SENTRY_DSN CLIENT_URL SMTP_USER SMTP_PASS; do
+              if has_value "$key"; then
                 echo "  ✅ $key"
               else
                 echo "  ⚠️  $key 없음 — 해당 기능만 비활성화됩니다"
