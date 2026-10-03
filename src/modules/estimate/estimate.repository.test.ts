@@ -43,6 +43,7 @@ function makeTx() {
     },
     targetedRequest: { findMany: jest.fn() },
     moverProfile: { update: jest.fn() },
+    chatRoom: { create: jest.fn() },
   };
 }
 
@@ -149,7 +150,20 @@ describe("estimateRepository.confirm", () => {
     expect(publishNotification).toHaveBeenCalledWith([5, 7], { type: "ESTIMATE_CONFIRMED" });
   });
 
-  it("이미 처리된 견적이면 알림을 만들지 않는다", async () => {
+  it("확정 시 고객·기사님 채팅방을 만든다", async () => {
+    // Setup
+    arrangeConfirmSuccess();
+
+    // Exercise
+    await estimateRepository.confirm(42, 5);
+
+    // Assertion
+    expect(tx.chatRoom.create).toHaveBeenCalledWith({
+      data: { estimateId: 42, customerId: 7, moverId: 5 },
+    });
+  });
+
+  it("이미 처리된 견적이면 알림과 채팅방을 만들지 않는다", async () => {
     // Setup — 동시에 두 번 확정하면 조건부 갱신에서 count가 0이 됩니다
     arrangeConfirmSuccess();
     tx.estimate.updateMany.mockResolvedValue({ count: 0 });
@@ -159,6 +173,7 @@ describe("estimateRepository.confirm", () => {
       code: "ESTIMATE_ALREADY_PROCESSED",
     });
     expect(createManyNotifications).not.toHaveBeenCalled();
+    expect(tx.chatRoom.create).not.toHaveBeenCalled();
     expect(publishNotification).not.toHaveBeenCalled();
   });
 

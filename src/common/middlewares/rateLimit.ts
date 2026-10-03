@@ -72,3 +72,15 @@ export const resetCodeDailyMailLimiter = rateLimit({
 });
 
 export const refundResetCodeMailCount = () => resetCodeMailStore.decrement(RESET_CODE_MAIL_KEY);
+
+/** 채팅 도배 방지 — 유저당 분당 30건. requireAuth 뒤에 둬서 req.user.id로 셉니다 */
+export const chatMessageRateLimiter = rateLimit({
+  windowMs: MINUTE,
+  limit: 30,
+  standardHeaders: false,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => String(req.user?.id),
+  handler: tooManyRequestsHandler(
+    "메시지를 너무 빠르게 보내고 있습니다. 잠시 후 다시 시도해주세요"
+  ),
+});

@@ -54,6 +54,8 @@ function daysFromToday(days: number): Date {
 
 /** 자식 → 부모 순서로 지웁니다. */
 async function clean() {
+  await prisma.chatMessage.deleteMany();
+  await prisma.chatRoom.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.review.deleteMany();
   await prisma.estimate.deleteMany();
@@ -268,6 +270,7 @@ async function main() {
   // confirmedCount도 `syncAggregates`가 실제 견적을 세어 채웁니다.
 
   await seedBulk(password, [mover1.id, mover2.id, mover3.id]);
+  await seedChatRooms();
 
   const [users, requests, estimates, reviews, writtenReviews] = await Promise.all([
     prisma.user.count(),
@@ -295,6 +298,59 @@ async function main() {
   console.log("  고정   customer@moving.test / newbie@moving.test(프로필 미등록) / mover1~3@");
   console.log("  대량   user01~20@moving.test / mover01~40@moving.test");
   console.log("  리뷰용 reviewer01~12@moving.test (과거 이사 이력 보유)");
+  console.log("  채팅   user13@moving.test ↔ 확정된 기사님 (대화 5건, 고객 안 읽음 2건)");
+}
+
+/**
+ * 채팅방 — confirm() API를 거치지 않고 직접 넣은 CONFIRMED 견적에도 방이 있어야 하므로 여기서 만듭니다.
+ * user13은 대화까지 채워 목록·안 읽음·읽음 표시를 바로 확인할 수 있게 합니다.
+ * 나머지 확정 건(user12·14·15)은 메시지 없는 빈 방입니다.
+ */
+async function seedChatRooms() {
+  const confirmed = await prisma.estimate.findMany({
+    where: { estimateStatus: "CONFIRMED" },
+    select: { id: true, moverId: true, quotationRequest: { select: { userId: true } } },
+  });
+  await prisma.chatRoom.createMany({
+    data: confirmed.map((e) => ({
+      estimateId: e.id,
+      customerId: e.quotationRequest.userId,
+      moverId: e.moverId,
+    })),
+  });
+
+  const user13 = await prisma.user.findFirst({
+    where: { role: "CUSTOMER", email: "user13@moving.test" },
+    select: { id: true },
+  });
+  const room = user13 && (await prisma.chatRoom.findFirst({ where: { customerId: user13.id } }));
+  if (!user13 || !room) return;
+
+  const lines: [number, string][] = [
+    [user13.id, "안녕하세요, 이사 일정 확인차 연락드려요."],
+    [room.moverId, "안녕하세요 고객님! 확정해주셔서 감사합니다."],
+    [user13.id, "당일 몇 시쯤 도착하시나요?"],
+    [room.moverId, "오전 9시까지 방문드릴 예정입니다."],
+    [room.moverId, "도착 30분 전에 다시 연락드릴게요."],
+  ];
+  const base = Date.now() - lines.length * 60_000;
+  const messages = [];
+  for (const [i, [senderId, content]] of lines.entries()) {
+    messages.push(
+      await prisma.chatMessage.create({
+        data: { roomId: room.id, senderId, content, createdAt: new Date(base + i * 60_000) },
+      })
+    );
+  }
+  // 고객은 3번째 메시지까지 읽음(기사님 메시지 2건이 안 읽음), 기사님은 전부 읽음
+  await prisma.chatRoom.update({
+    where: { id: room.id },
+    data: {
+      lastMessageAt: messages[messages.length - 1].createdAt,
+      customerLastReadId: messages[2].id,
+      moverLastReadId: messages[messages.length - 1].id,
+    },
+  });
 }
 
 // ─────────────────────────── 대량 시드 ───────────────────────────

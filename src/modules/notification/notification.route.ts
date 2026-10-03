@@ -21,12 +21,18 @@ router.use(requireAuth);
  *     tags: [Notifications]
  *     summary: 내 알림 목록 조회
  *     description: |
- *       최신순 커서 페이지네이션. 문구는 저장하지 않으며 `type` + `payload`로 내려갑니다.
+ *       최신순(`createdAt` 내림차순, 같으면 `id` 내림차순) 커서 페이지네이션. 문구는 저장하지 않으며 `type` + `payload`로 내려갑니다.
  *       payload는 type에 따라 달라집니다.
  *       - `NEW_REQUEST`: customerName, category, fromRegion, movingDate
  *       - `NEW_ESTIMATE`: moverNickName, category, price
  *       - `ESTIMATE_CONFIRMED`: moverNickName, customerName, category
  *       - `MOVING_DAY_BEFORE` / `MOVING_DAY`: fromRegion, toRegion, fromAddress, toAddress, movingDate
+ *       - `NEW_CHAT_MESSAGE`: roomId, senderName (받는 사람 기준 상대 이름. 메시지 내용은 싣지 않습니다)
+ *
+ *       `NEW_CHAT_MESSAGE`는 메시지마다 만들지 않고 **받는 사람 × 채팅방당 1건**입니다.
+ *       새 메시지가 오면 같은 알림이 다시 안 읽음이 되고 목록 맨 위로 올라옵니다.
+ *       채팅방에서 읽음 처리(`PATCH /chat-rooms/{id}/read`)하면 이 알림도 같이 읽음이 되고,
+ *       채팅 알림은 닫힌 방(이사 완료 14일 경과)의 것도 목록과 `unreadCount`에 남습니다. 지난 대화는 볼 수 있어서입니다.
  *     parameters:
  *       - $ref: '#/components/parameters/cursor'
  *       - $ref: '#/components/parameters/take'
@@ -53,12 +59,13 @@ router.use(requireAuth);
  *                           id: { type: integer }
  *                           type:
  *                             type: string
- *                             enum: [NEW_REQUEST, NEW_ESTIMATE, ESTIMATE_CONFIRMED, MOVING_DAY_BEFORE, MOVING_DAY]
+ *                             enum: [NEW_REQUEST, NEW_ESTIMATE, ESTIMATE_CONFIRMED, MOVING_DAY_BEFORE, MOVING_DAY, NEW_CHAT_MESSAGE]
  *                           payload: { type: object }
  *                           isRead: { type: boolean }
  *                           createdAt: { type: string, format: date-time }
  *                           estimateId: { type: integer, nullable: true }
  *                           quotationRequestId: { type: integer, nullable: true }
+ *                           chatRoomId: { type: integer, nullable: true, description: "채팅 알림일 때만" }
  *                     nextCursor: { type: integer, nullable: true }
  *                     unreadCount: { type: integer }
  *       401:

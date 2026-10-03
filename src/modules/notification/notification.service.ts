@@ -75,6 +75,7 @@ function toItem(row: NotificationRow): NotificationItem | null {
     createdAt: row.createdAt,
     estimateId: row.estimateId,
     quotationRequestId: row.quotationRequestId,
+    chatRoomId: row.chatRoomId,
   };
 
   switch (row.type) {
@@ -133,6 +134,19 @@ function toItem(row: NotificationRow): NotificationItem | null {
           toAddress: request.toAddress,
           movingDate: request.movingDate,
         },
+      };
+    }
+
+    case "NEW_CHAT_MESSAGE": {
+      const room = row.chatRoom;
+      if (!room || row.chatRoomId === null) return null;
+      // 받는 사람이 고객이면 보낸 사람은 기사님, 아니면 고객입니다
+      const senderName =
+        row.userId === room.customerId ? moverDisplayName(room.mover) : room.customer.name;
+      return {
+        ...base,
+        type: "NEW_CHAT_MESSAGE",
+        payload: { roomId: row.chatRoomId, senderName },
       };
     }
 

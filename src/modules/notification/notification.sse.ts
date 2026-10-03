@@ -107,14 +107,19 @@ export function openStream(userId: number, res: Response): () => void {
  * 클라이언트에 나가고, DB를 다시 읽으면 그 알림은 없습니다.
  */
 export function publishNotification(userIds: number[], event: NotificationEvent): void {
-  const body = JSON.stringify(event);
+  publishEvent(userIds, "notification", event);
+}
+
+/** 같은 SSE 연결로 이벤트 이름만 달리해 보냅니다 (notification, chat) */
+export function publishEvent(userIds: number[], name: string, data: object): void {
+  const body = JSON.stringify(data);
 
   for (const userId of new Set(userIds)) {
     const targets = connections.get(userId);
     if (!targets) continue;
 
     for (const live of [...targets]) {
-      if (!write(live.res, `event: notification\ndata: ${body}\n\n`)) {
+      if (!write(live.res, `event: ${name}\ndata: ${body}\n\n`)) {
         live.stop();
       }
     }
