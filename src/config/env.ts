@@ -76,6 +76,14 @@ export const env = {
    * 필수로 두면 DSN을 모르는 팀원의 서버 기동까지 막히므로 optional입니다.
    */
   SENTRY_DSN: optional("SENTRY_DSN", ""),
+
+  /**
+   * Cloudflare Turnstile 시크릿 키. 비어 있으면 봇 검증을 건너뜁니다.
+   *
+   * 로컬 개발·CI에서는 값이 없어도 로그인이 되도록 optional입니다.
+   * ⚠️ 배포 환경에서 이 값이 비면 봇 검증이 조용히 꺼지니 Secrets의 `ENV`에 반드시 넣으세요.
+   */
+  TURNSTILE_SECRET_KEY: optional("TURNSTILE_SECRET_KEY", ""),
 } as const;
 
 export const isProduction = env.NODE_ENV === "production";

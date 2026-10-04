@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../common/middlewares/auth";
 import { validate } from "../../common/middlewares/validate";
+import { verifyTurnstile } from "../../common/middlewares/turnstile";
 import {
   loginRateLimiter,
   resetCodeRateLimiters,
@@ -96,7 +97,14 @@ router.post("/signup", validate(signupSchema), authController.signup);
  *                     message: { type: string }
  *                     retryAfterSeconds: { type: integer }
  */
-router.post("/login", validate(loginSchema), loginRateLimiter, authController.login);
+// 봇 검증을 rate limit보다 앞에 둡니다 — 뒤에 두면 봇이 남의 계정 시도 횟수(5회)를 먼저 소진시켜 잠글 수 있습니다
+router.post(
+  "/login",
+  validate(loginSchema),
+  verifyTurnstile,
+  loginRateLimiter,
+  authController.login
+);
 
 /**
  * @swagger
