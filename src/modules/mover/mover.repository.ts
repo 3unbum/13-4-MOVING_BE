@@ -24,9 +24,10 @@ function buildReviewOrderBy(sort: MoverReviewSort): Prisma.ReviewOrderByWithRela
     case "oldest":
       return [{ createdAt: "asc" }, { id: "asc" }];
     case "ratingDesc":
-      return [{ rating: "desc" }, { id: "desc" }];
+      // 목록은 null 평점을 0으로 보여 줍니다. DESC의 기본 nulls first와 어긋나지 않게 뒤로 둡니다.
+      return [{ rating: { sort: "desc", nulls: "last" } }, { id: "desc" }];
     case "ratingAsc":
-      return [{ rating: "asc" }, { id: "asc" }];
+      return [{ rating: { sort: "asc", nulls: "first" } }, { id: "asc" }];
     case "latest":
       return [{ createdAt: "desc" }, { id: "desc" }];
   }
