@@ -2,7 +2,7 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import { getExpireBaseDate } from "@/jobs/expireRequests.util";
-import type { UserRole } from "../../../generated/prisma/enums.ts";
+import type { EstimateStatus, UserRole } from "../../../generated/prisma/enums.ts";
 import {
   toEstimateListResponse,
   toEstimateResponse,
@@ -45,7 +45,14 @@ async function getQuotationEstimates(
   return toEstimateListResponse(estimates);
 }
 
-// 대기 중인 견적 (#26) — quotationRequestId 없이, 유저의 활성 요청부터 찾아서 PENDING 견적만 조회
+/// "대기 중인 견적" 탭이 보여줄 상태.
+///
+/// 반려(REJECTED)를 함께 내려줍니다. 요청이 아직 살아있는 동안 고객이 보는 화면은
+/// 이 목록뿐이라, PENDING 만 주면 반려한 기사님이 조용히 사라집니다.
+/// "받았던 견적"은 요청이 PENDING 이 아니게 된 뒤에야 열려서 그때는 이미 늦습니다.
+const PENDING_TAB_STATUSES: EstimateStatus[] = ["PENDING", "REJECTED"];
+
+// 대기 중인 견적 (#26) — quotationRequestId 없이, 유저의 활성 요청부터 찾아서 조회
 async function getPendingEstimates(userId: number, query: estimateListQuery) {
   const activeRequest = await prisma.quotationRequest.findFirst({
     where: { userId, quotationStatus: { in: ["PENDING", "ASSIGNED"] } },
@@ -55,7 +62,7 @@ async function getPendingEstimates(userId: number, query: estimateListQuery) {
 
   const estimates = await estimateRepository.getAllByQuotationRequest({
     quotationRequestId: activeRequest.id,
-    estimateStatus: query.status ?? "PENDING",
+    estimateStatus: query.status ?? PENDING_TAB_STATUSES,
     cursor: query.cursor,
     take: query.take,
   });

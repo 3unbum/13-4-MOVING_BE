@@ -195,7 +195,13 @@ async function getAllByQuotationRequest({
   take = 4,
 }: EstimateGetAllByQuotationRequestParams) {
   return prisma.estimate.findMany({
-    where: { quotationRequestId, ...(estimateStatus && { estimateStatus }) }, // 서비스 레이어에서 status 값으로 필터링 확정 견적
+    // 서비스 레이어에서 status 값으로 필터링. 배열이면 여러 상태를 한 번에 봅니다.
+    where: {
+      quotationRequestId,
+      ...(estimateStatus && {
+        estimateStatus: Array.isArray(estimateStatus) ? { in: estimateStatus } : estimateStatus,
+      }),
+    },
     orderBy: { id: "desc" },
     take,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
