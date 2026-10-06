@@ -3,6 +3,7 @@ import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { profileService } from "./profile.service";
 import { profileRepository } from "./profile.repository";
 import hashUtil from "../../common/utils/hash.util";
+import { mailer } from "../../config/mailer";
 import type { CustomerProfileCreateDto, MoverProfileCreateDto } from "./profile.schema";
 
 /**
@@ -31,6 +32,11 @@ jest.mock("./profile.repository", () => ({
     findMoverAccount: jest.fn(),
     updateCustomerAccount: jest.fn(),
     updateMoverAccount: jest.fn(),
+    findUserEmailById: jest.fn(),
+    replaceProfileEditVerificationCode: jest.fn(),
+    findProfileEditVerificationCodeByUserId: jest.fn(),
+    incrementProfileEditCodeFailedAttempts: jest.fn(),
+    completeProfileEditVerification: jest.fn(),
   },
 }));
 
@@ -39,11 +45,29 @@ jest.mock("../../common/utils/hash.util", () => ({
   default: {
     hashPassword: jest.fn(),
     verifyPassword: jest.fn(),
+    hashResetCode: jest.fn(),
+    compareResetCode: jest.fn(),
   },
+}));
+
+// 실제 Gmail로 나가지 않도록 발송기를 흉내낸다 (auth.service.test.ts와 동일한 패턴)
+jest.mock("../../config/mailer", () => ({
+  mailer: { sendMail: jest.fn() },
+  MAIL_FROM: '"무빙" <noreply@test.com>',
+}));
+
+// React Email 렌더링까지 실제로 돌리지 않고 메일 본문을 흉내낸다
+jest.mock("./profile-email-verification/profileEditCodeMail", () => ({
+  buildProfileEditCodeMail: jest.fn(async (code: string, ttlMinutes: number) => ({
+    subject: "[무빙] 프로필 수정 본인 확인 인증번호",
+    html: "<html>rendered</html>",
+    text: `인증번호: ${code} (${ttlMinutes}분)`,
+  })),
 }));
 
 const mockedRepository = jest.mocked(profileRepository);
 const mockedHashUtil = jest.mocked(hashUtil);
+const mockedMailer = jest.mocked(mailer);
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -554,5 +578,258 @@ describe("profileService.updateMoverAccount", () => {
 
     // Assertion
     await expect(result).rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
+describe("profileService.sendProfileEmailVerificationCode", () => {
+  const userId = 1;
+
+  test("가입된 유저면 6자리 인증번호를 해시로 저장하고, 같은 번호를 메일로 보낸다", async () => {
+    // Setup
+    mockedRepository.findUserEmailById.mockResolvedValue({
+      id: userId,
+      email: "test@moving.com",
+    } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedMailer.sendMail.mockResolvedValue({} as never);
+    const before = Date.now();
+
+    // Exercise
+    await profileService.sendProfileEmailVerificationCode(userId);
+
+    // Assertion
+    const [code] = mockedHashUtil.hashResetCode.mock.calls[0];
+    expect(code).toMatch(/^\d{6}$/);
+
+    const [calledUserId, codeHash, expiresAt] =
+      mockedRepository.replaceProfileEditVerificationCode.mock.calls[0];
+    expect(calledUserId).toBe(userId);
+    expect(codeHash).toBe("hashed-code");
+    // 유효시간 5분
+    expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(5 * 60 * 1000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(5 * 60 * 1000);
+
+    const [mail] = mockedMailer.sendMail.mock.calls[0];
+    expect(mail.to).toBe("test@moving.com");
+    // DB엔 해시만, 메일엔 평문 — 해시한 원본과 메일 속 번호가 같아야 한다
+    expect(mail.text).toContain(`인증번호: ${code}`);
+    expect(mail.html).toBe("<html>rendered</html>");
+  });
+
+  test("존재하지 않는 유저면 NOT_FOUND를 던지고 저장/발송 모두 하지 않는다", async () => {
+    // Setup
+    mockedRepository.findUserEmailById.mockResolvedValue(null);
+
+    // Exercise
+    const result = profileService.sendProfileEmailVerificationCode(userId);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ statusCode: 404 });
+    expect(mockedRepository.replaceProfileEditVerificationCode).not.toHaveBeenCalled();
+    expect(mockedMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test("같은 유저의 동시 요청으로 저장이 충돌하면 메일을 보내지 않고 조용히 끝난다", async () => {
+    // Setup
+    mockedRepository.findUserEmailById.mockResolvedValue({
+      id: userId,
+      email: "test@moving.com",
+    } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedRepository.replaceProfileEditVerificationCode.mockRejectedValue(makeP2002Error());
+
+    // Exercise
+    await expect(profileService.sendProfileEmailVerificationCode(userId)).resolves.toBeUndefined();
+
+    // Assertion
+    expect(mockedMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test("동시 요청 충돌이 아닌 다른 이유로 저장이 실패하면 에러를 그대로 전파한다", async () => {
+    // Setup
+    mockedRepository.findUserEmailById.mockResolvedValue({
+      id: userId,
+      email: "test@moving.com",
+    } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    const unknownError = new Error("db down");
+    mockedRepository.replaceProfileEditVerificationCode.mockRejectedValue(unknownError);
+
+    // Exercise
+    const result = profileService.sendProfileEmailVerificationCode(userId);
+
+    // Assertion
+    await expect(result).rejects.toBe(unknownError);
+  });
+
+  test("메일 발송이 실패하면 에러를 그대로 전파한다 (이미 인증된 요청이라 존재 여부를 숨길 필요가 없음)", async () => {
+    // Setup
+    mockedRepository.findUserEmailById.mockResolvedValue({
+      id: userId,
+      email: "test@moving.com",
+    } as never);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedRepository.replaceProfileEditVerificationCode.mockResolvedValue({} as never);
+    const smtpError = new Error("smtp down");
+    mockedMailer.sendMail.mockRejectedValue(smtpError as never);
+
+    // Exercise
+    const result = profileService.sendProfileEmailVerificationCode(userId);
+
+    // Assertion
+    await expect(result).rejects.toBe(smtpError);
+  });
+});
+
+describe("profileService.verifyProfileEmailVerificationCode", () => {
+  const userId = 1;
+  const code = "123456";
+
+  function makeEditCode(overrides = {}) {
+    return {
+      id: 7,
+      userId,
+      codeHash: "hashed-code",
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      failedAttempts: 0,
+      usedAt: null,
+      createdAt: new Date(),
+      ...overrides,
+    };
+  }
+
+  test("인증번호가 맞으면 사용 처리하고 끝난다", async () => {
+    // Setup
+    mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(makeEditCode());
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+    mockedRepository.completeProfileEditVerification.mockResolvedValue(true);
+
+    // Exercise
+    await profileService.verifyProfileEmailVerificationCode(userId, code);
+
+    // Assertion
+    expect(mockedHashUtil.compareResetCode).toHaveBeenCalledWith(code, "hashed-code");
+    expect(mockedRepository.completeProfileEditVerification).toHaveBeenCalledWith(7, userId);
+    expect(mockedRepository.incrementProfileEditCodeFailedAttempts).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["발송 이력이 없는 경우", null],
+    ["이미 사용한 인증번호", makeEditCode({ usedAt: new Date() })],
+  ])(
+    "%s이면 실제 불일치와 구분되지 않도록 같은 INVALID_PROFILE_EDIT_CODE를 던진다",
+    async (_label, editCode) => {
+      // Setup
+      mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(editCode as never);
+
+      // Exercise
+      const result = profileService.verifyProfileEmailVerificationCode(userId, code);
+
+      // Assertion
+      await expect(result).rejects.toMatchObject({
+        statusCode: 400,
+        code: ERROR_CODES.INVALID_PROFILE_EDIT_CODE,
+        message: "인증번호가 일치하지 않습니다",
+      });
+      expect(mockedRepository.completeProfileEditVerification).not.toHaveBeenCalled();
+    }
+  );
+
+  test("유효시간이 지났으면 번호를 비교하지 않고 PROFILE_EDIT_CODE_EXPIRED를 던진다", async () => {
+    // Setup
+    mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(
+      makeEditCode({ expiresAt: new Date(Date.now() - 1000) })
+    );
+
+    // Exercise
+    const result = profileService.verifyProfileEmailVerificationCode(userId, code);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.PROFILE_EDIT_CODE_EXPIRED,
+    });
+    expect(mockedHashUtil.compareResetCode).not.toHaveBeenCalled();
+  });
+
+  test("이미 5번 틀린 인증번호면 맞는 번호를 넣어도 PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED를 던진다", async () => {
+    // Setup
+    mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(
+      makeEditCode({ failedAttempts: 5 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+
+    // Exercise
+    const result = profileService.verifyProfileEmailVerificationCode(userId, code);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED,
+    });
+    expect(mockedRepository.completeProfileEditVerification).not.toHaveBeenCalled();
+  });
+
+  test("틀렸지만 기회가 남아 있으면(증가 후 1~4) 틀린 횟수를 올리고 INVALID_PROFILE_EDIT_CODE를 던진다", async () => {
+    // Setup
+    mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(
+      makeEditCode({ failedAttempts: 3 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementProfileEditCodeFailedAttempts.mockResolvedValue(4);
+
+    // Exercise
+    const result = profileService.verifyProfileEmailVerificationCode(userId, code);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ code: ERROR_CODES.INVALID_PROFILE_EDIT_CODE });
+    expect(mockedRepository.incrementProfileEditCodeFailedAttempts).toHaveBeenCalledWith(7, 5);
+  });
+
+  test("이번이 5번째로 틀린 것이면(증가 후 5) 그 인증번호를 무효로 보고 PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED를 던진다", async () => {
+    // Setup
+    mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(
+      makeEditCode({ failedAttempts: 4 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementProfileEditCodeFailedAttempts.mockResolvedValue(5);
+
+    // Exercise
+    const result = profileService.verifyProfileEmailVerificationCode(userId, code);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      code: ERROR_CODES.PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED,
+    });
+  });
+
+  test("동시 요청이 먼저 상한을 채워 횟수를 올리지 못했으면(null) PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED를 던진다", async () => {
+    // Setup: 읽은 시점엔 4였지만, 그 사이 다른 요청이 5를 채운 상황
+    mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(
+      makeEditCode({ failedAttempts: 4 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementProfileEditCodeFailedAttempts.mockResolvedValue(null);
+
+    // Exercise
+    const result = profileService.verifyProfileEmailVerificationCode(userId, code);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      code: ERROR_CODES.PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED,
+    });
+  });
+
+  test("동시 요청이 같은 코드를 먼저 사용 처리했으면(false) INVALID_PROFILE_EDIT_CODE를 던진다", async () => {
+    // Setup
+    mockedRepository.findProfileEditVerificationCodeByUserId.mockResolvedValue(makeEditCode());
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+    mockedRepository.completeProfileEditVerification.mockResolvedValue(false);
+
+    // Exercise
+    const result = profileService.verifyProfileEmailVerificationCode(userId, code);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ code: ERROR_CODES.INVALID_PROFILE_EDIT_CODE });
   });
 });

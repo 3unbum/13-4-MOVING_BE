@@ -102,7 +102,14 @@ export const moverProfileUpdateSchema = z
     path: ["newPassword"],
   });
 
+export const verifyProfileEmailVerificationCodeSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "인증번호 6자리를 입력해주세요"),
+});
+
 export type CustomerProfileCreateDto = z.infer<typeof customerProfileCreateSchema>;
 export type MoverProfileCreateDto = z.infer<typeof moverProfileCreateSchema>;
 export type CustomerProfileUpdateDto = z.infer<typeof customerProfileUpdateSchema>;
 export type MoverProfileUpdateDto = z.infer<typeof moverProfileUpdateSchema>;
+export type VerifyProfileEmailVerificationCodeDto = z.infer<
+  typeof verifyProfileEmailVerificationCodeSchema
+>;

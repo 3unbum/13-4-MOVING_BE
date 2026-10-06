@@ -4,6 +4,7 @@ import { requireAuth } from "../../common/middlewares/auth";
 import { requireRole } from "../../common/middlewares/role";
 import { requireProfile } from "../../common/middlewares/profile";
 import { validate } from "../../common/middlewares/validate";
+import { profileEditCodeRateLimiters } from "../../common/middlewares/rateLimit";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { PROFILE_IMAGE_MAX_SIZE_BYTES, isAllowedImageMimeType } from "./profile.constants";
@@ -12,6 +13,7 @@ import {
   moverProfileCreateSchema,
   customerProfileUpdateSchema,
   moverProfileUpdateSchema,
+  verifyProfileEmailVerificationCodeSchema,
 } from "./profile.schema";
 import { profileController } from "./profile.controller";
 
@@ -239,6 +241,68 @@ router.patch(
   requireProfile,
   validate(moverProfileUpdateSchema),
   profileController.updateMoverAccount
+);
+
+/**
+ * @swagger
+ * /profiles/email-verification/send:
+ *   post:
+ *     tags: [Profile]
+ *     summary: 프로필 수정 진입 이메일 인증번호 발송
+ *     description: |
+ *       내 정보 수정 화면 진입 시 본인 확인용 인증번호를 로그인 계정 이메일로 발송합니다.
+ *       소셜 로그인 계정도 비밀번호 없이 동일하게 이 절차로 본인 확인을 합니다.
+ *       비밀번호 재설정(찾기) 인증번호와는 별개의 테이블/절차입니다.
+ *       1분에 1회, 1시간에 5회, 1일에 10회로 제한됩니다.
+ *     responses:
+ *       204:
+ *         description: 발송 처리됨 (메일 발송 실패 여부는 응답에서 알 수 없습니다)
+ *       401:
+ *         description: 인증되지 않음
+ *       429:
+ *         description: 요청 횟수 초과 (TOO_MANY_REQUESTS)
+ */
+router.post(
+  "/email-verification/send",
+  requireAuth,
+  ...profileEditCodeRateLimiters,
+  profileController.sendProfileEmailVerificationCode
+);
+
+/**
+ * @swagger
+ * /profiles/email-verification/verify:
+ *   post:
+ *     tags: [Profile]
+ *     summary: 프로필 수정 진입 이메일 인증번호 확인
+ *     description: |
+ *       발송된 6자리 인증번호를 확인합니다. 성공 시 별도 토큰 발급 없이 현재 세션에서
+ *       내 정보 수정 화면 진입이 허용된 것으로 간주합니다(PATCH /profiles/customer|mover
+ *       자체는 기존처럼 requireAuth + requireProfile로만 보호됩니다).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code: { type: string, description: "6자리 숫자" }
+ *     responses:
+ *       204:
+ *         description: 인증 성공
+ *       400:
+ *         description: |
+ *           유효성 검사 실패(VALIDATION_ERROR), 인증번호 불일치(INVALID_PROFILE_EDIT_CODE),
+ *           만료(PROFILE_EDIT_CODE_EXPIRED), 시도 횟수 초과(PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED)
+ *       401:
+ *         description: 인증되지 않음
+ */
+router.post(
+  "/email-verification/verify",
+  requireAuth,
+  validate(verifyProfileEmailVerificationCodeSchema),
+  profileController.verifyProfileEmailVerificationCode
 );
 
 export default router;

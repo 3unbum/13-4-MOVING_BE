@@ -1,12 +1,18 @@
-import { randomUUID } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, S3_BUCKET_NAME, buildPublicFileUrl } from "../../config/s3";
+import { mailer, MAIL_FROM } from "../../config/mailer";
 import { Prisma } from "../../../generated/prisma/client";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import hashUtil from "../../common/utils/hash.util";
 import type { DetectedImageType } from "../../common/utils/fileSignature.util";
 import { profileRepository } from "./profile.repository";
+import {
+  PROFILE_EDIT_CODE_TTL_MINUTES,
+  PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS,
+} from "./profile.constants";
+import { buildProfileEditCodeMail } from "./profile-email-verification/profileEditCodeMail";
 import type {
   CustomerProfileCreateDto,
   MoverProfileCreateDto,
@@ -47,6 +53,18 @@ async function resolvePasswordUpdate(
 
   return hashUtil.hashPassword(dto.newPassword);
 }
+
+/** 미가입·코드 없음·사용된 코드도 같은 에러 — 다른 유저의 인증 시도 정보를 숨깁니다 */
+const invalidProfileEditCodeError = () =>
+  AppError.badRequest(ERROR_CODES.INVALID_PROFILE_EDIT_CODE, "인증번호가 일치하지 않습니다");
+
+const profileEditCodeAttemptsExceededError = () =>
+  AppError.badRequest(
+    ERROR_CODES.PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED,
+    "인증번호를 여러 번 틀려 무효가 되었습니다. 인증번호를 다시 받아주세요"
+  );
+
+const generateProfileEditCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
 export const profileService = {
   async uploadProfileImage(
@@ -269,5 +287,69 @@ export const profileService = {
       services: updated.moverServices.map((row) => row.service),
       regions: updated.moverRegions.map((row) => row.region),
     };
+  },
+
+  /** 발송 성공 여부와 무관하게 메일 발송을 시도합니다. 이미 인증된 사용자라 존재 여부를 숨길 필요는 없습니다. */
+  async sendProfileEmailVerificationCode(userId: number): Promise<void> {
+    const user = await profileRepository.findUserEmailById(userId);
+    if (!user) {
+      throw AppError.notFound("유저를 찾을 수 없습니다.");
+    }
+
+    const code = generateProfileEditCode();
+    const expiresAt = new Date(Date.now() + PROFILE_EDIT_CODE_TTL_MINUTES * 60 * 1000);
+    try {
+      await profileRepository.replaceProfileEditVerificationCode(
+        userId,
+        hashUtil.hashResetCode(code),
+        expiresAt
+      );
+    } catch (error) {
+      // 같은 유저의 동시 요청이 먼저 행을 만들면 userId 유니크가 막음 — 먼저 온 요청이 메일을 보내므로 여기선 재발송하지 않음
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return;
+      }
+      throw error;
+    }
+
+    await mailer.sendMail({
+      from: MAIL_FROM,
+      to: user.email,
+      ...(await buildProfileEditCodeMail(code, PROFILE_EDIT_CODE_TTL_MINUTES)),
+    });
+  },
+
+  async verifyProfileEmailVerificationCode(userId: number, code: string): Promise<void> {
+    const editCode = await profileRepository.findProfileEditVerificationCodeByUserId(userId);
+    if (!editCode || editCode.usedAt) {
+      throw invalidProfileEditCodeError();
+    }
+
+    if (editCode.expiresAt <= new Date()) {
+      throw AppError.badRequest(
+        ERROR_CODES.PROFILE_EDIT_CODE_EXPIRED,
+        "인증번호가 만료되었습니다. 인증번호를 다시 받아주세요"
+      );
+    }
+    if (editCode.failedAttempts >= PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS) {
+      throw profileEditCodeAttemptsExceededError();
+    }
+
+    if (!hashUtil.compareResetCode(code, editCode.codeHash)) {
+      const failedAttempts = await profileRepository.incrementProfileEditCodeFailedAttempts(
+        editCode.id,
+        PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS
+      );
+      // null: 동시 요청이 먼저 상한을 채움 / 상한 도달: 이번이 마지막 기회였음 → 둘 다 이제 이 코드는 무효
+      if (failedAttempts === null || failedAttempts >= PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS) {
+        throw profileEditCodeAttemptsExceededError();
+      }
+      throw invalidProfileEditCodeError();
+    }
+
+    const completed = await profileRepository.completeProfileEditVerification(editCode.id, userId);
+    if (!completed) {
+      throw invalidProfileEditCodeError();
+    }
   },
 };

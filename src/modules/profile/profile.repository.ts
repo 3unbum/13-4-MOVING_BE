@@ -123,4 +123,49 @@ export const profileRepository = {
       return profile;
     });
   },
+
+  /** 이메일 인증번호 발송 대상 조회 — 인증 코드 발송에 필요한 최소 정보만 가져옵니다. */
+  findUserEmailById(userId: number) {
+    return prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+  },
+
+  /**
+   * upsert 금지(삭제 후 생성) — id가 유지되면 이전 인증이 다시 유효해짐.
+   * 비밀번호 재설정 인증번호와 테이블이 분리되어 있어 서로 영향을 주지 않습니다.
+   */
+  replaceProfileEditVerificationCode(userId: number, codeHash: string, expiresAt: Date) {
+    return prisma.$transaction(async (tx) => {
+      await tx.profileEditVerificationCode.deleteMany({ where: { userId } });
+      return tx.profileEditVerificationCode.create({ data: { userId, codeHash, expiresAt } });
+    });
+  },
+
+  findProfileEditVerificationCodeByUserId(userId: number) {
+    return prisma.profileEditVerificationCode.findUnique({ where: { userId } });
+  },
+
+  /** 조건 확인과 증가를 한 쿼리로 — 동시 요청에도 상한을 넘지 않게. 상한이면 null */
+  async incrementProfileEditCodeFailedAttempts(
+    id: number,
+    maxAttempts: number
+  ): Promise<number | null> {
+    const updated = await prisma.profileEditVerificationCode.updateManyAndReturn({
+      where: { id, failedAttempts: { lt: maxAttempts } },
+      data: { failedAttempts: { increment: 1 } },
+      select: { failedAttempts: true },
+    });
+    return updated.length > 0 ? updated[0].failedAttempts : null;
+  },
+
+  /** usedAt 조건으로 먼저 사용 처리 — 같은 코드 동시 요청 중 하나만 통과. 처리했으면 true */
+  async completeProfileEditVerification(id: number, userId: number): Promise<boolean> {
+    const { count } = await prisma.profileEditVerificationCode.updateMany({
+      where: { id, userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    return count === 1;
+  },
 };
