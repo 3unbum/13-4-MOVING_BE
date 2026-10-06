@@ -27,31 +27,39 @@ import type {
   ProfileImageUploadResult,
 } from "./profile.type";
 
-/** currentPassword 검증 후 해시된 newPassword를 반환합니다. newPassword 미전송 시 undefined. */
+/**
+ * currentPassword를 보낸 요청이면 검증하고, newPassword도 있으면 해시해서 반환합니다.
+ * (#91 이후로도 newPassword가 없을 때는 검증을 건너뛰어, 틀린 currentPassword로도 다른 필드가
+ * 바뀌는 문제가 있었습니다 — 이제 currentPassword가 오면 newPassword 여부와 무관하게 검증합니다)
+ */
 async function resolvePasswordUpdate(
   currentPasswordHash: string | null,
   dto: { currentPassword?: string; newPassword?: string }
 ): Promise<string | undefined> {
-  if (!dto.newPassword) {
+  // 소셜 로그인 계정은 password가 없어서 비교 자체가 불가능합니다.
+  if (!currentPasswordHash) {
+    if (dto.newPassword) {
+      throw new AppError(
+        400,
+        ERROR_CODES.VALIDATION_ERROR,
+        "소셜 로그인 계정은 비밀번호를 변경할 수 없습니다."
+      );
+    }
     return undefined;
   }
 
-  // 소셜 로그인 계정은 password가 없어서 비교 자체가 불가능합니다.
-  if (!currentPasswordHash) {
-    throw new AppError(
-      400,
-      ERROR_CODES.VALIDATION_ERROR,
-      "소셜 로그인 계정은 비밀번호를 변경할 수 없습니다."
-    );
+  if (dto.currentPassword) {
+    const isValid = await hashUtil.verifyPassword(dto.currentPassword, currentPasswordHash);
+    if (!isValid) {
+      throw new AppError(
+        401,
+        ERROR_CODES.INVALID_CREDENTIALS,
+        "현재 비밀번호가 일치하지 않습니다."
+      );
+    }
   }
 
-  // newPassword가 있으면 스키마에서 currentPassword를 필수로 강제하지만, 타입은 optional이라 방어적으로 처리
-  const isValid = await hashUtil.verifyPassword(dto.currentPassword ?? "", currentPasswordHash);
-  if (!isValid) {
-    throw new AppError(401, ERROR_CODES.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
-  }
-
-  return hashUtil.hashPassword(dto.newPassword);
+  return dto.newPassword ? hashUtil.hashPassword(dto.newPassword) : undefined;
 }
 
 /** 미가입·코드 없음·사용된 코드도 같은 에러 — 다른 유저의 인증 시도 정보를 숨깁니다 */

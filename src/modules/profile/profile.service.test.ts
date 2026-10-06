@@ -475,6 +475,45 @@ describe("profileService.updateCustomerAccount", () => {
     expect(mockedRepository.updateCustomerAccount).not.toHaveBeenCalled();
   });
 
+  test("newPassword 없이 currentPassword만 보내도 검증하고 통과시킨다", async () => {
+    // Setup
+    mockedRepository.findCustomerAccount
+      .mockResolvedValueOnce(makeCustomerUser() as never)
+      .mockResolvedValueOnce(makeCustomerUser({ name: "홍길순" }) as never);
+    mockedHashUtil.verifyPassword.mockResolvedValue(true);
+
+    // Exercise
+    await profileService.updateCustomerAccount(1, {
+      name: "홍길순",
+      currentPassword: "OldPass1!",
+    });
+
+    // Assertion
+    expect(mockedHashUtil.verifyPassword).toHaveBeenCalledWith("OldPass1!", "hashed-old-password");
+    expect(mockedHashUtil.hashPassword).not.toHaveBeenCalled();
+    expect(mockedRepository.updateCustomerAccount).toHaveBeenCalledWith(1, {
+      account: { name: "홍길순" },
+      profile: {},
+      services: undefined,
+    });
+  });
+
+  test("newPassword 없이 currentPassword가 틀리면 다른 필드도 저장하지 않고 401을 던진다", async () => {
+    // Setup
+    mockedRepository.findCustomerAccount.mockResolvedValueOnce(makeCustomerUser() as never);
+    mockedHashUtil.verifyPassword.mockResolvedValue(false);
+
+    // Exercise
+    const result = profileService.updateCustomerAccount(1, {
+      name: "홍길순",
+      currentPassword: "WrongPass1!",
+    });
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ statusCode: 401 });
+    expect(mockedRepository.updateCustomerAccount).not.toHaveBeenCalled();
+  });
+
   test("소셜 로그인 계정(비밀번호 없음)이 newPassword를 보내면 400을 던진다", async () => {
     // Setup
     mockedRepository.findCustomerAccount.mockResolvedValueOnce(
@@ -490,6 +529,25 @@ describe("profileService.updateCustomerAccount", () => {
     // Assertion
     await expect(result).rejects.toMatchObject({ statusCode: 400 });
     expect(mockedRepository.updateCustomerAccount).not.toHaveBeenCalled();
+  });
+
+  test("소셜 로그인 계정(비밀번호 없음)은 currentPassword 없이도 다른 필드를 수정할 수 있다", async () => {
+    // Setup
+    mockedRepository.findCustomerAccount
+      .mockResolvedValueOnce(makeCustomerUser({ password: null }) as never)
+      .mockResolvedValueOnce(makeCustomerUser({ password: null, name: "홍길순" }) as never);
+
+    // Exercise
+    const result = await profileService.updateCustomerAccount(1, { name: "홍길순" });
+
+    // Assertion
+    expect(mockedHashUtil.verifyPassword).not.toHaveBeenCalled();
+    expect(mockedRepository.updateCustomerAccount).toHaveBeenCalledWith(1, {
+      account: { name: "홍길순" },
+      profile: {},
+      services: undefined,
+    });
+    expect(result.name).toBe("홍길순");
   });
 
   test("유저가 없으면 404를 던진다", async () => {
@@ -542,6 +600,22 @@ describe("profileService.updateMoverAccount", () => {
     const result = profileService.updateMoverAccount(5, {
       currentPassword: "WrongPass1!",
       newPassword: "NewPass1!",
+    });
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ statusCode: 401 });
+    expect(mockedRepository.updateMoverAccount).not.toHaveBeenCalled();
+  });
+
+  test("newPassword 없이 currentPassword가 틀리면 다른 필드도 저장하지 않고 401을 던진다", async () => {
+    // Setup
+    mockedRepository.findMoverAccount.mockResolvedValueOnce(makeMoverUser() as never);
+    mockedHashUtil.verifyPassword.mockResolvedValue(false);
+
+    // Exercise
+    const result = profileService.updateMoverAccount(5, {
+      bio: "새 소개",
+      currentPassword: "WrongPass1!",
     });
 
     // Assertion
