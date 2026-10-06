@@ -1,4 +1,8 @@
 @baseUrl = http://localhost:3001/api
+# 로그인에는 Turnstile 봇 검증이 걸려 있습니다. 로컬 BE의 TURNSTILE_SECRET_KEY가 Cloudflare 테스트 키(1x00...)면
+# 어떤 토큰이든 통과하지만, 토큰이 비어 있으면 400 BOT_CHECK_FAILED라 더미 값을 넣습니다.
+# (TURNSTILE_SECRET_KEY가 비어 있으면 검증 자체를 건너뜁니다)
+@turnstileToken = XXXX.DUMMY.TOKEN.XXXX
 
 ### 회원가입 - CUSTOMER
 POST {{baseUrl}}/auth/signup
@@ -32,7 +36,8 @@ Content-Type: application/json
 {
   "role": "CUSTOMER",
   "email": "customer1@test.com",
-  "password": "Password1!"
+  "password": "Password1!",
+  "turnstileToken": "{{turnstileToken}}"
 }
 
 ### 로그인 - MOVER
@@ -43,7 +48,8 @@ Content-Type: application/json
 {
   "role": "MOVER",
   "email": "mover1@test.com",
-  "password": "Password1!"
+  "password": "Password1!",
+  "turnstileToken": "{{turnstileToken}}"
 }
 
 ### 내 계정 정보 조회 (accessToken 쿠키 필요 - 바로 위에서 로그인한 role에 맞는 응답이 내려옴)
@@ -147,7 +153,8 @@ Content-Type: application/json
 {
   "role": "CUSTOMER",
   "email": "{{resetEmail}}",
-  "password": "NewPassword1!"
+  "password": "NewPassword1!",
+  "turnstileToken": "{{turnstileToken}}"
 }
 
 ### 토큰 갱신 (refreshToken 쿠키 필요 - 로그인 후 쿠키 자동 첨부)
@@ -155,6 +162,30 @@ POST {{baseUrl}}/auth/refresh
 
 ### 로그아웃 (refreshToken 쿠키 필요)
 POST {{baseUrl}}/auth/logout
+
+### 회원 탈퇴용 로그인 - 시드 계정 user05 (npm run prisma:seed, 비밀번호 test1234!)
+# @name withdrawLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "user05@moving.test",
+  "password": "test1234!",
+  "turnstileToken": "{{turnstileToken}}"
+}
+
+### 회원 탈퇴 → 204 + 인증 쿠키 삭제 (바로 위 로그인을 먼저 실행)
+# 쿠키가 자동으로 넘어가지 않는 환경이 있어 로그인 응답의 Set-Cookie를 그대로 보냅니다
+# 이메일 가입자는 password 필수(누락 400, 불일치 401), 소셜 가입자는 바디 생략
+# 확정된 이사가 있으면 409 CONFIRMED_MOVE_EXISTS 
+DELETE {{baseUrl}}/auth/me
+Content-Type: application/json
+Cookie: {{withdrawLogin.response.headers.Set-Cookie}}
+
+{
+  "password": "test1234!"
+}
 
 ### 소셜 로그인 진입/콜백 (provider: google | kakao | naver)
 # 프론트가 provider 인가 URL로 리다이렉트 후 받은 code/redirectUri 필요 - 실제 code 없이는 401
