@@ -161,6 +161,16 @@ export const authController = {
     }
   }) as RequestHandler,
 
+  withdraw: (async (req, res, next) => {
+    try {
+      await authService.withdraw(req.user!.id, req.body);
+      clearAuthCookies(res);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
   oauthLogin: (async (req, res, next) => {
     try {
       const provider = req.params.provider as OAuthProviderName;

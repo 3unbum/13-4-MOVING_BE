@@ -15,6 +15,7 @@ import {
   sendResetCodeSchema,
   verifyResetCodeSchema,
   resetPasswordSchema,
+  withdrawSchema,
   oauthProviderParamSchema,
   oauthLoginSchema,
   oauthSignupSchema,
@@ -412,6 +413,43 @@ router.post("/password-reset", validate(resetPasswordSchema), authController.res
  *         description: 토큰의 유저가 더 이상 존재하지 않음 (NOT_FOUND)
  */
 router.get("/me", requireAuth, authController.me);
+
+/**
+ * @swagger
+ * /auth/me:
+ *   delete:
+ *     tags: [Auth]
+ *     summary: 회원 탈퇴
+ *     description: |
+ *       계정 행은 남기고 개인정보(이름·이메일·전화번호·비밀번호·소셜 연결)를 지웁니다.
+ *       작성한 리뷰와 완료된 견적은 남고, 이름은 "탈퇴한 회원"(기사님은 "탈퇴한 기사님")으로 표시됩니다.
+ *       같은 이메일·소셜 계정으로 바로 다시 가입할 수 있습니다.
+ *
+ *       - 이메일 가입자는 password로 본인 확인이 필요합니다. 소셜 가입자는 보내지 않아도 됩니다.
+ *       - 확정된 이사(고객: 기사님 확정 후 이사 전 요청, 기사님: 확정된 견적)가 있으면 탈퇴할 수 없습니다.
+ *         이사일 다음 날 완료 처리되면 탈퇴할 수 있습니다.
+ *       - 성공 시 인증 쿠키를 지웁니다.
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               password: { type: string, description: "이메일 가입자만 필수" }
+ *     responses:
+ *       204:
+ *         description: 탈퇴 완료 — 인증 쿠키 clear
+ *       400:
+ *         description: 이메일 가입자가 password를 보내지 않음 (VALIDATION_ERROR)
+ *       401:
+ *         description: accessToken이 없거나 만료·위조됨(ACCESS_TOKEN_INVALID/ACCESS_TOKEN_EXPIRED) / 비밀번호 불일치(INVALID_CREDENTIALS)
+ *       404:
+ *         description: 이미 탈퇴했거나 존재하지 않는 계정 (NOT_FOUND)
+ *       409:
+ *         description: 확정된 이사가 있음 (CONFIRMED_MOVE_EXISTS) / 동시 요청 충돌 (CONCURRENT_REQUEST_CONFLICT)
+ */
+router.delete("/me", requireAuth, validate(withdrawSchema), authController.withdraw);
 
 /**
  * @swagger
