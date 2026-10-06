@@ -161,9 +161,9 @@ export const authController = {
     }
   }) as RequestHandler,
 
-  withdraw: (async (req, res, next) => {
+  deleteAccount: (async (req, res, next) => {
     try {
-      await authService.withdraw(req.user!.id, req.body);
+      await authService.deleteAccount(req.user!.id, req.body);
       clearAuthCookies(res);
       res.status(204).send();
     } catch (error) {

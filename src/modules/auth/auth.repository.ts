@@ -6,7 +6,7 @@ import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { REGION_LABELS } from "../mover/mover.type";
 
-const WITHDRAW_MAX_RETRIES = 3;
+const DELETE_ACCOUNT_MAX_RETRIES = 3;
 
 /** 탈퇴 후 User 행에 남기는 값. 행은 리뷰·완료된 견적이 참조하므로 지우지 않고 개인정보만 덮어씁니다 */
 const anonymizedUser = (userId: number, role: UserRole) => ({
@@ -23,7 +23,7 @@ const anonymizedUser = (userId: number, role: UserRole) => ({
 });
 
 /** 고객 탈퇴. 확정된 이사(ASSIGNED)가 있으면 아무것도 지우지 않고 false */
-async function withdrawCustomer(tx: PrismaTransaction, userId: number) {
+async function deleteCustomerAccount(tx: PrismaTransaction, userId: number) {
   const assignedCount = await tx.quotationRequest.count({
     where: { userId, quotationStatus: "ASSIGNED" },
   });
@@ -71,7 +71,7 @@ async function withdrawCustomer(tx: PrismaTransaction, userId: number) {
 }
 
 /** 기사님 탈퇴. 확정된 이사(CONFIRMED 견적)가 있으면 아무것도 지우지 않고 false */
-async function withdrawMover(tx: PrismaTransaction, userId: number) {
+async function deleteMoverAccount(tx: PrismaTransaction, userId: number) {
   const confirmedCount = await tx.estimate.count({
     where: { moverId: userId, estimateStatus: "CONFIRMED" },
   });
@@ -216,17 +216,17 @@ export const authRepository = {
    * 확인과 삭제 사이에 견적이 확정되면 확정된 이사를 지우게 되므로 Serializable로 묶고,
    * 직렬화 충돌(P2034)은 재시도합니다.
    */
-  async withdraw(userId: number, role: UserRole) {
-    for (let attempt = 1; attempt <= WITHDRAW_MAX_RETRIES; attempt++) {
+  async deleteAccount(userId: number, role: UserRole) {
+    for (let attempt = 1; attempt <= DELETE_ACCOUNT_MAX_RETRIES; attempt++) {
       try {
         return await prisma.$transaction(
           (tx: PrismaTransaction) =>
-            role === "MOVER" ? withdrawMover(tx, userId) : withdrawCustomer(tx, userId),
+            role === "MOVER" ? deleteMoverAccount(tx, userId) : deleteCustomerAccount(tx, userId),
           { isolationLevel: "Serializable" }
         );
       } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
-          if (attempt < WITHDRAW_MAX_RETRIES) continue;
+          if (attempt < DELETE_ACCOUNT_MAX_RETRIES) continue;
           throw AppError.conflict(
             ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
             "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."

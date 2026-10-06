@@ -164,7 +164,7 @@ POST {{baseUrl}}/auth/refresh
 POST {{baseUrl}}/auth/logout
 
 ### 회원 탈퇴용 로그인 - 시드 계정 user05 (npm run prisma:seed, 비밀번호 test1234!)
-# @name withdrawLogin
+# @name deleteAccountLogin
 POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
@@ -181,7 +181,7 @@ Content-Type: application/json
 # 확정된 이사가 있으면 409 CONFIRMED_MOVE_EXISTS 
 DELETE {{baseUrl}}/auth/me
 Content-Type: application/json
-Cookie: {{withdrawLogin.response.headers.Set-Cookie}}
+Cookie: {{deleteAccountLogin.response.headers.Set-Cookie}}
 
 {
   "password": "test1234!"

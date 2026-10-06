@@ -15,7 +15,7 @@ import {
   sendResetCodeSchema,
   verifyResetCodeSchema,
   resetPasswordSchema,
-  withdrawSchema,
+  deleteAccountSchema,
   oauthProviderParamSchema,
   oauthLoginSchema,
   oauthSignupSchema,
@@ -449,7 +449,7 @@ router.get("/me", requireAuth, authController.me);
  *       409:
  *         description: 확정된 이사가 있음 (CONFIRMED_MOVE_EXISTS) / 동시 요청 충돌 (CONCURRENT_REQUEST_CONFLICT)
  */
-router.delete("/me", requireAuth, validate(withdrawSchema), authController.withdraw);
+router.delete("/me", requireAuth, validate(deleteAccountSchema), authController.deleteAccount);
 
 /**
  * @swagger

@@ -39,7 +39,7 @@ jest.mock("./auth.repository", () => ({
     findPasswordResetCodeByUserId: jest.fn(),
     incrementResetCodeFailedAttempts: jest.fn(),
     completePasswordReset: jest.fn(),
-    withdraw: jest.fn(),
+    deleteAccount: jest.fn(),
   },
 }));
 
@@ -1023,7 +1023,7 @@ describe("authService.resetPassword", () => {
   });
 });
 
-describe("authService.withdraw", () => {
+describe("authService.deleteAccount", () => {
   const makeLocalUser = (overrides = {}) =>
     makeUser({ provider: "LOCAL", deletedAt: null, ...overrides });
 
@@ -1031,14 +1031,14 @@ describe("authService.withdraw", () => {
     // Setup
     mockedRepository.findById.mockResolvedValue(makeLocalUser() as never);
     mockedHashUtil.verifyPassword.mockResolvedValue(true);
-    mockedRepository.withdraw.mockResolvedValue(true);
+    mockedRepository.deleteAccount.mockResolvedValue(true);
 
     // Exercise
-    await authService.withdraw(1, { password: "Test1234!" });
+    await authService.deleteAccount(1, { password: "Test1234!" });
 
     // Assertion
     expect(mockedHashUtil.verifyPassword).toHaveBeenCalledWith("Test1234!", "hashed-password");
-    expect(mockedRepository.withdraw).toHaveBeenCalledWith(1, "CUSTOMER");
+    expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(1, "CUSTOMER");
   });
 
   test("이메일 가입자가 비밀번호를 보내지 않으면 400을 던지고 탈퇴하지 않는다", async () => {
@@ -1046,14 +1046,14 @@ describe("authService.withdraw", () => {
     mockedRepository.findById.mockResolvedValue(makeLocalUser() as never);
 
     // Exercise
-    const result = authService.withdraw(1, {});
+    const result = authService.deleteAccount(1, {});
 
     // Assertion
     await expect(result).rejects.toMatchObject({
       statusCode: 400,
       code: ERROR_CODES.VALIDATION_ERROR,
     });
-    expect(mockedRepository.withdraw).not.toHaveBeenCalled();
+    expect(mockedRepository.deleteAccount).not.toHaveBeenCalled();
   });
 
   test("이메일 가입자의 비밀번호가 틀리면 401을 던지고 탈퇴하지 않는다", async () => {
@@ -1062,14 +1062,14 @@ describe("authService.withdraw", () => {
     mockedHashUtil.verifyPassword.mockResolvedValue(false);
 
     // Exercise
-    const result = authService.withdraw(1, { password: "Wrong1234!" });
+    const result = authService.deleteAccount(1, { password: "Wrong1234!" });
 
     // Assertion
     await expect(result).rejects.toMatchObject({
       statusCode: 401,
       code: ERROR_CODES.INVALID_CREDENTIALS,
     });
-    expect(mockedRepository.withdraw).not.toHaveBeenCalled();
+    expect(mockedRepository.deleteAccount).not.toHaveBeenCalled();
   });
 
   test("소셜 가입자는 비밀번호 확인 없이 탈퇴한다", async () => {
@@ -1077,14 +1077,14 @@ describe("authService.withdraw", () => {
     mockedRepository.findById.mockResolvedValue(
       makeLocalUser({ provider: "KAKAO", password: null }) as never
     );
-    mockedRepository.withdraw.mockResolvedValue(true);
+    mockedRepository.deleteAccount.mockResolvedValue(true);
 
     // Exercise
-    await authService.withdraw(1, {});
+    await authService.deleteAccount(1, {});
 
     // Assertion
     expect(mockedHashUtil.verifyPassword).not.toHaveBeenCalled();
-    expect(mockedRepository.withdraw).toHaveBeenCalledWith(1, "CUSTOMER");
+    expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(1, "CUSTOMER");
   });
 
   test("기사님은 DB에 저장된 role로 탈퇴 처리를 넘긴다", async () => {
@@ -1092,23 +1092,23 @@ describe("authService.withdraw", () => {
     mockedRepository.findById.mockResolvedValue(
       makeLocalUser({ id: 2, role: "MOVER", provider: "GOOGLE", password: null }) as never
     );
-    mockedRepository.withdraw.mockResolvedValue(true);
+    mockedRepository.deleteAccount.mockResolvedValue(true);
 
     // Exercise
-    await authService.withdraw(2, {});
+    await authService.deleteAccount(2, {});
 
     // Assertion
-    expect(mockedRepository.withdraw).toHaveBeenCalledWith(2, "MOVER");
+    expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(2, "MOVER");
   });
 
   test("확정된 이사가 남아 탈퇴하지 못하면 409를 던진다", async () => {
     // Setup
     mockedRepository.findById.mockResolvedValue(makeLocalUser() as never);
     mockedHashUtil.verifyPassword.mockResolvedValue(true);
-    mockedRepository.withdraw.mockResolvedValue(false);
+    mockedRepository.deleteAccount.mockResolvedValue(false);
 
     // Exercise
-    const result = authService.withdraw(1, { password: "Test1234!" });
+    const result = authService.deleteAccount(1, { password: "Test1234!" });
 
     // Assertion
     await expect(result).rejects.toMatchObject({
@@ -1125,10 +1125,10 @@ describe("authService.withdraw", () => {
     mockedRepository.findById.mockResolvedValue(user as never);
 
     // Exercise
-    const result = authService.withdraw(1, { password: "Test1234!" });
+    const result = authService.deleteAccount(1, { password: "Test1234!" });
 
     // Assertion
     await expect(result).rejects.toMatchObject({ statusCode: 404 });
-    expect(mockedRepository.withdraw).not.toHaveBeenCalled();
+    expect(mockedRepository.deleteAccount).not.toHaveBeenCalled();
   });
 });

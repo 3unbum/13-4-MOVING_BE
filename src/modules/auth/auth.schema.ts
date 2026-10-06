@@ -50,7 +50,7 @@ export const resetPasswordSchema = z.object({
  * 이메일 가입자만 비밀번호로 본인 확인. 소셜 가입자는 비밀번호가 없어 보내지 않습니다.
  * 바디 없이 오면 req.body가 undefined라 객체 검증에 실패하므로 빈 객체로 채웁니다.
  */
-export const withdrawSchema = z
+export const deleteAccountSchema = z
   .object({
     password: z.string().min(1).optional(),
   })
@@ -77,7 +77,7 @@ export type FindEmailDto = z.infer<typeof findEmailSchema>;
 export type SendResetCodeDto = z.infer<typeof sendResetCodeSchema>;
 export type VerifyResetCodeDto = z.infer<typeof verifyResetCodeSchema>;
 export type ResetPasswordDto = z.infer<typeof resetPasswordSchema>;
-export type WithdrawDto = z.infer<typeof withdrawSchema>;
+export type DeleteAccountDto = z.infer<typeof deleteAccountSchema>;
 export type OAuthProviderParam = z.infer<typeof oauthProviderParamSchema>;
 export type OAuthLoginDto = z.infer<typeof oauthLoginSchema>;
 export type OAuthSignupDto = z.infer<typeof oauthSignupSchema>;
