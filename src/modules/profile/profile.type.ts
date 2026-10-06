@@ -33,6 +33,8 @@ export interface CustomerAccountResponse {
   phoneNumber: string;
   /** 프로필 등록 완료 여부 — false면 아래 프로필 필드는 비어있습니다 */
   hasProfile: boolean;
+  /** 비밀번호 보유 여부 — false면 소셜 로그인 계정 (비밀번호 변경/재확인 UI 숨김 처리용) */
+  hasPassword: boolean;
   image: string | null;
   region: string | null;
   services: string[];
@@ -45,6 +47,8 @@ export interface MoverAccountResponse {
   email: string;
   phoneNumber: string;
   hasProfile: boolean;
+  /** 비밀번호 보유 여부 — false면 소셜 로그인 계정 (비밀번호 변경/재확인 UI 숨김 처리용) */
+  hasPassword: boolean;
   image: string | null;
   nickName: string | null;
   career: number | null;
