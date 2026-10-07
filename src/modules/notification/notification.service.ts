@@ -68,6 +68,23 @@ function moverDisplayName(mover: {
  *
  * estimate/quotationRequest가 없으면 문구를 만들 수 없어 null을 돌려 목록에서 제외합니다.
  */
+/**
+ * 고객의 가장 최근 응답 — 같은 요청에서 처리한 건은 respondedAt이 같고 결정도 같아,
+ * 가장 늦은 respondedAt의 건들을 묶으면 방금 한 응답이 됩니다.
+ */
+function lastResponse(charges: { amount: number; status: string; respondedAt: Date | null }[]): {
+  amount: number;
+  approved: boolean;
+} {
+  const responded = charges.filter((c) => c.respondedAt);
+  const last = Math.max(0, ...responded.map((c) => c.respondedAt!.getTime()));
+  const batch = responded.filter((c) => c.respondedAt!.getTime() === last);
+  return {
+    amount: batch.reduce((sum, c) => sum + c.amount, 0),
+    approved: batch.some((c) => c.status === "APPROVED"),
+  };
+}
+
 function toItem(row: NotificationRow): NotificationItem | null {
   const base = {
     id: row.id,
@@ -103,6 +120,85 @@ function toItem(row: NotificationRow): NotificationItem | null {
           moverNickName: moverDisplayName(row.estimate.mover),
           category: row.estimate.quotationRequest.category,
           price: row.estimate.price,
+        },
+      };
+    }
+
+    case "PAYMENT_REQUEST": {
+      if (!row.estimate) return null;
+      return {
+        ...base,
+        type: "PAYMENT_REQUEST",
+        payload: {
+          moverNickName: moverDisplayName(row.estimate.mover),
+          category: row.estimate.quotationRequest.category,
+          price: row.estimate.price,
+        },
+      };
+    }
+
+    case "PAYMENT_COMPLETED": {
+      if (!row.estimate) return null;
+      return {
+        ...base,
+        type: "PAYMENT_COMPLETED",
+        payload: {
+          customerName: row.estimate.quotationRequest.user.name,
+          category: row.estimate.quotationRequest.category,
+          price: row.estimate.price,
+        },
+      };
+    }
+
+    case "EXTRA_CHARGE_PROPOSED": {
+      if (!row.estimate) return null;
+      return {
+        ...base,
+        type: "EXTRA_CHARGE_PROPOSED",
+        payload: {
+          moverNickName: moverDisplayName(row.estimate.mover),
+          category: row.estimate.quotationRequest.category,
+          // 방금 보낸 건 = 가장 최근 건
+          amount: row.estimate.extraCharges[row.estimate.extraCharges.length - 1]?.amount ?? null,
+        },
+      };
+    }
+
+    case "EXTRA_CHARGE_RESPONDED": {
+      if (!row.estimate) return null;
+      return {
+        ...base,
+        type: "EXTRA_CHARGE_RESPONDED",
+        payload: {
+          customerName: row.estimate.quotationRequest.user.name,
+          category: row.estimate.quotationRequest.category,
+          ...lastResponse(row.estimate.extraCharges),
+        },
+      };
+    }
+
+    case "DEPOSIT_PAID": {
+      if (!row.estimate) return null;
+      return {
+        ...base,
+        type: "DEPOSIT_PAID",
+        payload: {
+          customerName: row.estimate.quotationRequest.user.name,
+          category: row.estimate.quotationRequest.category,
+          amount: row.estimate.depositAmount,
+        },
+      };
+    }
+
+    case "DEPOSIT_EXPIRED": {
+      if (!row.estimate) return null;
+      return {
+        ...base,
+        type: "DEPOSIT_EXPIRED",
+        payload: {
+          moverNickName: moverDisplayName(row.estimate.mover),
+          customerName: row.estimate.quotationRequest.user.name,
+          category: row.estimate.quotationRequest.category,
         },
       };
     }

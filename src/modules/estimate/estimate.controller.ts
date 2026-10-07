@@ -1,6 +1,10 @@
 import type { Request, RequestHandler, Response } from "express";
 import * as estimateService from "./estimate.service";
-import type { estimateListQuery, moverRequestQuery } from "./estimate.type";
+import type {
+  paymentEstimateListQuery,
+  estimateListQuery,
+  moverRequestQuery,
+} from "./estimate.type";
 
 const wrap =
   (fn: (req: Request, res: Response) => Promise<void>): RequestHandler =>
@@ -17,7 +21,7 @@ export const estimateController = {
   getMoverEstimates: wrap(async (req, res) => {
     const result = await estimateService.getMoverEstimates(
       req.user!.id,
-      req.query as unknown as estimateListQuery
+      req.query as unknown as paymentEstimateListQuery
     );
     res.json({ data: result });
   }),
@@ -27,6 +31,15 @@ export const estimateController = {
     const result = await estimateService.getPendingEstimates(
       req.user!.id,
       req.query as unknown as estimateListQuery
+    );
+    res.json({ data: result });
+  }),
+
+  // GET /estimates (#140)
+  getCustomerEstimates: wrap(async (req, res) => {
+    const result = await estimateService.getCustomerEstimates(
+      req.user!.id,
+      req.query as unknown as paymentEstimateListQuery
     );
     res.json({ data: result });
   }),
@@ -75,6 +88,49 @@ export const estimateController = {
   // POST /estimates/{id}/confirm (#29)
   confirm: wrap(async (req, res) => {
     const result = await estimateService.confirm(Number(req.params.id), req.user!.id);
+    res.json({ data: result });
+  }),
+
+  // POST /mover/estimates/{id}/payment-request (#140)
+  requestPayment: wrap(async (req, res) => {
+    const result = await estimateService.requestPayment(Number(req.params.id), req.user!.id);
+    res.json({ data: result });
+  }),
+
+  // POST /mover/estimates/{id}/extra-charge (#140)
+  proposeExtraCharge: wrap(async (req, res) => {
+    const result = await estimateService.proposeExtraCharge(
+      Number(req.params.id),
+      req.user!.id,
+      req.body
+    );
+    res.json({ data: result });
+  }),
+
+  // PATCH /mover/estimates/{id}/extra-charge/{chargeId} (#140)
+  updateExtraCharge: wrap(async (req, res) => {
+    const result = await estimateService.updateExtraCharge(
+      Number(req.params.id),
+      Number(req.params.chargeId),
+      req.user!.id,
+      req.body
+    );
+    res.json({ data: result });
+  }),
+
+  // POST /estimates/{id}/extra-charge/respond (#140)
+  respondExtraCharge: wrap(async (req, res) => {
+    const result = await estimateService.respondExtraCharge(
+      Number(req.params.id),
+      req.user!.id,
+      req.body
+    );
+    res.json({ data: result });
+  }),
+
+  // POST /estimates/{id}/pay (#140)
+  pay: wrap(async (req, res) => {
+    const result = await estimateService.pay(Number(req.params.id), req.user!.id, req.body);
     res.json({ data: result });
   }),
 

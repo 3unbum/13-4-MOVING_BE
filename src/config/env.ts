@@ -84,6 +84,15 @@ export const env = {
    * ⚠️ 배포 환경에서 이 값이 비면 봇 검증이 조용히 꺼지니 Secrets의 `ENV`에 반드시 넣으세요.
    */
   TURNSTILE_SECRET_KEY: optional("TURNSTILE_SECRET_KEY", ""),
+
+  /**
+   * 토스페이먼츠 시크릿 키(`test_sk_...` / `test_gsk_...`). 비어 있으면 승인 API 호출을 건너뛰고
+   * 견적을 바로 결제 완료 처리합니다 (로컬·CI).
+   *
+   * 테스트 키로는 실제 청구가 일어나지 않습니다. 시크릿 키는 서버에서만 쓰고 FE에 내려주지 마세요.
+   * ⚠️ 배포 환경에서 이 값이 비면 토스 승인 없이 결제가 처리되니 Secrets의 `ENV`에 반드시 넣으세요.
+   */
+  TOSS_SECRET_KEY: optional("TOSS_SECRET_KEY", ""),
 } as const;
 
 export const isProduction = env.NODE_ENV === "production";
