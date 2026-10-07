@@ -81,6 +81,26 @@ export const dailyMailLimiter = rateLimit({
 
 export const refundDailyMailCount = () => dailyMailStore.decrement(DAILY_MAIL_KEY);
 
+/** 프로필 수정 진입 인증 메일 도배 방지 — requireAuth 뒤에 둬서 req.user.id로 셉니다 */
+const profileEditCodeUserLimiter = (windowMs: number, limit: number, message: string) =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: false,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => String(req.user?.id),
+    handler: tooManyRequestsHandler(message),
+  });
+
+const PROFILE_EDIT_CODE_LIMIT_MESSAGE =
+  "인증번호 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요";
+
+export const profileEditCodeRateLimiters = [
+  profileEditCodeUserLimiter(MINUTE, 1, "인증번호는 1분에 한 번만 요청할 수 있습니다"),
+  profileEditCodeUserLimiter(HOUR, 5, PROFILE_EDIT_CODE_LIMIT_MESSAGE),
+  profileEditCodeUserLimiter(DAY, 10, PROFILE_EDIT_CODE_LIMIT_MESSAGE),
+];
+
 /** 채팅 도배 방지 — 유저당 분당 30건. requireAuth 뒤에 둬서 req.user.id로 셉니다 */
 export const chatMessageRateLimiter = rateLimit({
   windowMs: MINUTE,

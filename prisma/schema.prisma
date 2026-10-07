@@ -127,22 +127,23 @@ model User {
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
 
-  customerProfile     CustomerProfile?
-  moverProfile        MoverProfile?
-  customerServices    CustomerService[]
-  moverServices       MoverService[]
-  moverRegions        MoverRegion[]
-  quotationRequests   QuotationRequest[]
-  targetedRequests    TargetedRequest[]
-  estimates           Estimate[]
-  reviews             Review[]
-  favorites           Favorite[]         @relation("FavoriteCustomer")
-  favoritedBy         Favorite[]         @relation("FavoriteMover")
-  notifications       Notification[]
-  passwordResetCode   PasswordResetCode?
-  chatRoomsAsCustomer ChatRoom[]         @relation("ChatRoomCustomer")
-  chatRoomsAsMover    ChatRoom[]         @relation("ChatRoomMover")
-  chatMessages        ChatMessage[]      @relation("ChatMessageSender")
+  customerProfile             CustomerProfile?
+  moverProfile                MoverProfile?
+  customerServices            CustomerService[]
+  moverServices               MoverService[]
+  moverRegions                MoverRegion[]
+  quotationRequests           QuotationRequest[]
+  targetedRequests            TargetedRequest[]
+  estimates                   Estimate[]
+  reviews                     Review[]
+  favorites                   Favorite[]    @relation("FavoriteCustomer")
+  favoritedBy                 Favorite[]    @relation("FavoriteMover")
+  notifications               Notification[]
+  passwordResetCode           PasswordResetCode?
+  profileEditVerificationCode ProfileEditVerificationCode?
+  chatRoomsAsCustomer         ChatRoom[]    @relation("ChatRoomCustomer")
+  chatRoomsAsMover            ChatRoom[]    @relation("ChatRoomMover")
+  chatMessages                ChatMessage[] @relation("ChatMessageSender")
 
   @@unique([role, provider, providerId])
   /// 로그인 조회용 — 유니크를 뺐으므로 인덱스는 별도로 유지합니다
@@ -167,6 +168,26 @@ model PasswordResetCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("password_reset_code")
+}
+
+/// 프로필 수정 진입용 이메일 인증번호 — 유저당 한 행만 유지합니다.
+/// 비밀번호 재설정 인증번호(PasswordResetCode)와 용도가 분리되어 있어 테이블도 분리합니다.
+/// 재발송 시 upsert가 아니라 삭제 후 생성해야 id가 바뀌어 이전 인증을 무효화합니다.
+model ProfileEditVerificationCode {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @unique @map("user_id")
+  /// 인증번호 평문은 저장하지 않습니다
+  codeHash       String    @map("code_hash")
+  expiresAt      DateTime  @map("expires_at")
+  /// 틀린 입력 횟수 — 상한 도달 시 이 코드는 무효
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  /// 인증 완료 시각 — 값이 있으면 재사용 거부
+  usedAt         DateTime? @map("used_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profile_edit_verification_code")
 }
 
 /// 이메일 회원가입 인증번호 — (email, role)당 한 행만 유지합니다.
