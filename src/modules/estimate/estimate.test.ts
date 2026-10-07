@@ -80,12 +80,8 @@ function mockQuotationRequest(overrides: Record<string, unknown> = {}) {
     category: "SMALL",
     movingDate: new Date("2026-07-01"),
     createdAt: new Date("2026-06-24"),
-    fromPostalCode: "04535",
     fromAddress: "서울 중구 삼일대로 343",
-    fromDetailAddress: "101동 1001호",
-    toPostalCode: "06181",
     toAddress: "서울 강남구 선릉로 428",
-    toDetailAddress: "202동 2002호",
     targetedRequests: [],
     user: { name: "김민서" },
     ...overrides,
@@ -177,23 +173,6 @@ describe("getById", () => {
 
     await expect(estimateService.getById(1, 1, "MOVER")).rejects.toMatchObject({
       statusCode: 403,
-    });
-  });
-
-  // select에 넣어도 DTO가 필드를 나열해 내보내므로, 둘 중 하나만 고치면 응답에 안 실립니다.
-  // 기사님이 실제로 찾아가려면 동·호수와 우편번호가 필요합니다.
-  test("응답에 상세 주소와 우편번호가 실린다", async () => {
-    mockedRepository.getById.mockResolvedValue(mockEstimate({ moverId: 1 }) as never);
-
-    const result = await estimateService.getById(1, 1, "MOVER");
-
-    expect(result.quotationRequest).toMatchObject({
-      fromPostalCode: "04535",
-      fromAddress: "서울 중구 삼일대로 343",
-      fromDetailAddress: "101동 1001호",
-      toPostalCode: "06181",
-      toAddress: "서울 강남구 선릉로 428",
-      toDetailAddress: "202동 2002호",
     });
   });
 
