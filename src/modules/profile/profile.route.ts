@@ -256,11 +256,15 @@ router.patch(
  *       1분에 1회, 1시간에 5회, 1일에 10회로 제한됩니다.
  *     responses:
  *       204:
- *         description: 발송 처리됨 (메일 발송 실패 여부는 응답에서 알 수 없습니다)
+ *         description: 인증번호 메일 발송 완료
  *       401:
  *         description: 인증되지 않음
  *       429:
  *         description: 요청 횟수 초과 (TOO_MANY_REQUESTS)
+ *       500:
+ *         description: |
+ *           메일 발송 실패(INTERNAL_ERROR). 비밀번호 재설정과 달리 로그인한 본인에게 보내는 것이라
+ *           실패를 숨기지 않습니다. 인증번호는 이미 새로 만들어진 상태이며, 요청 제한에는 포함되므로 1분 뒤 다시 요청해주세요.
  */
 router.post(
   "/email-verification/send",

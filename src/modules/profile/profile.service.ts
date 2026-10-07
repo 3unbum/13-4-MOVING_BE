@@ -297,7 +297,7 @@ export const profileService = {
     };
   },
 
-  /** 발송 성공 여부와 무관하게 메일 발송을 시도합니다. 이미 인증된 사용자라 존재 여부를 숨길 필요는 없습니다. */
+  /** 로그인한 본인 메일로 보내므로 가입 여부를 숨길 필요가 없어, 비밀번호 재설정과 달리 메일 발송 실패를 삼키지 않고 에러로 올립니다. */
   async sendProfileEmailVerificationCode(userId: number): Promise<void> {
     const user = await profileRepository.findUserEmailById(userId);
     if (!user) {
