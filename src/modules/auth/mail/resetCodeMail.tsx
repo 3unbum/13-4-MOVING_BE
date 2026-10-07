@@ -1,5 +1,5 @@
 import { render } from "@react-email/components";
-import { VerificationCodeEmail } from "../mail/verificationCodeMail.template";
+import { VerificationCodeEmail } from "./verificationCodeMail.template";
 
 const IGNORE_NOTICE =
   "본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.";
