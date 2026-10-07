@@ -2,7 +2,7 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { favoriteService } from "@/modules/favorite/favorite.service";
 import { moverRepository, type MoverListProfile } from "./mover.repository";
-import type { MoverListQuery, MoverReviewsQuery } from "./mover.schema";
+import type { MoverListQuery, MoverReviewImagesQuery, MoverReviewsQuery } from "./mover.schema";
 import { moverListCursorSchema } from "./mover.schema";
 import {
   parseRegionLabel,
@@ -15,6 +15,8 @@ import {
   type MoverListItemResponse,
   type MoverListResponse,
   type MoverRatingDistributionResponse,
+  type MoverReviewImageItemResponse,
+  type MoverReviewImagesResponse,
   type MoverReviewItemResponse,
   type MoverReviewsResponse,
 } from "./mover.type";
@@ -154,6 +156,7 @@ export const moverService = {
       comment: row.comment ?? "",
       createdAt: row.createdAt.toISOString(),
       customerName: row.customer.name,
+      imageUrls: row.images.map((image) => image.imageUrl),
     }));
 
     return {
@@ -189,6 +192,36 @@ export const moverService = {
     }
 
     return { ...distribution, totalCount };
+  },
+
+  async listReviewImages(
+    moverId: number,
+    query: MoverReviewImagesQuery
+  ): Promise<MoverReviewImagesResponse> {
+    const exists = await moverRepository.existsMover(moverId);
+    if (!exists) {
+      throw AppError.notFound("기사님을 찾을 수 없습니다");
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 5;
+    const [rows, totalCount] = await moverRepository.findConfirmedReviewImagesByMoverId(
+      moverId,
+      page,
+      limit
+    );
+
+    const data: MoverReviewImageItemResponse[] = rows.map((row) => ({
+      reviewId: row.reviewId,
+      imageUrl: row.imageUrl,
+    }));
+
+    return {
+      data,
+      page,
+      totalPages: totalCount === 0 ? 0 : Math.ceil(totalCount / limit),
+      totalCount,
+    };
   },
 
   createFavorite(userId: number, moverId: number) {

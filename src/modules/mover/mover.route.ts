@@ -3,7 +3,12 @@ import { optionalAuth, requireAuth } from "@/common/middlewares/auth";
 import { requireRole } from "@/common/middlewares/role";
 import { validate } from "@/common/middlewares/validate";
 import { moverController } from "./mover.controller";
-import { moverIdParamSchema, moverListQuerySchema, moverReviewsQuerySchema } from "./mover.schema";
+import {
+  moverIdParamSchema,
+  moverListQuerySchema,
+  moverReviewImagesQuerySchema,
+  moverReviewsQuerySchema,
+} from "./mover.schema";
 
 const router = Router();
 
@@ -122,6 +127,10 @@ router.get("/", validate(moverListQuerySchema, "query"), moverController.list);
  *                       comment: { type: string }
  *                       createdAt: { type: string, format: date-time }
  *                       customerName: { type: string }
+ *                       imageUrls:
+ *                         type: array
+ *                         items: { type: string }
+ *                         description: 정렬 순서대로 나열한 사진 URL
  *                 page: { type: integer }
  *                 totalPages: { type: integer }
  *                 totalCount: { type: integer }
@@ -133,6 +142,57 @@ router.get(
   validate(moverIdParamSchema, "params"),
   validate(moverReviewsQuerySchema, "query"),
   moverController.listReviews
+);
+
+/**
+ * @swagger
+ * /movers/{id}/reviews/images:
+ *   get:
+ *     tags: [Movers]
+ *     summary: 기사님 리뷰 사진 모음
+ *     description: |
+ *       확정된 리뷰의 사진만 조회합니다.
+ *       리뷰 최신순(createdAt desc, id desc) 다음 사진 정렬 순서입니다.
+ *       page, limit는 리뷰 목록과 같습니다. totalCount는 사진 수입니다.
+ *     security: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *         description: 기사님 userId
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 5, default: 5 }
+ *     responses:
+ *       200:
+ *         description: 리뷰 사진 목록
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       reviewId: { type: integer }
+ *                       imageUrl: { type: string }
+ *                 page: { type: integer }
+ *                 totalPages: { type: integer }
+ *                 totalCount: { type: integer }
+ *       404:
+ *         description: 기사님 없음
+ */
+router.get(
+  "/:id/reviews/images",
+  validate(moverIdParamSchema, "params"),
+  validate(moverReviewImagesQuerySchema, "query"),
+  moverController.listReviewImages
 );
 
 /**
