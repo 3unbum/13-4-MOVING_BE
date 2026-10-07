@@ -25,7 +25,11 @@ export const profileRepository = {
   async findCustomerAccount(userId: number) {
     return prisma.user.findUnique({
       where: { id: userId },
-      include: { customerProfile: true, customerServices: { select: { service: true } } },
+      include: {
+        customerProfile: true,
+        customerServices: { select: { service: true } },
+        profileEditVerificationCode: { select: { usedAt: true } },
+      },
     });
   },
 
@@ -37,6 +41,7 @@ export const profileRepository = {
         moverProfile: true,
         moverServices: { select: { service: true } },
         moverRegions: { select: { region: true } },
+        profileEditVerificationCode: { select: { usedAt: true } },
       },
     });
   },

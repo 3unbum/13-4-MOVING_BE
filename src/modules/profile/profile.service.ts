@@ -11,6 +11,7 @@ import { profileRepository } from "./profile.repository";
 import {
   PROFILE_EDIT_CODE_TTL_MINUTES,
   PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS,
+  PROFILE_EDIT_VERIFIED_TTL_MINUTES,
 } from "./profile.constants";
 import { buildProfileEditCodeMail } from "./profile-email-verification/profileEditCodeMail";
 import type {
@@ -26,6 +27,39 @@ import type {
   MoverAccountResponse,
   ProfileImageUploadResult,
 } from "./profile.type";
+
+/** 최근 PROFILE_EDIT_VERIFIED_TTL_MINUTES분 이내에 이메일 인증을 통과했는지 (usedAt = 인증 성공 시각) */
+function isProfileEditVerified(
+  verification: { usedAt: Date | null } | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!verification?.usedAt) return false;
+  return (
+    now.getTime() - verification.usedAt.getTime() <= PROFILE_EDIT_VERIFIED_TTL_MINUTES * 60_000
+  );
+}
+
+/**
+ * 계정 정보(이름·전화번호·비밀번호)를 바꾸는 요청은 이메일 인증을 통과한 뒤에만 허용합니다.
+ * 같은 PATCH를 쓰는 프로필 정보(이미지·별명·경력 등)만 바꾸는 요청은 확인하지 않습니다.
+ */
+function assertProfileEditVerifiedForAccountFields(
+  dto: { name?: string; phoneNumber?: string; currentPassword?: string; newPassword?: string },
+  verification: { usedAt: Date | null } | null | undefined
+): void {
+  const changesAccount =
+    dto.name !== undefined ||
+    dto.phoneNumber !== undefined ||
+    dto.currentPassword !== undefined ||
+    dto.newPassword !== undefined;
+  if (changesAccount && !isProfileEditVerified(verification)) {
+    throw new AppError(
+      403,
+      ERROR_CODES.PROFILE_EDIT_VERIFICATION_REQUIRED,
+      "이메일 인증 후 계정 정보를 수정할 수 있습니다."
+    );
+  }
+}
 
 /**
  * currentPassword를 보낸 요청이면 검증하고, newPassword도 있으면 해시해서 반환합니다.
@@ -166,6 +200,7 @@ export const profileService = {
       phoneNumber: user.phoneNumber,
       hasProfile: !!profile,
       hasPassword: !!user.password,
+      isProfileEditVerified: isProfileEditVerified(user.profileEditVerificationCode),
       image: profile?.image ?? null,
       region: profile?.region ?? null,
       services: user.customerServices.map((row) => row.service),
@@ -188,6 +223,7 @@ export const profileService = {
       phoneNumber: user.phoneNumber,
       hasProfile: !!profile,
       hasPassword: !!user.password,
+      isProfileEditVerified: isProfileEditVerified(user.profileEditVerificationCode),
       image: profile?.image ?? null,
       nickName: profile?.nickName ?? null,
       career: profile?.career ?? null,
@@ -208,6 +244,7 @@ export const profileService = {
       throw AppError.notFound("유저를 찾을 수 없습니다.");
     }
 
+    assertProfileEditVerifiedForAccountFields(dto, user.profileEditVerificationCode);
     const password = await resolvePasswordUpdate(user.password, dto);
 
     await profileRepository.updateCustomerAccount(userId, {
@@ -237,6 +274,7 @@ export const profileService = {
       phoneNumber: updated.phoneNumber,
       hasProfile: !!profile,
       hasPassword: !!updated.password,
+      isProfileEditVerified: isProfileEditVerified(updated.profileEditVerificationCode),
       image: profile?.image ?? null,
       region: profile?.region ?? null,
       services: updated.customerServices.map((row) => row.service),
@@ -252,6 +290,7 @@ export const profileService = {
       throw AppError.notFound("유저를 찾을 수 없습니다.");
     }
 
+    assertProfileEditVerifiedForAccountFields(dto, user.profileEditVerificationCode);
     const password = await resolvePasswordUpdate(user.password, dto);
 
     await profileRepository.updateMoverAccount(userId, {
@@ -286,6 +325,7 @@ export const profileService = {
       phoneNumber: updated.phoneNumber,
       hasProfile: !!profile,
       hasPassword: !!updated.password,
+      isProfileEditVerified: isProfileEditVerified(updated.profileEditVerificationCode),
       image: profile?.image ?? null,
       nickName: profile?.nickName ?? null,
       career: profile?.career ?? null,

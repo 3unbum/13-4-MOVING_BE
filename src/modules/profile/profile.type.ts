@@ -35,6 +35,8 @@ export interface CustomerAccountResponse {
   hasProfile: boolean;
   /** 비밀번호 보유 여부 — false면 소셜 로그인 계정 (비밀번호 변경/재확인 UI 숨김 처리용) */
   hasPassword: boolean;
+  /** 최근 PROFILE_EDIT_VERIFIED_TTL_MINUTES분 이내에 프로필 수정 이메일 인증을 통과했는지 — true면 FE는 인증 화면을 건너뜁니다 */
+  isProfileEditVerified: boolean;
   image: string | null;
   region: string | null;
   services: string[];
@@ -49,6 +51,8 @@ export interface MoverAccountResponse {
   hasProfile: boolean;
   /** 비밀번호 보유 여부 — false면 소셜 로그인 계정 (비밀번호 변경/재확인 UI 숨김 처리용) */
   hasPassword: boolean;
+  /** 최근 PROFILE_EDIT_VERIFIED_TTL_MINUTES분 이내에 프로필 수정 이메일 인증을 통과했는지 — true면 FE는 인증 화면을 건너뜁니다 */
+  isProfileEditVerified: boolean;
   image: string | null;
   nickName: string | null;
   career: number | null;

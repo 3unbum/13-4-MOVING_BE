@@ -103,6 +103,8 @@ function makeCustomerUser(overrides = {}) {
     password: "hashed-old-password",
     customerProfile: { image: "https://img", region: "SEOUL" },
     customerServices: [{ service: "SMALL" }],
+    // 기본은 방금 인증을 통과한 상태 — 인증이 필요한 케이스는 overrides로 바꿔 검증한다
+    profileEditVerificationCode: { usedAt: new Date() },
     ...overrides,
   };
 }
@@ -124,6 +126,7 @@ function makeMoverUser(overrides = {}) {
     },
     moverServices: [{ service: "SMALL" }],
     moverRegions: [{ region: "SEOUL" }],
+    profileEditVerificationCode: { usedAt: new Date() },
     ...overrides,
   };
 }
@@ -265,6 +268,7 @@ describe("profileService.getCustomerAccount", () => {
       email: "user@example.com",
       phoneNumber: "010-1234-5678",
       password: "hashed-old-password",
+      profileEditVerificationCode: { usedAt: new Date() },
       customerProfile: { image: "https://img", region: "SEOUL" },
       customerServices: [{ service: "SMALL" }, { service: "HOME" }],
     } as never);
@@ -280,6 +284,7 @@ describe("profileService.getCustomerAccount", () => {
       phoneNumber: "010-1234-5678",
       hasProfile: true,
       hasPassword: true,
+      isProfileEditVerified: true,
       image: "https://img",
       region: "SEOUL",
       services: ["SMALL", "HOME"],
@@ -307,6 +312,7 @@ describe("profileService.getCustomerAccount", () => {
       phoneNumber: "010-0000-0000",
       hasProfile: false,
       hasPassword: false,
+      isProfileEditVerified: false,
       image: null,
       region: null,
       services: [],
@@ -330,6 +336,7 @@ describe("profileService.getMoverAccount", () => {
       email: "driver@example.com",
       phoneNumber: "010-9999-8888",
       password: "hashed-old-password",
+      profileEditVerificationCode: { usedAt: new Date() },
       moverProfile: {
         image: "https://img",
         nickName: "김코드",
@@ -353,6 +360,7 @@ describe("profileService.getMoverAccount", () => {
       phoneNumber: "010-9999-8888",
       hasProfile: true,
       hasPassword: true,
+      isProfileEditVerified: true,
       image: "https://img",
       nickName: "김코드",
       career: 8,
@@ -386,6 +394,7 @@ describe("profileService.getMoverAccount", () => {
       phoneNumber: "010-1111-2222",
       hasProfile: false,
       hasPassword: false,
+      isProfileEditVerified: false,
       image: null,
       nickName: null,
       career: null,
@@ -403,6 +412,111 @@ describe("profileService.getMoverAccount", () => {
     await expect(profileService.getMoverAccount(999)).rejects.toMatchObject({
       statusCode: 404,
     });
+  });
+});
+
+describe("profileService.updateCustomerAccount — 이메일 인증 확인", () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+
+  test("인증 이력이 없으면 이름 수정은 403 PROFILE_EDIT_VERIFICATION_REQUIRED로 막고 저장하지 않는다", async () => {
+    mockedRepository.findCustomerAccount.mockResolvedValueOnce(
+      makeCustomerUser({ profileEditVerificationCode: null }) as never
+    );
+
+    await expect(profileService.updateCustomerAccount(1, { name: "홍길순" })).rejects.toMatchObject(
+      {
+        statusCode: 403,
+        code: "PROFILE_EDIT_VERIFICATION_REQUIRED",
+      }
+    );
+    expect(mockedRepository.updateCustomerAccount).not.toHaveBeenCalled();
+  });
+
+  test("인증번호만 받고 아직 확인하지 않았으면(usedAt 없음) 403으로 막는다", async () => {
+    mockedRepository.findCustomerAccount.mockResolvedValueOnce(
+      makeCustomerUser({ profileEditVerificationCode: { usedAt: null } }) as never
+    );
+
+    await expect(
+      profileService.updateCustomerAccount(1, { phoneNumber: "010-1111-2222" })
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(mockedRepository.updateCustomerAccount).not.toHaveBeenCalled();
+  });
+
+  test("인증한 지 30분이 지났으면 403으로 막는다", async () => {
+    mockedRepository.findCustomerAccount.mockResolvedValueOnce(
+      makeCustomerUser({ profileEditVerificationCode: { usedAt: minutesAgo(31) } }) as never
+    );
+
+    await expect(profileService.updateCustomerAccount(1, { name: "홍길순" })).rejects.toMatchObject(
+      {
+        statusCode: 403,
+        code: "PROFILE_EDIT_VERIFICATION_REQUIRED",
+      }
+    );
+  });
+
+  test("인증한 지 30분 이내면 계정 정보 수정을 허용한다", async () => {
+    mockedRepository.findCustomerAccount
+      .mockResolvedValueOnce(
+        makeCustomerUser({ profileEditVerificationCode: { usedAt: minutesAgo(29) } }) as never
+      )
+      .mockResolvedValueOnce(makeCustomerUser({ name: "홍길순" }) as never);
+
+    const result = await profileService.updateCustomerAccount(1, { name: "홍길순" });
+
+    expect(mockedRepository.updateCustomerAccount).toHaveBeenCalled();
+    expect(result.name).toBe("홍길순");
+  });
+
+  test("계정 정보 없이 프로필 정보(이미지·지역)만 바꾸면 인증 없이도 허용한다", async () => {
+    mockedRepository.findCustomerAccount
+      .mockResolvedValueOnce(makeCustomerUser({ profileEditVerificationCode: null }) as never)
+      .mockResolvedValueOnce(makeCustomerUser({ profileEditVerificationCode: null }) as never);
+
+    await profileService.updateCustomerAccount(1, { image: null, region: "BUSAN" });
+
+    expect(mockedRepository.updateCustomerAccount).toHaveBeenCalledWith(1, {
+      account: {},
+      profile: { image: null, region: "BUSAN" },
+      services: undefined,
+    });
+  });
+
+  test("조회 응답의 isProfileEditVerified는 인증 후 30분이 지나면 false가 된다", async () => {
+    mockedRepository.findCustomerAccount.mockResolvedValue(
+      makeCustomerUser({ profileEditVerificationCode: { usedAt: minutesAgo(31) } }) as never
+    );
+
+    const result = await profileService.getCustomerAccount(1);
+
+    expect(result.isProfileEditVerified).toBe(false);
+  });
+});
+
+describe("profileService.updateMoverAccount — 이메일 인증 확인", () => {
+  test("인증 이력이 없으면 비밀번호 변경 요청은 403으로 막는다", async () => {
+    mockedRepository.findMoverAccount.mockResolvedValueOnce(
+      makeMoverUser({ profileEditVerificationCode: null }) as never
+    );
+
+    await expect(
+      profileService.updateMoverAccount(5, {
+        currentPassword: "OldPass1!",
+        newPassword: "NewPass1!",
+      })
+    ).rejects.toMatchObject({ statusCode: 403, code: "PROFILE_EDIT_VERIFICATION_REQUIRED" });
+    expect(mockedRepository.updateMoverAccount).not.toHaveBeenCalled();
+  });
+
+  test("기사님 프로필 정보(별명·경력)만 바꾸는 요청은 인증 없이도 허용한다", async () => {
+    mockedRepository.findMoverAccount
+      .mockResolvedValueOnce(makeMoverUser({ profileEditVerificationCode: null }) as never)
+      .mockResolvedValueOnce(makeMoverUser({ profileEditVerificationCode: null }) as never);
+
+    await profileService.updateMoverAccount(5, { nickName: "새별명", career: 10 });
+
+    expect(mockedRepository.updateMoverAccount).toHaveBeenCalled();
   });
 });
 

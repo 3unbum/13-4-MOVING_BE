@@ -386,6 +386,7 @@ router.post("/password-reset", validate(resetPasswordSchema), authController.res
  *                     phoneNumber: "01012345678"
  *                     hasProfile: true
  *                     hasPassword: true
+ *                     isProfileEditVerified: false
  *                     image: null
  *                     region: SEOUL
  *                     services: [HOME, OFFICE]
@@ -400,6 +401,7 @@ router.post("/password-reset", validate(resetPasswordSchema), authController.res
  *                     phoneNumber: "01087654321"
  *                     hasProfile: true
  *                     hasPassword: true
+ *                     isProfileEditVerified: false
  *                     image: null
  *                     nickName: 믿음이사
  *                     career: 7

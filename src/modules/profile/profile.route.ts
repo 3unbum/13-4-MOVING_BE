@@ -171,7 +171,10 @@ router.get("/mover", requireAuth, requireRole("MOVER"), profileController.getMov
  *       401:
  *         description: 인증되지 않음, 또는 currentPassword 불일치 (INVALID_CREDENTIALS)
  *       403:
- *         description: CUSTOMER 계정이 아님 (FORBIDDEN)
+ *         description: |
+ *           CUSTOMER 계정이 아님 (FORBIDDEN), 또는 계정 정보(name/phoneNumber/currentPassword/newPassword)를
+ *           수정하는데 최근 30분 이내 이메일 인증이 없음 (PROFILE_EDIT_VERIFICATION_REQUIRED) —
+ *           POST /profiles/email-verification/send, verify로 다시 인증 후 재시도
  */
 router.patch(
   "/customer",
@@ -232,7 +235,10 @@ router.patch(
  *       401:
  *         description: 인증되지 않음, 또는 currentPassword 불일치 (INVALID_CREDENTIALS)
  *       403:
- *         description: MOVER 계정이 아님 (FORBIDDEN)
+ *         description: |
+ *           MOVER 계정이 아님 (FORBIDDEN), 또는 계정 정보(name/phoneNumber/currentPassword/newPassword)를
+ *           수정하는데 최근 30분 이내 이메일 인증이 없음 (PROFILE_EDIT_VERIFICATION_REQUIRED) —
+ *           POST /profiles/email-verification/send, verify로 다시 인증 후 재시도
  */
 router.patch(
   "/mover",
@@ -294,7 +300,7 @@ router.post(
  *               code: { type: string, description: "6자리 숫자" }
  *     responses:
  *       204:
- *         description: 인증 성공
+ *         description: 인증 성공 — 이후 30분간 계정 정보(이름/전화번호/비밀번호) 수정이 허용되고, 계정 조회 응답의 isProfileEditVerified가 true가 됩니다
  *       400:
  *         description: |
  *           유효성 검사 실패(VALIDATION_ERROR), 인증번호 불일치(INVALID_PROFILE_EDIT_CODE),
