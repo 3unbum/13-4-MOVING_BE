@@ -2,6 +2,7 @@ import {
   customerProfileUpdateSchema,
   moverProfileCreateSchema,
   moverProfileUpdateSchema,
+  verifyProfileEmailVerificationCodeSchema,
 } from "./profile.schema";
 
 const VALID_NEW_PASSWORD = "newPass123!";
@@ -16,6 +17,11 @@ const VALID_CREATE_BASE = {
 };
 
 describe("customerProfileUpdateSchema", () => {
+  it("image가 null이면 프로필 이미지 삭제 요청으로 통과한다", () => {
+    const result = customerProfileUpdateSchema.safeParse({ image: null });
+    expect(result.success).toBe(true);
+  });
+
   it("newPassword 없이 이름만 바꾸는 경우 통과한다", () => {
     const result = customerProfileUpdateSchema.safeParse({ name: "홍길동" });
     expect(result.success).toBe(true);
@@ -74,6 +80,11 @@ describe("moverProfileCreateSchema", () => {
 });
 
 describe("moverProfileUpdateSchema", () => {
+  it("image가 null이면 프로필 이미지 삭제 요청으로 통과한다", () => {
+    const result = moverProfileUpdateSchema.safeParse({ image: null });
+    expect(result.success).toBe(true);
+  });
+
   it("newPassword와 currentPassword가 다르면 통과한다", () => {
     const result = moverProfileUpdateSchema.safeParse({
       currentPassword: CURRENT_PASSWORD,
@@ -104,5 +115,21 @@ describe("moverProfileUpdateSchema", () => {
 
   it("career가 60년이면 통과한다", () => {
     expect(moverProfileUpdateSchema.safeParse({ career: 60 }).success).toBe(true);
+  });
+});
+
+describe("verifyProfileEmailVerificationCodeSchema", () => {
+  it("6자리 숫자면 통과한다", () => {
+    expect(verifyProfileEmailVerificationCodeSchema.safeParse({ code: "123456" }).success).toBe(
+      true
+    );
+  });
+
+  it.each([
+    ["5자리", "12345"],
+    ["7자리", "1234567"],
+    ["숫자가 아님", "12345a"],
+  ])("%s면 실패한다", (_label, code) => {
+    expect(verifyProfileEmailVerificationCodeSchema.safeParse({ code }).success).toBe(false);
   });
 });

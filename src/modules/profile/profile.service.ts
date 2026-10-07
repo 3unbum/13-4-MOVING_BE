@@ -1,12 +1,19 @@
-import { randomUUID } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, S3_BUCKET_NAME, buildPublicFileUrl } from "../../config/s3";
+import { mailer, MAIL_FROM } from "../../config/mailer";
 import { Prisma } from "../../../generated/prisma/client";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import hashUtil from "../../common/utils/hash.util";
 import type { DetectedImageType } from "../../common/utils/fileSignature.util";
 import { profileRepository } from "./profile.repository";
+import {
+  PROFILE_EDIT_CODE_TTL_MINUTES,
+  PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS,
+  PROFILE_EDIT_VERIFIED_TTL_MINUTES,
+} from "./profile.constants";
+import { buildProfileEditCodeMail } from "./profile-email-verification/profileEditCodeMail";
 import type {
   CustomerProfileCreateDto,
   MoverProfileCreateDto,
@@ -20,6 +27,39 @@ import type {
   MoverAccountResponse,
   ProfileImageUploadResult,
 } from "./profile.type";
+
+/** 최근 PROFILE_EDIT_VERIFIED_TTL_MINUTES분 이내에 이메일 인증을 통과했는지 (usedAt = 인증 성공 시각) */
+function isProfileEditVerified(
+  verification: { usedAt: Date | null } | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (!verification?.usedAt) return false;
+  return (
+    now.getTime() - verification.usedAt.getTime() <= PROFILE_EDIT_VERIFIED_TTL_MINUTES * 60_000
+  );
+}
+
+/**
+ * 계정 정보(이름·전화번호·비밀번호)를 바꾸는 요청은 이메일 인증을 통과한 뒤에만 허용합니다.
+ * 같은 PATCH를 쓰는 프로필 정보(이미지·별명·경력 등)만 바꾸는 요청은 확인하지 않습니다.
+ */
+function assertProfileEditVerifiedForAccountFields(
+  dto: { name?: string; phoneNumber?: string; currentPassword?: string; newPassword?: string },
+  verification: { usedAt: Date | null } | null | undefined
+): void {
+  const changesAccount =
+    dto.name !== undefined ||
+    dto.phoneNumber !== undefined ||
+    dto.currentPassword !== undefined ||
+    dto.newPassword !== undefined;
+  if (changesAccount && !isProfileEditVerified(verification)) {
+    throw new AppError(
+      403,
+      ERROR_CODES.PROFILE_EDIT_VERIFICATION_REQUIRED,
+      "이메일 인증 후 계정 정보를 수정할 수 있습니다."
+    );
+  }
+}
 
 /**
  * currentPassword를 보낸 요청이면 검증하고, newPassword도 있으면 해시해서 반환합니다.
@@ -55,6 +95,18 @@ async function resolvePasswordUpdate(
 
   return dto.newPassword ? hashUtil.hashPassword(dto.newPassword) : undefined;
 }
+
+/** 미가입·코드 없음·사용된 코드도 같은 에러 — 다른 유저의 인증 시도 정보를 숨깁니다 */
+const invalidProfileEditCodeError = () =>
+  AppError.badRequest(ERROR_CODES.INVALID_PROFILE_EDIT_CODE, "인증번호가 일치하지 않습니다");
+
+const profileEditCodeAttemptsExceededError = () =>
+  AppError.badRequest(
+    ERROR_CODES.PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED,
+    "인증번호를 여러 번 틀려 무효가 되었습니다. 인증번호를 다시 받아주세요"
+  );
+
+const generateProfileEditCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
 export const profileService = {
   async uploadProfileImage(
@@ -147,6 +199,8 @@ export const profileService = {
       email: user.email,
       phoneNumber: user.phoneNumber,
       hasProfile: !!profile,
+      hasPassword: !!user.password,
+      isProfileEditVerified: isProfileEditVerified(user.profileEditVerificationCode),
       image: profile?.image ?? null,
       region: profile?.region ?? null,
       services: user.customerServices.map((row) => row.service),
@@ -168,6 +222,8 @@ export const profileService = {
       email: user.email,
       phoneNumber: user.phoneNumber,
       hasProfile: !!profile,
+      hasPassword: !!user.password,
+      isProfileEditVerified: isProfileEditVerified(user.profileEditVerificationCode),
       image: profile?.image ?? null,
       nickName: profile?.nickName ?? null,
       career: profile?.career ?? null,
@@ -188,6 +244,7 @@ export const profileService = {
       throw AppError.notFound("유저를 찾을 수 없습니다.");
     }
 
+    assertProfileEditVerifiedForAccountFields(dto, user.profileEditVerificationCode);
     const password = await resolvePasswordUpdate(user.password, dto);
 
     await profileRepository.updateCustomerAccount(userId, {
@@ -216,6 +273,8 @@ export const profileService = {
       email: updated.email,
       phoneNumber: updated.phoneNumber,
       hasProfile: !!profile,
+      hasPassword: !!updated.password,
+      isProfileEditVerified: isProfileEditVerified(updated.profileEditVerificationCode),
       image: profile?.image ?? null,
       region: profile?.region ?? null,
       services: updated.customerServices.map((row) => row.service),
@@ -231,6 +290,7 @@ export const profileService = {
       throw AppError.notFound("유저를 찾을 수 없습니다.");
     }
 
+    assertProfileEditVerifiedForAccountFields(dto, user.profileEditVerificationCode);
     const password = await resolvePasswordUpdate(user.password, dto);
 
     await profileRepository.updateMoverAccount(userId, {
@@ -264,6 +324,8 @@ export const profileService = {
       email: updated.email,
       phoneNumber: updated.phoneNumber,
       hasProfile: !!profile,
+      hasPassword: !!updated.password,
+      isProfileEditVerified: isProfileEditVerified(updated.profileEditVerificationCode),
       image: profile?.image ?? null,
       nickName: profile?.nickName ?? null,
       career: profile?.career ?? null,
@@ -273,5 +335,69 @@ export const profileService = {
       services: updated.moverServices.map((row) => row.service),
       regions: updated.moverRegions.map((row) => row.region),
     };
+  },
+
+  /** 로그인한 본인 메일로 보내므로 가입 여부를 숨길 필요가 없어, 비밀번호 재설정과 달리 메일 발송 실패를 삼키지 않고 에러로 올립니다. */
+  async sendProfileEmailVerificationCode(userId: number): Promise<void> {
+    const user = await profileRepository.findUserEmailById(userId);
+    if (!user) {
+      throw AppError.notFound("유저를 찾을 수 없습니다.");
+    }
+
+    const code = generateProfileEditCode();
+    const expiresAt = new Date(Date.now() + PROFILE_EDIT_CODE_TTL_MINUTES * 60 * 1000);
+    try {
+      await profileRepository.replaceProfileEditVerificationCode(
+        userId,
+        hashUtil.hashResetCode(code),
+        expiresAt
+      );
+    } catch (error) {
+      // 같은 유저의 동시 요청이 먼저 행을 만들면 userId 유니크가 막음 — 먼저 온 요청이 메일을 보내므로 여기선 재발송하지 않음
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return;
+      }
+      throw error;
+    }
+
+    await mailer.sendMail({
+      from: MAIL_FROM,
+      to: user.email,
+      ...(await buildProfileEditCodeMail(code, PROFILE_EDIT_CODE_TTL_MINUTES)),
+    });
+  },
+
+  async verifyProfileEmailVerificationCode(userId: number, code: string): Promise<void> {
+    const editCode = await profileRepository.findProfileEditVerificationCodeByUserId(userId);
+    if (!editCode || editCode.usedAt) {
+      throw invalidProfileEditCodeError();
+    }
+
+    if (editCode.expiresAt <= new Date()) {
+      throw AppError.badRequest(
+        ERROR_CODES.PROFILE_EDIT_CODE_EXPIRED,
+        "인증번호가 만료되었습니다. 인증번호를 다시 받아주세요"
+      );
+    }
+    if (editCode.failedAttempts >= PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS) {
+      throw profileEditCodeAttemptsExceededError();
+    }
+
+    if (!hashUtil.compareResetCode(code, editCode.codeHash)) {
+      const failedAttempts = await profileRepository.incrementProfileEditCodeFailedAttempts(
+        editCode.id,
+        PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS
+      );
+      // null: 동시 요청이 먼저 상한을 채움 / 상한 도달: 이번이 마지막 기회였음 → 둘 다 이제 이 코드는 무효
+      if (failedAttempts === null || failedAttempts >= PROFILE_EDIT_CODE_MAX_FAILED_ATTEMPTS) {
+        throw profileEditCodeAttemptsExceededError();
+      }
+      throw invalidProfileEditCodeError();
+    }
+
+    const completed = await profileRepository.completeProfileEditVerification(editCode.id, userId);
+    if (!completed) {
+      throw invalidProfileEditCodeError();
+    }
   },
 };

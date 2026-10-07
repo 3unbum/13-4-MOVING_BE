@@ -72,3 +72,15 @@ Content-Type: application/json
   "services": ["HOME"],
   "regions": ["SEOUL"]
 }
+
+
+### 프로필 수정 진입 이메일 인증번호 발송 (accessToken 쿠키 필요 - 1분 1회 / 1시간 5회 / 1일 10회, 성공 시 204)
+POST {{baseUrl}}/profiles/email-verification/send
+
+### 프로필 수정 진입 이메일 인증번호 확인 (받은 6자리 숫자 입력, 성공 시 204)
+POST {{baseUrl}}/profiles/email-verification/verify
+Content-Type: application/json
+
+{
+  "code": "123456"
+}
