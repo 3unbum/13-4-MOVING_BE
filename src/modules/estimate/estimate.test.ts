@@ -131,7 +131,9 @@ describe("getPendingEstimates", () => {
     expect(mockedRepository.getAllByQuotationRequest).not.toHaveBeenCalled();
   });
 
-  test("활성 요청이 있으면 PENDING 견적만 조회한다", async () => {
+  // 반려를 빼면 요청이 살아있는 동안 고객이 반려 사실을 알 길이 없습니다.
+  // "받았던 견적"은 요청이 PENDING 이 아니게 된 뒤에야 열립니다.
+  test("활성 요청이 있으면 PENDING 과 REJECTED 를 함께 조회한다", async () => {
     mockedPrisma.quotationRequest.findFirst.mockResolvedValue({ id: 27 } as never);
     mockedRepository.getAllByQuotationRequest.mockResolvedValue([] as never);
 
@@ -139,10 +141,21 @@ describe("getPendingEstimates", () => {
 
     expect(mockedRepository.getAllByQuotationRequest).toHaveBeenCalledWith({
       quotationRequestId: 27,
-      estimateStatus: "PENDING",
+      estimateStatus: ["PENDING", "REJECTED"],
       cursor: undefined,
       take: undefined,
     });
+  });
+
+  test("status 를 명시하면 그 값만 조회한다", async () => {
+    mockedPrisma.quotationRequest.findFirst.mockResolvedValue({ id: 27 } as never);
+    mockedRepository.getAllByQuotationRequest.mockResolvedValue([] as never);
+
+    await estimateService.getPendingEstimates(1, { status: "CONFIRMED" });
+
+    expect(mockedRepository.getAllByQuotationRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ estimateStatus: "CONFIRMED" })
+    );
   });
 });
 

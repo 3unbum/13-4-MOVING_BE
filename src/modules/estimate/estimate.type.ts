@@ -23,7 +23,8 @@ export interface EstimateGetAllByMoverParams {
 
 export interface EstimateGetAllByQuotationRequestParams {
   quotationRequestId: number;
-  estimateStatus?: EstimateStatus;
+  /** 여러 상태를 한 번에 보려면 배열을 넘깁니다 (대기 중인 견적이 PENDING + REJECTED 를 함께 봅니다) */
+  estimateStatus?: EstimateStatus | EstimateStatus[];
   cursor?: number;
   take?: number;
 }
