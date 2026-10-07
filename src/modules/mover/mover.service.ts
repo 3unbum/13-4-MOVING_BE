@@ -140,10 +140,12 @@ export const moverService = {
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 5;
+    const sort = query.sort ?? "latest";
     const [rows, totalCount] = await moverRepository.findConfirmedReviewsByMoverId(
       moverId,
       page,
-      limit
+      limit,
+      sort
     );
 
     const data: MoverReviewItemResponse[] = rows.map((row) => ({
