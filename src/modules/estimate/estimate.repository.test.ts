@@ -1,11 +1,13 @@
 import { prisma } from "@/config/prisma";
+import type { EstimateStatus } from "../../../generated/prisma/enums.ts";
 import { createManyNotifications, createNotification } from "../notification/notification.service";
 import { publishNotification } from "../notification/notification.sse";
 import estimateRepository from "./estimate.repository";
 
-// 실제 DB는 쓰지 않고 트랜잭션 콜백만 직접 실행합니다
+// 실제 DB는 쓰지 않고 트랜잭션 콜백만 직접 실행합니다.
+// findMany는 조회 함수가 Prisma에 넘기는 where를 들여다보려고 함께 둡니다.
 jest.mock("@/config/prisma", () => ({
-  prisma: { $transaction: jest.fn() },
+  prisma: { $transaction: jest.fn(), estimate: { findMany: jest.fn() } },
 }));
 
 // repository가 재시도 판정에 쓰는 Prisma 네임스페이스만 대신합니다.
@@ -58,6 +60,38 @@ beforeEach(() => {
   (mockedPrisma.$transaction as unknown as jest.Mock).mockImplementation(
     (callback: (tx: FakeTx) => unknown) => callback(tx)
   );
+});
+
+describe("estimateRepository.getAllByQuotationRequest", () => {
+  const findMany = () => mockedPrisma.estimate.findMany as unknown as jest.Mock;
+
+  /** Prisma에 실제로 넘어간 where를 꺼냅니다 */
+  async function whereOf(estimateStatus?: EstimateStatus | EstimateStatus[]) {
+    findMany().mockResolvedValue([]);
+    await estimateRepository.getAllByQuotationRequest({ quotationRequestId: 27, estimateStatus });
+    const calls = findMany().mock.calls;
+    return calls[calls.length - 1]?.[0]?.where;
+  }
+
+  // 배열을 그대로 넘기면 Prisma가 거부합니다. { in: [...] }로 감싸야 합니다.
+  // 타입만으로는 `notIn`처럼 의미가 정반대인 오타를 잡지 못해 값까지 확인합니다.
+  test("상태 배열은 in 필터로 바뀐다", async () => {
+    expect(await whereOf(["PENDING", "REJECTED"])).toEqual({
+      quotationRequestId: 27,
+      estimateStatus: { in: ["PENDING", "REJECTED"] },
+    });
+  });
+
+  test("단일 상태는 그대로 넘어간다", async () => {
+    expect(await whereOf("CONFIRMED")).toEqual({
+      quotationRequestId: 27,
+      estimateStatus: "CONFIRMED",
+    });
+  });
+
+  test("상태를 안 주면 조건이 붙지 않는다", async () => {
+    expect(await whereOf(undefined)).toEqual({ quotationRequestId: 27 });
+  });
 });
 
 describe("estimateRepository.save", () => {
