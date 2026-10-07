@@ -367,7 +367,7 @@ model Review {
 }
 
 /// 리뷰 첨부 사진. 파일은 S3에 두고 URL만 저장합니다.
-/// PENDING일 때만 추가·삭제할 수 있고, 리뷰당 최대 3장은 API에서 막습니다.
+/// 본인 리뷰가 PENDING·CONFIRMED일 때 추가·삭제할 수 있고, 리뷰당 최대 3장은 API에서 막습니다.
 model ReviewImage {
   id        Int      @id @default(autoincrement())
   reviewId  Int      @map("review_id")

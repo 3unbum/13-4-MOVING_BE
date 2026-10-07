@@ -7,8 +7,8 @@ GET {{baseUrl}}/reviews/writable?take=10
 ### [CUSTOMER] 내가 작성한 리뷰 목록
 GET {{baseUrl}}/reviews/my?take=10
 
-### [CUSTOMER] 리뷰 사진 추가 (PENDING, 최대 3장, jpeg/png/webp, 5MB)
-# 로컬 파일 경로를 사진으로 바꿔서 보내세요. 확정 후에는 400/409입니다.
+### [CUSTOMER] 리뷰 사진 추가 (PENDING·CONFIRMED, 최대 3장, jpeg/png/webp, 5MB)
+# 로컬 파일 경로를 사진으로 바꿔서 보내세요. 3장을 넘으면 400입니다.
 POST {{baseUrl}}/reviews/1/images
 Content-Type: multipart/form-data; boundary=----review
 
@@ -19,7 +19,7 @@ Content-Type: image/png
 < ./review.png
 ------review--
 
-### [CUSTOMER] 리뷰 사진 삭제 (PENDING만, 응답 imageUrl을 그대로 보냅니다)
+### [CUSTOMER] 리뷰 사진 삭제 (PENDING·CONFIRMED, 응답 imageUrl을 그대로 보냅니다)
 DELETE {{baseUrl}}/reviews/1/images
 Content-Type: application/json
 

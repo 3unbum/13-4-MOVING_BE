@@ -77,7 +77,7 @@ router.get(
  *       404:
  *         description: 리뷰 없음
  *       409:
- *         description: 이미 확정된 리뷰
+ *         description: 수정할 수 없는 리뷰
  *   delete:
  *     tags: [Reviews]
  *     summary: 리뷰 사진 삭제
@@ -106,7 +106,7 @@ router.get(
  *       404:
  *         description: 리뷰 또는 사진 없음
  *       409:
- *         description: 이미 확정된 리뷰
+ *         description: 수정할 수 없는 리뷰
  */
 router.post(
   "/reviews/:id/images",
