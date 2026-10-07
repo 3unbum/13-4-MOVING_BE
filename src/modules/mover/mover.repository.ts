@@ -1,5 +1,6 @@
 import { prisma } from "@/config/prisma";
 import type { Prisma } from "../../../generated/prisma/client.ts";
+import type { MoverReviewSort } from "./mover.schema";
 import type { FindMoverListParams, MoverListCursor, MoverListSort } from "./mover.type";
 
 const moverDetailInclude = {
@@ -16,6 +17,21 @@ const listInclude = {
     },
   },
 };
+
+/** 페이지를 나눠도 순서가 흔들리지 않도록, 같은 정렬 값은 id로 한 번 더 가릅니다. */
+function buildReviewOrderBy(sort: MoverReviewSort): Prisma.ReviewOrderByWithRelationInput[] {
+  switch (sort) {
+    case "oldest":
+      return [{ createdAt: "asc" }, { id: "asc" }];
+    case "ratingDesc":
+      // 목록은 null 평점을 0으로 보여 줍니다. DESC의 기본 nulls first와 어긋나지 않게 뒤로 둡니다.
+      return [{ rating: { sort: "desc", nulls: "last" } }, { id: "desc" }];
+    case "ratingAsc":
+      return [{ rating: { sort: "asc", nulls: "first" } }, { id: "asc" }];
+    case "latest":
+      return [{ createdAt: "desc" }, { id: "desc" }];
+  }
+}
 
 function buildOrderBy(sort: MoverListSort): Prisma.MoverProfileOrderByWithRelationInput[] {
   switch (sort) {
@@ -127,7 +143,12 @@ export const moverRepository = {
     return row !== null;
   },
 
-  findConfirmedReviewsByMoverId(moverId: number, page: number, limit: number) {
+  findConfirmedReviewsByMoverId(
+    moverId: number,
+    page: number,
+    limit: number,
+    sort: MoverReviewSort
+  ) {
     const where = {
       status: "CONFIRMED" as const,
       estimate: { moverId },
@@ -136,7 +157,7 @@ export const moverRepository = {
     return prisma.$transaction([
       prisma.review.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: buildReviewOrderBy(sort),
         skip: (page - 1) * limit,
         take: limit,
         select: {

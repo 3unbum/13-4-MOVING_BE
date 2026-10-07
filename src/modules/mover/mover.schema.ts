@@ -52,6 +52,8 @@ export const moverListCursorSchema = z.object({
   confirmedCount: z.number().int(),
 });
 
+export const moverReviewSortSchema = z.enum(["oldest", "latest", "ratingDesc", "ratingAsc"]);
+
 export const moverReviewsQuerySchema = z.object({
   page: z.coerce.number().int().min(1, "page는 1 이상이어야 합니다").optional().default(1),
   limit: z.coerce
@@ -61,8 +63,10 @@ export const moverReviewsQuerySchema = z.object({
     .max(5, "limit는 최대 5입니다")
     .optional()
     .default(5),
+  sort: moverReviewSortSchema.optional().default("latest"),
 });
 
 export type MoverIdParam = z.infer<typeof moverIdParamSchema>;
 export type MoverListQuery = z.infer<typeof moverListQuerySchema>;
+export type MoverReviewSort = z.infer<typeof moverReviewSortSchema>;
 export type MoverReviewsQuery = z.infer<typeof moverReviewsQuerySchema>;

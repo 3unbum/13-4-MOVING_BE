@@ -97,6 +97,13 @@ router.get("/", validate(moverListQuerySchema, "query"), moverController.list);
  *       - in: query
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 5, default: 5 }
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [oldest, latest, ratingDesc, ratingAsc]
+ *           default: latest
+ *         description: 전체 목록 정렬. 같은 값이면 id로 순서를 고정합니다
  *     responses:
  *       200:
  *         description: 리뷰 목록
