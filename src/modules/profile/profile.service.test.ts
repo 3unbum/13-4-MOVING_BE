@@ -407,6 +407,26 @@ describe("profileService.getMoverAccount", () => {
 });
 
 describe("profileService.updateCustomerAccount", () => {
+  test("image가 null이면 프로필 이미지를 지우도록 repository에 null을 넘긴다", async () => {
+    // Setup
+    mockedRepository.findCustomerAccount
+      .mockResolvedValueOnce(makeCustomerUser() as never)
+      .mockResolvedValueOnce(
+        makeCustomerUser({ customerProfile: { image: null, region: "SEOUL" } }) as never
+      );
+
+    // Exercise
+    const result = await profileService.updateCustomerAccount(1, { image: null });
+
+    // Assertion
+    expect(mockedRepository.updateCustomerAccount).toHaveBeenCalledWith(1, {
+      account: {},
+      profile: { image: null },
+      services: undefined,
+    });
+    expect(result.image).toBeNull();
+  });
+
   test("비밀번호 변경 없이 계정+프로필 필드를 수정하고 최신 정보를 반환한다", async () => {
     // Setup
     mockedRepository.findCustomerAccount

@@ -46,7 +46,8 @@ export const customerProfileUpdateSchema = z
     phoneNumber: z.string().regex(PHONE_RULE, "올바른 전화번호 형식이 아닙니다").optional(),
     currentPassword: z.string().optional(),
     newPassword: newPasswordField.optional(),
-    image: z.string().optional(),
+    // null이면 프로필 이미지를 삭제, 생략하면 변경 없음
+    image: z.string().nullable().optional(),
     region: z.enum(RegionType).optional(),
     services: z
       .array(z.enum(ServiceType))
@@ -70,7 +71,8 @@ export const moverProfileUpdateSchema = z
     phoneNumber: z.string().regex(PHONE_RULE, "올바른 전화번호 형식이 아닙니다").optional(),
     currentPassword: z.string().optional(),
     newPassword: newPasswordField.optional(),
-    image: z.string().optional(),
+    // null이면 프로필 이미지를 삭제, 생략하면 변경 없음
+    image: z.string().nullable().optional(),
     nickName: z.string().min(1, "닉네임을 입력해주세요").optional(),
     career: z
       .number()

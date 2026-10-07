@@ -17,6 +17,11 @@ const VALID_CREATE_BASE = {
 };
 
 describe("customerProfileUpdateSchema", () => {
+  it("image가 null이면 프로필 이미지 삭제 요청으로 통과한다", () => {
+    const result = customerProfileUpdateSchema.safeParse({ image: null });
+    expect(result.success).toBe(true);
+  });
+
   it("newPassword 없이 이름만 바꾸는 경우 통과한다", () => {
     const result = customerProfileUpdateSchema.safeParse({ name: "홍길동" });
     expect(result.success).toBe(true);
@@ -75,6 +80,11 @@ describe("moverProfileCreateSchema", () => {
 });
 
 describe("moverProfileUpdateSchema", () => {
+  it("image가 null이면 프로필 이미지 삭제 요청으로 통과한다", () => {
+    const result = moverProfileUpdateSchema.safeParse({ image: null });
+    expect(result.success).toBe(true);
+  });
+
   it("newPassword와 currentPassword가 다르면 통과한다", () => {
     const result = moverProfileUpdateSchema.safeParse({
       currentPassword: CURRENT_PASSWORD,

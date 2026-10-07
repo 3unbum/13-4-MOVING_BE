@@ -152,7 +152,7 @@ router.get("/mover", requireAuth, requireRole("MOVER"), profileController.getMov
  *                 type: string
  *                 minLength: 8
  *                 description: 영문 + 숫자 + 특수문자 포함, 72바이트 이하
- *               image: { type: string, description: "POST /profiles/image 응답의 imageUrl" }
+ *               image: { type: string, nullable: true, description: "POST /profiles/image 응답의 imageUrl, null이면 프로필 이미지 삭제, 생략하면 변경 없음" }
  *               region:
  *                 type: string
  *                 enum: [SEOUL, GYEONGGI, INCHEON, GANGWON, CHUNGBUK, CHUNGNAM, SEJONG, DAEJEON, JEONBUK, JEONNAM, GWANGJU, GYEONGBUK, GYEONGNAM, DAEGU, ULSAN, BUSAN, JEJU]
@@ -207,7 +207,7 @@ router.patch(
  *                 type: string
  *                 minLength: 8
  *                 description: 영문 + 숫자 + 특수문자 포함, 72바이트 이하
- *               image: { type: string, description: "POST /profiles/image 응답의 imageUrl" }
+ *               image: { type: string, nullable: true, description: "POST /profiles/image 응답의 imageUrl, null이면 프로필 이미지 삭제, 생략하면 변경 없음" }
  *               nickName: { type: string, minLength: 1 }
  *               career: { type: integer, minimum: 0 }
  *               bio: { type: string, minLength: 1 }
