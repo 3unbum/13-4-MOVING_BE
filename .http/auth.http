@@ -177,15 +177,9 @@ Content-Type: application/json
 
 ### 회원 탈퇴 → 204 + 인증 쿠키 삭제 (바로 위 로그인을 먼저 실행)
 # 쿠키가 자동으로 넘어가지 않는 환경이 있어 로그인 응답의 Set-Cookie를 그대로 보냅니다
-# 이메일 가입자는 password 필수(누락 400, 불일치 401), 소셜 가입자는 바디 생략
-# 확정된 이사가 있으면 409 CONFIRMED_MOVE_EXISTS 
+# 확정된 이사가 있으면 409 CONFIRMED_MOVE_EXISTS
 DELETE {{baseUrl}}/auth/me
-Content-Type: application/json
 Cookie: {{deleteAccountLogin.response.headers.Set-Cookie}}
-
-{
-  "password": "test1234!"
-}
 
 ### 소셜 로그인 진입/콜백 (provider: google | kakao | naver)
 # 프론트가 provider 인가 URL로 리다이렉트 후 받은 code/redirectUri 필요 - 실제 code 없이는 401

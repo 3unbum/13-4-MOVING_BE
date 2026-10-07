@@ -163,7 +163,7 @@ export const authController = {
 
   deleteAccount: (async (req, res, next) => {
     try {
-      await authService.deleteAccount(req.user!.id, req.body);
+      await authService.deleteAccount(req.user!.id);
       clearAuthCookies(res);
       res.status(204).send();
     } catch (error) {

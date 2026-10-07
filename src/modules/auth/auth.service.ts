@@ -20,7 +20,6 @@ import type {
   SendResetCodeDto,
   VerifyResetCodeDto,
   ResetPasswordDto,
-  DeleteAccountDto,
   OAuthLoginDto,
   OAuthSignupDto,
 } from "./auth.schema";
@@ -275,23 +274,12 @@ export const authService = {
 
   /**
    * 회원 탈퇴. User 행은 남기고 개인정보만 지웁니다(삭제하면 리뷰·완료된 견적이 Cascade로 사라짐).
-   * 이메일 가입자는 비밀번호로 본인 확인하고, 확정된 이사가 남아 있으면 409.
+   * 확정된 이사가 남아 있으면 409.
    */
-  async deleteAccount(userId: User["id"], dto: DeleteAccountDto): Promise<void> {
+  async deleteAccount(userId: User["id"]): Promise<void> {
     const user = await authRepository.findById(userId);
     if (!user || user.deletedAt) {
       throw AppError.notFound("이미 탈퇴했거나 존재하지 않는 계정입니다");
-    }
-
-    if (user.provider === "LOCAL") {
-      if (!dto.password) {
-        throw AppError.badRequest(ERROR_CODES.VALIDATION_ERROR, "비밀번호를 입력해주세요");
-      }
-      const isValidPassword =
-        !!user.password && (await hashUtil.verifyPassword(dto.password, user.password));
-      if (!isValidPassword) {
-        throw new AppError(401, ERROR_CODES.INVALID_CREDENTIALS, "비밀번호가 일치하지 않습니다");
-      }
     }
 
     const deleted = await authRepository.deleteAccount(user.id, user.role);
