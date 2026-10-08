@@ -39,6 +39,7 @@ jest.mock("./auth.repository", () => ({
     findPasswordResetCodeByUserId: jest.fn(),
     incrementResetCodeFailedAttempts: jest.fn(),
     completePasswordReset: jest.fn(),
+    findForDeleteAccount: jest.fn(),
     deleteAccount: jest.fn(),
   },
 }));
@@ -1024,16 +1025,21 @@ describe("authService.resetPassword", () => {
 });
 
 describe("authService.deleteAccount", () => {
-  const makeLocalUser = (overrides = {}) =>
-    makeUser({ provider: "LOCAL", deletedAt: null, ...overrides });
+  const MINUTE = 60_000;
+  // 프로필 수정 진입 이메일 인증을 usedAgoMs 전에 통과한 계정
+  const makeDeletableUser = (overrides = {}, usedAgoMs: number | null = MINUTE) => ({
+    id: 1,
+    role: "CUSTOMER",
+    deletedAt: null,
+    profileEditVerificationCode:
+      usedAgoMs === null ? null : { usedAt: new Date(Date.now() - usedAgoMs) },
+    ...overrides,
+  });
 
-  test.each([
-    ["이메일 가입자", makeLocalUser()],
-    ["소셜 가입자", makeLocalUser({ provider: "KAKAO", password: null })],
-  ])("%s는 비밀번호 확인 없이 탈퇴한다", async (_label, user) => {
+  test("이메일 인증을 30분 안에 통과했으면 비밀번호 확인 없이 탈퇴한다", async () => {
     // Setup
-    mockedRepository.findById.mockResolvedValue(user as never);
-    mockedRepository.deleteAccount.mockResolvedValue(true);
+    mockedRepository.findForDeleteAccount.mockResolvedValue(makeDeletableUser() as never);
+    mockedRepository.deleteAccount.mockResolvedValue("DELETED");
 
     // Exercise
     await authService.deleteAccount(1);
@@ -1045,10 +1051,10 @@ describe("authService.deleteAccount", () => {
 
   test("기사님은 DB에 저장된 role로 탈퇴 처리를 넘긴다", async () => {
     // Setup
-    mockedRepository.findById.mockResolvedValue(
-      makeLocalUser({ id: 2, role: "MOVER", provider: "GOOGLE", password: null }) as never
+    mockedRepository.findForDeleteAccount.mockResolvedValue(
+      makeDeletableUser({ id: 2, role: "MOVER" }) as never
     );
-    mockedRepository.deleteAccount.mockResolvedValue(true);
+    mockedRepository.deleteAccount.mockResolvedValue("DELETED");
 
     // Exercise
     await authService.deleteAccount(2);
@@ -1057,27 +1063,54 @@ describe("authService.deleteAccount", () => {
     expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(2, "MOVER");
   });
 
-  test("확정된 이사가 남아 탈퇴하지 못하면 409를 던진다", async () => {
+  test.each([
+    ["인증 기록이 없으면", null],
+    ["인증 코드만 받고 확인하지 않았으면(usedAt 없음)", "unused"],
+    ["인증한 지 30분이 지났으면", 31 * MINUTE],
+  ] as const)("%s 403을 던지고 탈퇴하지 않는다", async (_label, usedAgo) => {
     // Setup
-    mockedRepository.findById.mockResolvedValue(makeLocalUser() as never);
-    mockedRepository.deleteAccount.mockResolvedValue(false);
+    const user =
+      usedAgo === "unused"
+        ? makeDeletableUser({ profileEditVerificationCode: { usedAt: null } })
+        : makeDeletableUser({}, usedAgo);
+    mockedRepository.findForDeleteAccount.mockResolvedValue(user as never);
 
     // Exercise
     const result = authService.deleteAccount(1);
 
     // Assertion
     await expect(result).rejects.toMatchObject({
-      statusCode: 409,
-      code: ERROR_CODES.CONFIRMED_MOVE_EXISTS,
+      statusCode: 403,
+      code: ERROR_CODES.PROFILE_EDIT_VERIFICATION_REQUIRED,
     });
+    expect(mockedRepository.deleteAccount).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["확정된 이사가 남아", "CONFIRMED_MOVE_EXISTS", ERROR_CODES.CONFIRMED_MOVE_EXISTS],
+    [
+      "잔금 결제가 끝나지 않은 견적이 남아",
+      "UNPAID_PAYMENT_EXISTS",
+      ERROR_CODES.UNPAID_PAYMENT_EXISTS,
+    ],
+  ] as const)("%s 탈퇴하지 못하면 409를 던진다", async (_label, blocked, code) => {
+    // Setup
+    mockedRepository.findForDeleteAccount.mockResolvedValue(makeDeletableUser() as never);
+    mockedRepository.deleteAccount.mockResolvedValue(blocked);
+
+    // Exercise
+    const result = authService.deleteAccount(1);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ statusCode: 409, code });
   });
 
   test.each([
     ["존재하지 않는 계정", null],
-    ["이미 탈퇴한 계정", makeLocalUser({ deletedAt: new Date() })],
+    ["이미 탈퇴한 계정", makeDeletableUser({ deletedAt: new Date() })],
   ])("%s이면 404를 던지고 탈퇴하지 않는다", async (_label, user) => {
     // Setup
-    mockedRepository.findById.mockResolvedValue(user as never);
+    mockedRepository.findForDeleteAccount.mockResolvedValue(user as never);
 
     // Exercise
     const result = authService.deleteAccount(1);

@@ -21,6 +21,8 @@ export const ERROR_CODES = {
   OAUTH_EMAIL_REQUIRED: "OAUTH_EMAIL_REQUIRED",
   /** 확정된 이사(고객 ASSIGNED 요청·기사님 CONFIRMED 견적)가 남아 탈퇴 불가. 이사일 다음 날 완료 처리되면 탈퇴할 수 있습니다 */
   CONFIRMED_MOVE_EXISTS: "CONFIRMED_MOVE_EXISTS",
+  /** 이사는 끝났지만 잔금 결제가 끝나지 않은 견적(COMPLETED + UNPAID)이 남아 탈퇴 불가 */
+  UNPAID_PAYMENT_EXISTS: "UNPAID_PAYMENT_EXISTS",
 
   // 비밀번호 재설정
   INVALID_RESET_CODE: "INVALID_RESET_CODE",
