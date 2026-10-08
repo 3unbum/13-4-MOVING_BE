@@ -43,6 +43,28 @@ export const ERROR_CODES = {
   ALREADY_ESTIMATED: "ALREADY_ESTIMATED",
   NOT_SERVICE_REGION: "NOT_SERVICE_REGION",
   ESTIMATE_ALREADY_PROCESSED: "ESTIMATE_ALREADY_PROCESSED",
+  /** 결제는 이사가 끝난(COMPLETED) 견적만 할 수 있습니다 */
+  ESTIMATE_NOT_COMPLETED: "ESTIMATE_NOT_COMPLETED",
+  /** 이미 결제한 견적입니다. 중복 클릭·동시 요청도 이 코드로 돌아옵니다 */
+  ALREADY_PAID: "ALREADY_PAID",
+  /** 결제 금액·주문 번호가 견적과 다르거나 토스페이먼츠 승인이 거절됐을 때 */
+  PAYMENT_FAILED: "PAYMENT_FAILED",
+  /** 기사님의 결제 요청은 견적당 1번만 보낼 수 있습니다 */
+  PAYMENT_REQUEST_ALREADY_SENT: "PAYMENT_REQUEST_ALREADY_SENT",
+  /** 선수금을 받는 단계(확정 + 선수금 설정됨)가 아닌 견적 */
+  DEPOSIT_NOT_REQUIRED: "DEPOSIT_NOT_REQUIRED",
+  /** 선수금 결제 기한(확정 후 48시간)이 지났습니다 */
+  DEPOSIT_EXPIRED: "DEPOSIT_EXPIRED",
+  /** 잔금은 선수금을 낸 뒤에만 결제할 수 있습니다 */
+  DEPOSIT_NOT_PAID: "DEPOSIT_NOT_PAID",
+  /** 추가 금액은 견적당 1번만 요청할 수 있습니다 */
+  EXTRA_CHARGE_ALREADY_REQUESTED: "EXTRA_CHARGE_ALREADY_REQUESTED",
+  /** 추가 금액이 견적 금액의 20%를 넘습니다 */
+  EXTRA_CHARGE_TOO_LARGE: "EXTRA_CHARGE_TOO_LARGE",
+  /** 응답할 추가 금액 요청이 없습니다 (요청한 적 없거나 이미 응답함) */
+  EXTRA_CHARGE_NOT_PENDING: "EXTRA_CHARGE_NOT_PENDING",
+  /** 추가 금액 요청에 먼저 응답해야 잔금을 결제할 수 있습니다 */
+  EXTRA_CHARGE_PENDING: "EXTRA_CHARGE_PENDING",
 
   // 리뷰
   REVIEW_ALREADY_CONFIRMED: "REVIEW_ALREADY_CONFIRMED",

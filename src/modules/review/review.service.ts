@@ -180,6 +180,14 @@ export const reviewService = {
       };
     }
 
+    // 처음 작성하는 리뷰는 결제를 마친 뒤에만 쓸 수 있다 (이미 작성한 리뷰의 수정은 위에서 처리)
+    if (review.estimate.paymentStatus !== "PAID") {
+      throw AppError.badRequest(
+        ERROR_CODES.VALIDATION_ERROR,
+        "결제를 완료한 뒤에 리뷰를 작성할 수 있습니다"
+      );
+    }
+
     const stats = await reviewRepository.confirmOwned(
       reviewId,
       customerId,
