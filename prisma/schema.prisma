@@ -395,12 +395,32 @@ model Review {
   /// estimate가 COMPLETED가 되는 순간 PENDING으로 자동 생성, 작성하면 CONFIRMED
   status     ReviewStatus @default(PENDING) @map("review_status")
   createdAt  DateTime     @default(now()) @map("created_at")
+  /// 확정 후 내용·사진을 고친 시각. 한 번도 수정하지 않으면 null
+  editedAt   DateTime?    @map("edited_at")
 
-  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  customer User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  estimate Estimate     @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  customer User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// 첨부 사진. 리뷰당 최대 3장은 DB가 보장하지 않으므로 API에서 막습니다.
+  images   ReviewImage[]
 
   @@index([customerId, status])
   @@map("review")
+}
+
+/// 리뷰 첨부 사진. 파일은 S3에 두고 URL만 저장합니다.
+/// 본인 리뷰가 PENDING·CONFIRMED일 때 추가·삭제할 수 있고, 리뷰당 최대 3장은 API에서 막습니다.
+model ReviewImage {
+  id        Int      @id @default(autoincrement())
+  reviewId  Int      @map("review_id")
+  imageUrl  String   @map("image_url")
+  /// 같은 리뷰 안에서의 표시 순서. 작을수록 앞입니다.
+  sortOrder Int      @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, sortOrder])
+  @@map("review_image")
 }
 
 model Favorite {

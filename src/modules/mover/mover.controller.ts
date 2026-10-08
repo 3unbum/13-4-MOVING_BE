@@ -1,6 +1,11 @@
 import type { RequestHandler } from "express";
 import { AppError } from "@/common/errors/AppError";
-import type { MoverIdParam, MoverListQuery, MoverReviewsQuery } from "./mover.schema";
+import type {
+  MoverIdParam,
+  MoverListQuery,
+  MoverReviewImagesQuery,
+  MoverReviewsQuery,
+} from "./mover.schema";
 import { moverService } from "./mover.service";
 
 function getUserId(req: { user?: { id: number } }) {
@@ -34,6 +39,19 @@ export const moverController = {
     try {
       const { id } = req.params as unknown as MoverIdParam;
       const result = await moverService.listReviews(id, req.query as unknown as MoverReviewsQuery);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  listReviewImages: (async (req, res, next) => {
+    try {
+      const { id } = req.params as unknown as MoverIdParam;
+      const result = await moverService.listReviewImages(
+        id,
+        req.query as unknown as MoverReviewImagesQuery
+      );
       res.json(result);
     } catch (error) {
       next(error);

@@ -166,9 +166,37 @@ export const moverRepository = {
           comment: true,
           createdAt: true,
           customer: { select: { name: true } },
+          images: {
+            orderBy: { sortOrder: "asc" },
+            select: { imageUrl: true },
+          },
         },
       }),
       prisma.review.count({ where }),
+    ]);
+  },
+
+  findConfirmedReviewImagesByMoverId(moverId: number, page: number, limit: number) {
+    const where = {
+      review: {
+        status: "CONFIRMED" as const,
+        estimate: { moverId },
+      },
+    };
+
+    return prisma.$transaction([
+      prisma.reviewImage.findMany({
+        where,
+        orderBy: [
+          { review: { createdAt: "desc" } },
+          { review: { id: "desc" } },
+          { sortOrder: "asc" },
+        ],
+        skip: (page - 1) * limit,
+        take: limit,
+        select: { reviewId: true, imageUrl: true },
+      }),
+      prisma.reviewImage.count({ where }),
     ]);
   },
 
