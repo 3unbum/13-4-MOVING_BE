@@ -264,8 +264,11 @@ export const authService = {
       throw invalidCodeError(ERROR_CODES.INVALID_SIGNUP_CODE);
     }
 
-    // 확인하는 사이 재발송으로 행이 바뀌었으면 이 인증번호는 이미 무효
-    const verified = await authRepository.markSignupCodeVerified(signupCode.id);
+    // 확인하는 사이 재발송으로 행이 바뀌었거나, 만료됐거나, 동시 오답 요청이 상한을 채웠으면 이 인증번호는 이미 무효
+    const verified = await authRepository.markSignupCodeVerified(
+      signupCode.id,
+      SIGNUP_CODE_MAX_FAILED_ATTEMPTS
+    );
     if (!verified) throw invalidCodeError(ERROR_CODES.INVALID_SIGNUP_CODE);
   },
 

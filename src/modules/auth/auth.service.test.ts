@@ -874,7 +874,7 @@ describe("authService.verifySignupCode", () => {
       "CUSTOMER"
     );
     expect(mockedHashUtil.compareResetCode).toHaveBeenCalledWith("123456", "hashed-code");
-    expect(mockedRepository.markSignupCodeVerified).toHaveBeenCalledWith(9);
+    expect(mockedRepository.markSignupCodeVerified).toHaveBeenCalledWith(9, 5);
     expect(mockedRepository.incrementSignupCodeFailedAttempts).not.toHaveBeenCalled();
   });
 
@@ -964,7 +964,7 @@ describe("authService.verifySignupCode", () => {
     });
   });
 
-  test("확인하는 사이 재발송으로 행이 바뀌어 기록하지 못했으면 INVALID_SIGNUP_CODE를 던진다", async () => {
+  test("확인하는 사이 행이 바뀌었거나 만료·상한에 걸려 기록하지 못했으면 INVALID_SIGNUP_CODE를 던진다", async () => {
     // Setup
     mockedRepository.findSignupVerificationCode.mockResolvedValue(makeSignupCode());
     mockedHashUtil.compareResetCode.mockReturnValue(true);

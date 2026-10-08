@@ -121,10 +121,13 @@ export const authRepository = {
     return updated.length > 0 ? updated[0].failedAttempts : null;
   },
 
-  /** 인증 성공 기록. 그 사이 재발송으로 행이 바뀌었으면 false */
-  async markSignupCodeVerified(id: number): Promise<boolean> {
+  /**
+   * 인증 성공 기록. 만료·실패 횟수도 WHERE로 다시 확인 — 동시 오답 요청이 먼저 상한을 채웠으면 정답이어도 기록하지 않음.
+   * 그 사이 재발송으로 행이 바뀌었거나 위 조건에 걸리면 false
+   */
+  async markSignupCodeVerified(id: number, maxAttempts: number): Promise<boolean> {
     const { count } = await prisma.signupEmailVerificationCode.updateMany({
-      where: { id },
+      where: { id, expiresAt: { gt: new Date() }, failedAttempts: { lt: maxAttempts } },
       data: { verifiedAt: new Date() },
     });
     return count === 1;
