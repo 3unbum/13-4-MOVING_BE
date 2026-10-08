@@ -343,12 +343,11 @@ async function confirm(estimateId: number, moverId: number) {
         data: { confirmedCount: { increment: 1 } },
       });
       // 확정된 고객·기사님 1:1 채팅방 (estimateId unique) — 선수금을 내기 전에도 대화할 수 있게 확정 즉시 엽니다
-      await tx.chatRoom.create({
-        data: {
-          estimateId,
-          customerId: existing.quotationRequest.userId,
-          moverId,
-        },
+      // 선수금 기한 만료로 확정이 취소돼도 채팅방은 남기므로, 다시 확정하면 기존 방을 그대로 씁니다
+      await tx.chatRoom.upsert({
+        where: { estimateId },
+        create: { estimateId, customerId: existing.quotationRequest.userId, moverId },
+        update: {},
       });
       // 확정은 기사님·고객 양쪽이 받습니다. 같은 type이라 문구 분기는 FE가 자기 role로 처리합니다
       await createManyNotifications(tx, [

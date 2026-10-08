@@ -248,10 +248,20 @@ async function pay(estimateId: number, userId: number, input: estimatePayInput) 
   await confirmTossPayment(input);
 
   // 위 검증과 갱신 사이에 다른 요청이 먼저 결제했을 수 있어 조건부 갱신 결과를 다시 확인한다
-  const paid =
-    input.type === "DEPOSIT"
-      ? await estimateRepository.payDeposit(estimateId, input.paymentKey)
-      : await estimateRepository.pay(estimateId, input.paymentKey);
+  let paid: boolean;
+  try {
+    paid =
+      input.type === "DEPOSIT"
+        ? await estimateRepository.payDeposit(estimateId, input.paymentKey)
+        : await estimateRepository.pay(estimateId, input.paymentKey);
+  } catch (error) {
+    // 토스는 이미 승인됐는데 DB 갱신이 실패한 경우 — 돈만 빠진 상태라 추적할 수 있게 남긴다
+    console.error(
+      `[payment] 토스 승인 후 DB 갱신 실패 estimateId=${estimateId} type=${input.type} paymentKey=${input.paymentKey}`,
+      error
+    );
+    throw error;
+  }
   if (!paid) throw AppError.conflict(ERROR_CODES.ALREADY_PAID, "이미 결제한 견적입니다");
 
   const updated = await estimateRepository.getById(estimateId);

@@ -46,7 +46,7 @@ function makeTx() {
     },
     targetedRequest: { findMany: jest.fn() },
     moverProfile: { update: jest.fn() },
-    chatRoom: { create: jest.fn() },
+    chatRoom: { upsert: jest.fn() },
     review: { upsert: jest.fn() },
     estimateExtraCharge: {
       aggregate: jest.fn(),
@@ -327,7 +327,7 @@ describe("estimateRepository.payDeposit (#140)", () => {
     // 선수금을 냈으니 보낸 결제 요청은 지워 잔금 때 다시 보낼 수 있게 한다
     expect(arg.data.paymentRequestedAt).toBeNull();
     // 채팅방은 확정할 때 이미 열려 있어 여기서 만들지 않는다
-    expect(tx.chatRoom.create).not.toHaveBeenCalled();
+    expect(tx.chatRoom.upsert).not.toHaveBeenCalled();
     expect(createNotification).toHaveBeenCalledWith(tx, {
       userId: 9,
       estimateId: 5,
@@ -340,7 +340,7 @@ describe("estimateRepository.payDeposit (#140)", () => {
     arrange(0);
 
     expect(await estimateRepository.payDeposit(5, "pk_dep")).toBe(false);
-    expect(tx.chatRoom.create).not.toHaveBeenCalled();
+    expect(tx.chatRoom.upsert).not.toHaveBeenCalled();
     expect(createNotification).not.toHaveBeenCalled();
     expect(publishNotification).not.toHaveBeenCalled();
   });
@@ -648,14 +648,16 @@ describe("estimateRepository.confirm", () => {
     expect(publishNotification).toHaveBeenCalledWith([5, 7], { type: "ESTIMATE_CONFIRMED" });
   });
 
-  // 선수금을 내기 전에도 대화할 수 있게 확정하면 바로 연다. 못 내면 expireDeposits가 닫는다
+  // 선수금을 내기 전에도 대화할 수 있게 확정하면 바로 연다. 기한 만료 후 다시 확정해도 기존 방을 쓴다
   it("확정하면 고객·기사님 채팅방을 바로 연다", async () => {
     arrangeConfirmSuccess();
 
     await estimateRepository.confirm(42, 5);
 
-    expect(tx.chatRoom.create).toHaveBeenCalledWith({
-      data: { estimateId: 42, customerId: 7, moverId: 5 },
+    expect(tx.chatRoom.upsert).toHaveBeenCalledWith({
+      where: { estimateId: 42 },
+      create: { estimateId: 42, customerId: 7, moverId: 5 },
+      update: {},
     });
   });
 
@@ -680,7 +682,7 @@ describe("estimateRepository.confirm", () => {
       code: "ESTIMATE_ALREADY_PROCESSED",
     });
     expect(createManyNotifications).not.toHaveBeenCalled();
-    expect(tx.chatRoom.create).not.toHaveBeenCalled();
+    expect(tx.chatRoom.upsert).not.toHaveBeenCalled();
     expect(publishNotification).not.toHaveBeenCalled();
   });
 

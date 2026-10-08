@@ -67,9 +67,6 @@ export async function expireDeposits(now: Date = new Date()): Promise<void> {
             where: { userId: target.moverId },
             data: { confirmedCount: { decrement: 1 } },
           });
-          // 확정이 취소됐으니 확정 때 열린 채팅방도 닫습니다. 다시 확정하면 새로 열립니다
-          await tx.chatRoom.deleteMany({ where: { estimateId: target.id } });
-
           const customerId = target.quotationRequest.userId;
           await createManyNotifications(tx, [
             { userId: customerId, estimateId: target.id, type: "DEPOSIT_EXPIRED" },

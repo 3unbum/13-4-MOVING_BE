@@ -30,7 +30,6 @@ function makeTx(updateCount = 1) {
     estimate: { updateMany: jest.fn().mockResolvedValue({ count: updateCount }) },
     quotationRequest: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     moverProfile: { update: jest.fn().mockResolvedValue({}) },
-    chatRoom: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
   };
 }
 
@@ -91,8 +90,6 @@ describe("expireDeposits", () => {
       where: { userId: 9 },
       data: { confirmedCount: { decrement: 1 } },
     });
-    // 확정할 때 열린 채팅방도 닫는다
-    expect(tx.chatRoom.deleteMany).toHaveBeenCalledWith({ where: { estimateId: 1 } });
     expect(createManyNotifications).toHaveBeenCalledWith(tx, [
       { userId: 7, estimateId: 1, type: "DEPOSIT_EXPIRED" },
       { userId: 9, estimateId: 1, type: "DEPOSIT_EXPIRED" },
@@ -110,8 +107,6 @@ describe("expireDeposits", () => {
 
     expect(tx.quotationRequest.updateMany).not.toHaveBeenCalled();
     expect(tx.moverProfile.update).not.toHaveBeenCalled();
-    // 선수금을 낸 견적의 채팅방은 지우면 안 된다
-    expect(tx.chatRoom.deleteMany).not.toHaveBeenCalled();
     expect(createManyNotifications).not.toHaveBeenCalled();
     expect(publishNotification).not.toHaveBeenCalled();
   });
