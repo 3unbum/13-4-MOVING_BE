@@ -24,8 +24,14 @@ export function toEstimateResponse(estimate: EstimateWithMover) {
       category: quotationRequest.category,
       movingDate: quotationRequest.movingDate,
       createdAt: quotationRequest.createdAt,
+      /// 상세 주소·우편번호는 기사님이 실제로 찾아가는 데 필요합니다.
+      /// 도로명만으로는 동·호수를 알 수 없어 견적을 보낸 뒤 연락이 한 번 더 오가게 됩니다.
+      fromPostalCode: quotationRequest.fromPostalCode,
       fromAddress: quotationRequest.fromAddress,
+      fromDetailAddress: quotationRequest.fromDetailAddress,
+      toPostalCode: quotationRequest.toPostalCode,
       toAddress: quotationRequest.toAddress,
+      toDetailAddress: quotationRequest.toDetailAddress,
       /// 카드·상세의 "OOO 고객님" — 중첩(`user.name`)을 그대로 두면 호출부마다
       /// 옵셔널 체이닝이 붙고 user 객체가 통째로 노출됩니다.
       userName: quotationRequest.user.name,

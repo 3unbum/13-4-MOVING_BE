@@ -66,7 +66,13 @@ export const moverReviewsQuerySchema = z.object({
   sort: moverReviewSortSchema.optional().default("latest"),
 });
 
+export const moverReviewImagesQuerySchema = moverReviewsQuerySchema.pick({
+  page: true,
+  limit: true,
+});
+
 export type MoverIdParam = z.infer<typeof moverIdParamSchema>;
 export type MoverListQuery = z.infer<typeof moverListQuerySchema>;
 export type MoverReviewSort = z.infer<typeof moverReviewSortSchema>;
 export type MoverReviewsQuery = z.infer<typeof moverReviewsQuerySchema>;
+export type MoverReviewImagesQuery = z.infer<typeof moverReviewImagesQuerySchema>;

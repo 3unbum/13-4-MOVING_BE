@@ -129,22 +129,23 @@ model User {
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
 
-  customerProfile     CustomerProfile?
-  moverProfile        MoverProfile?
-  customerServices    CustomerService[]
-  moverServices       MoverService[]
-  moverRegions        MoverRegion[]
-  quotationRequests   QuotationRequest[]
-  targetedRequests    TargetedRequest[]
-  estimates           Estimate[]
-  reviews             Review[]
-  favorites           Favorite[]         @relation("FavoriteCustomer")
-  favoritedBy         Favorite[]         @relation("FavoriteMover")
-  notifications       Notification[]
-  passwordResetCode   PasswordResetCode?
-  chatRoomsAsCustomer ChatRoom[]         @relation("ChatRoomCustomer")
-  chatRoomsAsMover    ChatRoom[]         @relation("ChatRoomMover")
-  chatMessages        ChatMessage[]      @relation("ChatMessageSender")
+  customerProfile             CustomerProfile?
+  moverProfile                MoverProfile?
+  customerServices            CustomerService[]
+  moverServices               MoverService[]
+  moverRegions                MoverRegion[]
+  quotationRequests           QuotationRequest[]
+  targetedRequests            TargetedRequest[]
+  estimates                   Estimate[]
+  reviews                     Review[]
+  favorites                   Favorite[]    @relation("FavoriteCustomer")
+  favoritedBy                 Favorite[]    @relation("FavoriteMover")
+  notifications               Notification[]
+  passwordResetCode           PasswordResetCode?
+  profileEditVerificationCode ProfileEditVerificationCode?
+  chatRoomsAsCustomer         ChatRoom[]    @relation("ChatRoomCustomer")
+  chatRoomsAsMover            ChatRoom[]    @relation("ChatRoomMover")
+  chatMessages                ChatMessage[] @relation("ChatMessageSender")
 
   @@unique([role, provider, providerId])
   /// 로그인 조회용 — 유니크를 뺐으므로 인덱스는 별도로 유지합니다
@@ -169,6 +170,26 @@ model PasswordResetCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("password_reset_code")
+}
+
+/// 프로필 수정 진입용 이메일 인증번호 — 유저당 한 행만 유지합니다.
+/// 비밀번호 재설정 인증번호(PasswordResetCode)와 용도가 분리되어 있어 테이블도 분리합니다.
+/// 재발송 시 upsert가 아니라 삭제 후 생성해야 id가 바뀌어 이전 인증을 무효화합니다.
+model ProfileEditVerificationCode {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @unique @map("user_id")
+  /// 인증번호 평문은 저장하지 않습니다
+  codeHash       String    @map("code_hash")
+  expiresAt      DateTime  @map("expires_at")
+  /// 틀린 입력 횟수 — 상한 도달 시 이 코드는 무효
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  /// 인증 완료 시각 — 값이 있으면 재사용 거부
+  usedAt         DateTime? @map("used_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profile_edit_verification_code")
 }
 
 /// row 존재 여부가 곧 "프로필 등록 완료" 여부입니다.
@@ -356,12 +377,32 @@ model Review {
   /// estimate가 COMPLETED가 되는 순간 PENDING으로 자동 생성, 작성하면 CONFIRMED
   status     ReviewStatus @default(PENDING) @map("review_status")
   createdAt  DateTime     @default(now()) @map("created_at")
+  /// 확정 후 내용·사진을 고친 시각. 한 번도 수정하지 않으면 null
+  editedAt   DateTime?    @map("edited_at")
 
-  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  customer User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  estimate Estimate     @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  customer User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// 첨부 사진. 리뷰당 최대 3장은 DB가 보장하지 않으므로 API에서 막습니다.
+  images   ReviewImage[]
 
   @@index([customerId, status])
   @@map("review")
+}
+
+/// 리뷰 첨부 사진. 파일은 S3에 두고 URL만 저장합니다.
+/// 본인 리뷰가 PENDING·CONFIRMED일 때 추가·삭제할 수 있고, 리뷰당 최대 3장은 API에서 막습니다.
+model ReviewImage {
+  id        Int      @id @default(autoincrement())
+  reviewId  Int      @map("review_id")
+  imageUrl  String   @map("image_url")
+  /// 같은 리뷰 안에서의 표시 순서. 작을수록 앞입니다.
+  sortOrder Int      @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, sortOrder])
+  @@map("review_image")
 }
 
 model Favorite {

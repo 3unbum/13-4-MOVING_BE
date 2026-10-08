@@ -113,10 +113,23 @@ export interface MoverReviewItemResponse {
   comment: string;
   createdAt: string;
   customerName: string;
+  imageUrls: string[];
+}
+
+export interface MoverReviewImageItemResponse {
+  reviewId: number;
+  imageUrl: string;
 }
 
 export interface MoverReviewsResponse {
   data: MoverReviewItemResponse[];
+  page: number;
+  totalPages: number;
+  totalCount: number;
+}
+
+export interface MoverReviewImagesResponse {
+  data: MoverReviewImageItemResponse[];
   page: number;
   totalPages: number;
   totalCount: number;

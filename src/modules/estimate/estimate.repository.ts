@@ -64,14 +64,22 @@ export const estimateInclude = {
   /// 고객 이름과 주소는 "내 견적 관리"(#88) 카드·상세가 씁니다.
   /// 카드에 "OOO 고객님"과 출발지·도착지가 들어가는데 id·category·movingDate만으로는
   /// 채울 수 없었습니다. user는 password 등이 새어나가지 않도록 select로 이름만 뽑습니다.
+  ///
+  /// 상세 주소(동·호수)와 우편번호는 **기사님이 실제로 이사를 가려면 필요한 정보**인데
+  /// 도로명까지만 내려가고 있었습니다. 같은 기사님 화면인데도 "받은 요청"(moverRequestInclude)은
+  /// 전체 컬럼을 주고 여기만 잘려서, 견적을 보낸 뒤 오히려 정보가 줄어드는 상태였습니다.
   quotationRequest: {
     select: {
       id: true,
       category: true,
       movingDate: true,
       createdAt: true,
+      fromPostalCode: true,
       fromAddress: true,
+      fromDetailAddress: true,
+      toPostalCode: true,
       toAddress: true,
+      toDetailAddress: true,
       targetedRequests: { select: { moverId: true } },
       user: { select: { name: true } },
     },

@@ -9,6 +9,10 @@ export const reviewIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+export const deleteReviewImageSchema = z.object({
+  imageUrl: z.string().trim().min(1, "이미지 주소가 필요합니다"),
+});
+
 export const confirmReviewSchema = z.object({
   rating: z.coerce
     .number()
@@ -23,4 +27,5 @@ export const confirmReviewSchema = z.object({
 
 export type ReviewListQuery = z.infer<typeof reviewListQuerySchema>;
 export type ReviewIdParam = z.infer<typeof reviewIdParamSchema>;
+export type DeleteReviewImageDto = z.infer<typeof deleteReviewImageSchema>;
 export type ConfirmReviewDto = z.infer<typeof confirmReviewSchema>;
