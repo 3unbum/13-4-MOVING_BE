@@ -2,6 +2,7 @@ import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { prisma } from "@/config/prisma";
 import { getExpireBaseDate } from "@/jobs/expireRequests.util";
 import estimateRepository from "./estimate.repository";
+import { confirmTossPayment } from "./toss-payments";
 import * as estimateService from "./estimate.service";
 import { estimateCreateSchema } from "./estimate.schema";
 
@@ -9,6 +10,14 @@ jest.mock("./estimate.repository", () => ({
   __esModule: true,
   default: {
     getAllByQuotationRequest: jest.fn(),
+    getAllByCustomer: jest.fn(),
+    getAllByMover: jest.fn(),
+    pay: jest.fn(),
+    payDeposit: jest.fn(),
+    proposeExtraCharge: jest.fn(),
+    respondExtraCharges: jest.fn(),
+    updateExtraCharge: jest.fn(),
+    requestPayment: jest.fn(),
     getById: jest.fn(),
     reject: jest.fn(),
     save: jest.fn(),
@@ -21,6 +30,13 @@ jest.mock("./estimate.repository", () => ({
   }),
 }));
 
+// 토스 승인은 외부 호출이라 목으로 대신한다. 주문 번호 규칙(toPaymentOrderId)은 같은 규칙을 그대로 쓴다
+jest.mock("./toss-payments", () => ({
+  confirmTossPayment: jest.fn(),
+  toPaymentOrderId: (estimateId: number, type: string) =>
+    `moving-${type.toLowerCase()}-${estimateId}`,
+}));
+
 jest.mock("@/config/prisma", () => ({
   prisma: {
     quotationRequest: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
@@ -30,6 +46,7 @@ jest.mock("@/config/prisma", () => ({
 }));
 
 const mockedRepository = jest.mocked(estimateRepository);
+const mockedToss = jest.mocked(confirmTossPayment);
 const mockedPrisma = prisma as unknown as {
   quotationRequest: { findUnique: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
   targetedRequest: { findUnique: jest.Mock; findMany: jest.Mock };
@@ -50,6 +67,13 @@ function mockEstimate(overrides: Record<string, unknown> = {}) {
     price: 180000,
     comment: "견적 코멘트",
     estimateStatus: "PENDING",
+    paymentStatus: "UNPAID",
+    paidAt: null,
+    paymentRequestedAt: null,
+    depositAmount: null,
+    depositDueAt: null,
+    depositPaidAt: null,
+    extraCharges: [],
     mover: {
       id: 1,
       name: "김코드",
@@ -468,6 +492,744 @@ describe("confirm", () => {
 
     await expect(estimateService.confirm(1, 1)).rejects.toThrow("이미 처리됨");
     expect(mockedRepository.confirm).toHaveBeenCalled();
+  });
+});
+
+describe("getMoverEstimates (#140)", () => {
+  test("status·paymentStage를 repository에 그대로 넘긴다", async () => {
+    mockedRepository.getAllByMover.mockResolvedValue([] as never);
+
+    await estimateService.getMoverEstimates(9, { paymentStage: "PAID", cursor: 3, take: 10 });
+
+    expect(mockedRepository.getAllByMover).toHaveBeenCalledWith({
+      moverId: 9,
+      estimateStatus: undefined,
+      paymentStage: "PAID",
+      cursor: 3,
+      take: 10,
+    });
+  });
+
+  test("정렬(sort)도 repository에 넘긴다", async () => {
+    mockedRepository.getAllByMover.mockResolvedValue([] as never);
+
+    await estimateService.getMoverEstimates(9, {
+      paymentStage: "DUE",
+      sort: "oldest",
+      month: "2026-10",
+    });
+
+    expect(mockedRepository.getAllByMover).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentStage: "DUE", sort: "oldest", month: "2026-10" })
+    );
+  });
+});
+
+describe("getCustomerEstimates (#140)", () => {
+  test("paymentStage를 repository에 그대로 넘긴다", async () => {
+    mockedRepository.getAllByCustomer.mockResolvedValue([] as never);
+
+    await estimateService.getCustomerEstimates(1, { paymentStage: "DUE", cursor: 5, take: 6 });
+
+    expect(mockedRepository.getAllByCustomer).toHaveBeenCalledWith({
+      userId: 1,
+      estimateStatus: undefined,
+      paymentStage: "DUE",
+      cursor: 5,
+      take: 6,
+    });
+  });
+
+  test("응답에 결제 단계와 잔금이 함께 나간다", async () => {
+    mockedRepository.getAllByCustomer.mockResolvedValue([
+      mockEstimate({
+        estimateStatus: "COMPLETED",
+        price: 180000,
+        depositAmount: 18000,
+        depositPaidAt: new Date("2026-10-01"),
+      }),
+    ] as never);
+
+    const [estimate] = await estimateService.getCustomerEstimates(1, {});
+
+    expect(estimate).toMatchObject({ paymentStage: "BALANCE_DUE", balanceAmount: 162000 });
+  });
+
+  test("확정됐고 선수금을 아직 안 냈으면 선수금 대기 단계다", async () => {
+    mockedRepository.getAllByCustomer.mockResolvedValue([
+      mockEstimate({ estimateStatus: "CONFIRMED", price: 180000, depositAmount: 18000 }),
+    ] as never);
+
+    const [estimate] = await estimateService.getCustomerEstimates(1, {});
+
+    expect(estimate).toMatchObject({ paymentStage: "DEPOSIT_DUE" });
+  });
+});
+
+describe("requestPayment (#140)", () => {
+  const balanceDue = (overrides: Record<string, unknown> = {}) =>
+    mockEstimate({
+      id: 1,
+      moverId: 9,
+      estimateStatus: "COMPLETED",
+      price: 180000,
+      depositAmount: 18000,
+      depositPaidAt: new Date("2026-10-01"),
+      ...overrides,
+    });
+
+  test("견적이 없으면 404를 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(null);
+
+    await expect(estimateService.requestPayment(1, 9)).rejects.toMatchObject({ statusCode: 404 });
+    expect(mockedRepository.requestPayment).not.toHaveBeenCalled();
+  });
+
+  test("본인이 보낸 견적이 아니면 403을 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue({ moverId: 2 }) as never);
+
+    await expect(estimateService.requestPayment(1, 9)).rejects.toMatchObject({ statusCode: 403 });
+    expect(mockedRepository.requestPayment).not.toHaveBeenCalled();
+  });
+
+  test("결제할 단계가 아니면(확정 전·선수금 없는 확정) 400을 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue({ estimateStatus: "PENDING" }) as never);
+
+    await expect(estimateService.requestPayment(1, 9)).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+    });
+    expect(mockedRepository.requestPayment).not.toHaveBeenCalled();
+  });
+
+  test("이미 결제한 견적이면 409(ALREADY_PAID)를 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue({ paymentStatus: "PAID" }) as never);
+
+    await expect(estimateService.requestPayment(1, 9)).rejects.toMatchObject({
+      statusCode: 409,
+      code: ERROR_CODES.ALREADY_PAID,
+    });
+  });
+
+  test("이미 결제를 요청한 견적이면 409를 던진다 (단계마다 1번)", async () => {
+    mockedRepository.getById.mockResolvedValue(
+      balanceDue({ paymentRequestedAt: new Date("2026-10-07") }) as never
+    );
+
+    await expect(estimateService.requestPayment(1, 9)).rejects.toMatchObject({
+      statusCode: 409,
+      code: ERROR_CODES.PAYMENT_REQUEST_ALREADY_SENT,
+    });
+    expect(mockedRepository.requestPayment).not.toHaveBeenCalled();
+  });
+
+  test("선수금 대기 단계의 견적에도 결제를 요청할 수 있다", async () => {
+    mockedRepository.getById
+      .mockResolvedValueOnce(
+        balanceDue({ estimateStatus: "CONFIRMED", depositPaidAt: null }) as never
+      )
+      .mockResolvedValueOnce(
+        balanceDue({ estimateStatus: "CONFIRMED", depositPaidAt: null }) as never
+      );
+    mockedRepository.requestPayment.mockResolvedValue(undefined as never);
+
+    await estimateService.requestPayment(1, 9);
+
+    expect(mockedRepository.requestPayment).toHaveBeenCalledWith(1);
+  });
+
+  test("잔금 대기 단계의 견적이면 요청하고 갱신된 견적을 돌려준다", async () => {
+    const requestedAt = new Date("2026-10-07");
+    mockedRepository.getById
+      .mockResolvedValueOnce(balanceDue() as never)
+      .mockResolvedValueOnce(balanceDue({ paymentRequestedAt: requestedAt }) as never);
+    mockedRepository.requestPayment.mockResolvedValue(undefined as never);
+
+    const result = await estimateService.requestPayment(1, 9);
+
+    expect(mockedRepository.requestPayment).toHaveBeenCalledWith(1);
+    expect(result).toMatchObject({ paymentRequestedAt: requestedAt });
+  });
+});
+
+describe("pay (#140)", () => {
+  const FUTURE = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const PAST = new Date(Date.now() - 60 * 1000);
+
+  const depositBody = {
+    type: "DEPOSIT" as const,
+    paymentKey: "pk_dep",
+    orderId: "moving-deposit-1",
+    amount: 18000,
+  };
+  const balanceBody = {
+    type: "BALANCE" as const,
+    paymentKey: "pk_bal",
+    orderId: "moving-balance-1",
+    amount: 162000,
+  };
+
+  /** 확정됐고 선수금을 아직 안 낸 견적 (기한 안) */
+  const depositDue = (overrides: Record<string, unknown> = {}) =>
+    mockEstimate({
+      id: 1,
+      estimateStatus: "CONFIRMED",
+      price: 180000,
+      depositAmount: 18000,
+      depositDueAt: FUTURE,
+      depositPaidAt: null,
+      ...overrides,
+    });
+
+  /** 이사가 끝났고 선수금을 낸 견적 → 잔금 162,000원 */
+  const balanceDue = (overrides: Record<string, unknown> = {}) =>
+    mockEstimate({
+      id: 1,
+      estimateStatus: "COMPLETED",
+      price: 180000,
+      depositAmount: 18000,
+      depositDueAt: FUTURE,
+      depositPaidAt: new Date("2026-10-01"),
+      ...overrides,
+    });
+
+  const own = () =>
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({ userId: 1 } as never);
+
+  test("견적이 없으면 404를 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(null);
+
+    await expect(estimateService.pay(1, 1, balanceBody)).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  test("본인 견적이 아니면 403을 던지고 승인하지 않는다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue() as never);
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({ userId: 2 } as never);
+
+    await expect(estimateService.pay(1, 1, balanceBody)).rejects.toMatchObject({ statusCode: 403 });
+    expect(mockedToss).not.toHaveBeenCalled();
+  });
+
+  describe("선수금", () => {
+    test("확정되지 않은 견적이면 400(DEPOSIT_NOT_REQUIRED)", async () => {
+      mockedRepository.getById.mockResolvedValue(
+        depositDue({ estimateStatus: "PENDING" }) as never
+      );
+      own();
+
+      await expect(estimateService.pay(1, 1, depositBody)).rejects.toMatchObject({
+        statusCode: 400,
+        code: ERROR_CODES.DEPOSIT_NOT_REQUIRED,
+      });
+      expect(mockedToss).not.toHaveBeenCalled();
+    });
+
+    test("선수금이 설정되지 않은 옛 확정 견적이면 400(DEPOSIT_NOT_REQUIRED)", async () => {
+      mockedRepository.getById.mockResolvedValue(depositDue({ depositAmount: null }) as never);
+      own();
+
+      await expect(estimateService.pay(1, 1, depositBody)).rejects.toMatchObject({
+        code: ERROR_CODES.DEPOSIT_NOT_REQUIRED,
+      });
+    });
+
+    test("이미 선수금을 냈으면 409(ALREADY_PAID)", async () => {
+      mockedRepository.getById.mockResolvedValue(
+        depositDue({ depositPaidAt: new Date("2026-10-02") }) as never
+      );
+      own();
+
+      await expect(estimateService.pay(1, 1, depositBody)).rejects.toMatchObject({
+        statusCode: 409,
+        code: ERROR_CODES.ALREADY_PAID,
+      });
+    });
+
+    test("기한(확정 후 48시간)이 지났으면 400(DEPOSIT_EXPIRED)", async () => {
+      mockedRepository.getById.mockResolvedValue(depositDue({ depositDueAt: PAST }) as never);
+      own();
+
+      await expect(estimateService.pay(1, 1, depositBody)).rejects.toMatchObject({
+        statusCode: 400,
+        code: ERROR_CODES.DEPOSIT_EXPIRED,
+      });
+      expect(mockedToss).not.toHaveBeenCalled();
+    });
+
+    // 금액은 클라이언트가 보낸 값 — 서버가 계산한 선수금(견적의 10%)과 다르면 승인 전에 거절해야 청구가 안 된다
+    test("금액이 선수금과 다르면 토스 승인 없이 400(PAYMENT_FAILED)", async () => {
+      mockedRepository.getById.mockResolvedValue(depositDue() as never);
+      own();
+
+      await expect(
+        estimateService.pay(1, 1, { ...depositBody, amount: 180000 })
+      ).rejects.toMatchObject({ statusCode: 400, code: ERROR_CODES.PAYMENT_FAILED });
+      expect(mockedToss).not.toHaveBeenCalled();
+    });
+
+    test("선수금에 잔금 주문 번호를 쓰면 토스 승인 없이 400", async () => {
+      mockedRepository.getById.mockResolvedValue(depositDue() as never);
+      own();
+
+      await expect(
+        estimateService.pay(1, 1, { ...depositBody, orderId: "moving-balance-1" })
+      ).rejects.toMatchObject({ code: ERROR_CODES.PAYMENT_FAILED });
+      expect(mockedToss).not.toHaveBeenCalled();
+    });
+
+    test("토스 승인이 거절되면 선수금을 기록하지 않는다", async () => {
+      mockedRepository.getById.mockResolvedValue(depositDue() as never);
+      own();
+      // clearAllMocks는 구현을 지우지 않아 다음 테스트로 새므로 Once로 한 번만 거절시킨다
+      mockedToss.mockRejectedValueOnce(new Error("카드 한도 초과"));
+
+      await expect(estimateService.pay(1, 1, depositBody)).rejects.toThrow("카드 한도 초과");
+      expect(mockedRepository.payDeposit).not.toHaveBeenCalled();
+    });
+
+    test("검증 뒤 다른 요청이 먼저 결제했으면(조건부 갱신 실패) 409를 던진다", async () => {
+      mockedRepository.getById.mockResolvedValue(depositDue() as never);
+      own();
+      mockedRepository.payDeposit.mockResolvedValue(false);
+
+      await expect(estimateService.pay(1, 1, depositBody)).rejects.toMatchObject({
+        statusCode: 409,
+        code: ERROR_CODES.ALREADY_PAID,
+      });
+    });
+
+    test("기한 안의 선수금 대기 견적이면 토스 승인 뒤 선수금을 기록한다", async () => {
+      mockedRepository.getById
+        .mockResolvedValueOnce(depositDue() as never)
+        .mockResolvedValueOnce(depositDue({ depositPaidAt: new Date() }) as never);
+      own();
+      mockedRepository.payDeposit.mockResolvedValue(true);
+
+      const result = await estimateService.pay(1, 1, depositBody);
+
+      expect(mockedToss).toHaveBeenCalledWith(depositBody);
+      expect(mockedRepository.payDeposit).toHaveBeenCalledWith(1, "pk_dep");
+      expect(mockedRepository.pay).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ id: 1 });
+    });
+  });
+
+  describe("잔금", () => {
+    test("이사가 완료되지 않은 견적이면 400(ESTIMATE_NOT_COMPLETED)", async () => {
+      mockedRepository.getById.mockResolvedValue(
+        balanceDue({ estimateStatus: "CONFIRMED" }) as never
+      );
+      own();
+
+      await expect(estimateService.pay(1, 1, balanceBody)).rejects.toMatchObject({
+        statusCode: 400,
+        code: ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+      });
+      expect(mockedToss).not.toHaveBeenCalled();
+    });
+
+    test("이미 결제한 견적이면 409(ALREADY_PAID)", async () => {
+      mockedRepository.getById.mockResolvedValue(balanceDue({ paymentStatus: "PAID" }) as never);
+      own();
+
+      await expect(estimateService.pay(1, 1, balanceBody)).rejects.toMatchObject({
+        statusCode: 409,
+        code: ERROR_CODES.ALREADY_PAID,
+      });
+    });
+
+    test("선수금을 안 낸 채 이사가 끝난 견적이면 400(DEPOSIT_NOT_PAID)", async () => {
+      mockedRepository.getById.mockResolvedValue(balanceDue({ depositPaidAt: null }) as never);
+      own();
+
+      await expect(estimateService.pay(1, 1, balanceBody)).rejects.toMatchObject({
+        statusCode: 400,
+        code: ERROR_CODES.DEPOSIT_NOT_PAID,
+      });
+      expect(mockedToss).not.toHaveBeenCalled();
+    });
+
+    // 잔금 = 견적가 − 선수금. 전액(180,000)을 보내면 선수금을 이중으로 내는 셈이라 거절해야 한다
+    test("금액이 잔금(견적가 − 선수금)과 다르면 토스 승인 없이 400", async () => {
+      mockedRepository.getById.mockResolvedValue(balanceDue() as never);
+      own();
+
+      await expect(
+        estimateService.pay(1, 1, { ...balanceBody, amount: 180000 })
+      ).rejects.toMatchObject({ statusCode: 400, code: ERROR_CODES.PAYMENT_FAILED });
+      expect(mockedToss).not.toHaveBeenCalled();
+    });
+
+    test("선수금이 없는 옛 견적은 전액이 잔금이다", async () => {
+      mockedRepository.getById
+        .mockResolvedValueOnce(balanceDue({ depositAmount: null, depositPaidAt: null }) as never)
+        .mockResolvedValueOnce(balanceDue({ depositAmount: null, depositPaidAt: null }) as never);
+      own();
+      mockedRepository.pay.mockResolvedValue(true);
+
+      await estimateService.pay(1, 1, { ...balanceBody, amount: 180000 });
+
+      expect(mockedRepository.pay).toHaveBeenCalledWith(1, "pk_bal");
+    });
+
+    test("검증 뒤 다른 요청이 먼저 결제했으면(조건부 갱신 실패) 409를 던진다", async () => {
+      mockedRepository.getById.mockResolvedValue(balanceDue() as never);
+      own();
+      mockedRepository.pay.mockResolvedValue(false);
+
+      await expect(estimateService.pay(1, 1, balanceBody)).rejects.toMatchObject({
+        statusCode: 409,
+        code: ERROR_CODES.ALREADY_PAID,
+      });
+    });
+
+    test("이사 완료 + 선수금 납부 견적이면 잔금을 토스 승인 뒤 기록한다", async () => {
+      const paidAt = new Date("2026-10-07");
+      mockedRepository.getById
+        .mockResolvedValueOnce(balanceDue() as never)
+        .mockResolvedValueOnce(balanceDue({ paymentStatus: "PAID", paidAt }) as never);
+      own();
+      mockedRepository.pay.mockResolvedValue(true);
+
+      const result = await estimateService.pay(1, 1, balanceBody);
+
+      expect(mockedToss).toHaveBeenCalledWith(balanceBody);
+      expect(mockedRepository.pay).toHaveBeenCalledWith(1, "pk_bal");
+      expect(mockedRepository.payDeposit).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ paymentStatus: "PAID", paidAt });
+    });
+  });
+});
+
+/** 추가 금액 한 건 목 */
+const charge = (id: number, amount: number, status: string) => ({
+  id,
+  amount,
+  status,
+  reason: "사유",
+  respondedAt: null,
+});
+
+describe("proposeExtraCharge (#140)", () => {
+  const input = { amount: 30000, reason: "계단 이동이 많아 추가 인력이 필요했습니다" };
+
+  /** 이사가 끝났고 선수금을 낸, 잔금 대기 견적 (견적 180,000 → 추가 금액 상한 36,000) */
+  const balanceDue = (overrides: Record<string, unknown> = {}) =>
+    mockEstimate({
+      id: 1,
+      moverId: 9,
+      estimateStatus: "COMPLETED",
+      price: 180000,
+      depositAmount: 18000,
+      depositPaidAt: new Date("2026-10-01"),
+      ...overrides,
+    });
+
+  test("견적이 없으면 404를 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(null);
+
+    await expect(estimateService.proposeExtraCharge(1, 9, input)).rejects.toMatchObject({
+      statusCode: 404,
+    });
+  });
+
+  test("본인이 보낸 견적이 아니면 403을 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue({ moverId: 2 }) as never);
+
+    await expect(estimateService.proposeExtraCharge(1, 9, input)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(mockedRepository.proposeExtraCharge).not.toHaveBeenCalled();
+  });
+
+  test("이사가 완료되지 않은 견적이면 400을 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(
+      balanceDue({ estimateStatus: "CONFIRMED" }) as never
+    );
+
+    await expect(estimateService.proposeExtraCharge(1, 9, input)).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+    });
+  });
+
+  test("이미 결제가 끝난 견적이면 409(ALREADY_PAID)를 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue({ paymentStatus: "PAID" }) as never);
+
+    await expect(estimateService.proposeExtraCharge(1, 9, input)).rejects.toMatchObject({
+      statusCode: 409,
+      code: ERROR_CODES.ALREADY_PAID,
+    });
+  });
+
+  test("건당 금액이 견적 금액의 20%를 넘으면 400(EXTRA_CHARGE_TOO_LARGE)", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue() as never);
+
+    await expect(
+      estimateService.proposeExtraCharge(1, 9, { ...input, amount: 36010 })
+    ).rejects.toMatchObject({ statusCode: 400, code: ERROR_CODES.EXTRA_CHARGE_TOO_LARGE });
+    expect(mockedRepository.proposeExtraCharge).not.toHaveBeenCalled();
+  });
+
+  // 거절당한 건이 있어도, 응답 대기 중인 건이 있어도 새 건을 보낼 수 있다 (합계 상한은 repository가 검사)
+  test("이미 보낸 건이 있어도 새 건을 보낼 수 있고 상한(합계 기준)을 repository에 넘긴다", async () => {
+    mockedRepository.getById
+      .mockResolvedValueOnce(
+        balanceDue({
+          extraCharges: [charge(1, 10000, "REJECTED"), charge(2, 5000, "PROPOSED")],
+        }) as never
+      )
+      .mockResolvedValueOnce(
+        balanceDue({
+          extraCharges: [
+            charge(1, 10000, "REJECTED"),
+            charge(2, 5000, "PROPOSED"),
+            charge(3, 36000, "PROPOSED"),
+          ],
+        }) as never
+      );
+    mockedRepository.proposeExtraCharge.mockResolvedValue(undefined as never);
+
+    const result = await estimateService.proposeExtraCharge(1, 9, { ...input, amount: 36000 });
+
+    expect(mockedRepository.proposeExtraCharge).toHaveBeenCalledWith(
+      1,
+      { ...input, amount: 36000 },
+      36000
+    );
+    expect(result.extraCharges).toHaveLength(3);
+    // 상한 36,000 − (응답 대기 5,000 + 36,000) → 남은 한도는 0 아래로 내려가지 않는다
+    expect(result).toMatchObject({ extraChargeMax: 36000, extraChargeRemaining: 0 });
+  });
+});
+
+describe("updateExtraCharge (#140)", () => {
+  const input = { amount: 20000, reason: "수정한 사유" };
+
+  const balanceDue = (overrides: Record<string, unknown> = {}) =>
+    mockEstimate({
+      id: 1,
+      moverId: 9,
+      estimateStatus: "COMPLETED",
+      price: 180000,
+      depositAmount: 18000,
+      depositPaidAt: new Date("2026-10-01"),
+      extraCharges: [charge(5, 10000, "PROPOSED")],
+      ...overrides,
+    });
+
+  test("본인이 보낸 견적이 아니면 403을 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue({ moverId: 2 }) as never);
+
+    await expect(estimateService.updateExtraCharge(1, 5, 9, input)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(mockedRepository.updateExtraCharge).not.toHaveBeenCalled();
+  });
+
+  test("결제가 끝난 견적이면 409를 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue({ paymentStatus: "PAID" }) as never);
+
+    await expect(estimateService.updateExtraCharge(1, 5, 9, input)).rejects.toMatchObject({
+      code: ERROR_CODES.ALREADY_PAID,
+    });
+  });
+
+  test("건당 금액이 상한을 넘으면 400을 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(balanceDue() as never);
+
+    await expect(
+      estimateService.updateExtraCharge(1, 5, 9, { ...input, amount: 36010 })
+    ).rejects.toMatchObject({ code: ERROR_CODES.EXTRA_CHARGE_TOO_LARGE });
+    expect(mockedRepository.updateExtraCharge).not.toHaveBeenCalled();
+  });
+
+  test("고친 뒤 최신 견적을 돌려준다", async () => {
+    mockedRepository.getById
+      .mockResolvedValueOnce(balanceDue() as never)
+      .mockResolvedValueOnce(balanceDue({ extraCharges: [charge(5, 20000, "PROPOSED")] }) as never);
+    mockedRepository.updateExtraCharge.mockResolvedValue(undefined as never);
+
+    const result = await estimateService.updateExtraCharge(1, 5, 9, input);
+
+    expect(mockedRepository.updateExtraCharge).toHaveBeenCalledWith(1, 5, input, 36000);
+    expect(result.extraCharges[0]).toMatchObject({ id: 5, amount: 20000 });
+  });
+});
+
+describe("respondExtraCharge (#140)", () => {
+  const proposed = (overrides: Record<string, unknown> = {}) =>
+    mockEstimate({
+      id: 1,
+      moverId: 9,
+      estimateStatus: "COMPLETED",
+      price: 180000,
+      depositAmount: 18000,
+      depositPaidAt: new Date("2026-10-01"),
+      extraCharges: [charge(3, 10000, "PROPOSED"), charge(4, 5000, "PROPOSED")],
+      ...overrides,
+    });
+
+  const own = () =>
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({ userId: 1 } as never);
+
+  test("견적이 없으면 404를 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(null);
+
+    await expect(
+      estimateService.respondExtraCharge(1, 1, { decision: "APPROVE", chargeIds: [3] })
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  test("본인 견적이 아니면 403을 던진다", async () => {
+    mockedRepository.getById.mockResolvedValue(proposed() as never);
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({ userId: 2 } as never);
+
+    await expect(
+      estimateService.respondExtraCharge(1, 1, { decision: "APPROVE", chargeIds: [3] })
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(mockedRepository.respondExtraCharges).not.toHaveBeenCalled();
+  });
+
+  test("고른 건이 이 견적에 없으면 400(EXTRA_CHARGE_NOT_PENDING)", async () => {
+    mockedRepository.getById.mockResolvedValue(proposed() as never);
+    own();
+
+    await expect(
+      estimateService.respondExtraCharge(1, 1, { decision: "APPROVE", chargeIds: [99] })
+    ).rejects.toMatchObject({ statusCode: 400, code: ERROR_CODES.EXTRA_CHARGE_NOT_PENDING });
+  });
+
+  test("이미 응답한 건이 섞여 있으면 400을 던진다 (승인 뒤 거절로 바꿀 수 없다)", async () => {
+    mockedRepository.getById.mockResolvedValue(
+      proposed({
+        extraCharges: [charge(3, 10000, "APPROVED"), charge(4, 5000, "PROPOSED")],
+      }) as never
+    );
+    own();
+
+    await expect(
+      estimateService.respondExtraCharge(1, 1, { decision: "REJECT", chargeIds: [3, 4] })
+    ).rejects.toMatchObject({ code: ERROR_CODES.EXTRA_CHARGE_NOT_PENDING });
+    expect(mockedRepository.respondExtraCharges).not.toHaveBeenCalled();
+  });
+
+  test("고른 건을 한 번에 승인하면 승인한 건만 잔금에 합산된다", async () => {
+    mockedRepository.getById.mockResolvedValueOnce(proposed() as never).mockResolvedValueOnce(
+      proposed({
+        extraCharges: [charge(3, 10000, "APPROVED"), charge(4, 5000, "PROPOSED")],
+      }) as never
+    );
+    own();
+    mockedRepository.respondExtraCharges.mockResolvedValue(undefined as never);
+
+    const result = await estimateService.respondExtraCharge(1, 1, {
+      decision: "APPROVE",
+      chargeIds: [3, 3],
+    });
+
+    // 중복 id는 한 번만 보낸다
+    expect(mockedRepository.respondExtraCharges).toHaveBeenCalledWith(1, [3], "APPROVED");
+    // 180,000 − 선수금 18,000 + 승인 10,000 (응답 대기 5,000은 제외)
+    expect(result).toMatchObject({ balanceAmount: 172000 });
+  });
+
+  test("거절하면 REJECTED로 기록하고, 잔금은 추가 금액 없이 그대로다", async () => {
+    mockedRepository.getById.mockResolvedValueOnce(proposed() as never).mockResolvedValueOnce(
+      proposed({
+        extraCharges: [charge(3, 10000, "REJECTED"), charge(4, 5000, "REJECTED")],
+      }) as never
+    );
+    own();
+    mockedRepository.respondExtraCharges.mockResolvedValue(undefined as never);
+
+    const result = await estimateService.respondExtraCharge(1, 1, {
+      decision: "REJECT",
+      chargeIds: [3, 4],
+    });
+
+    expect(mockedRepository.respondExtraCharges).toHaveBeenCalledWith(1, [3, 4], "REJECTED");
+    expect(result).toMatchObject({ balanceAmount: 162000 });
+  });
+});
+
+describe("pay — 추가 금액 (#140)", () => {
+  const balanceBody = (amount: number) => ({
+    type: "BALANCE" as const,
+    paymentKey: "pk_bal",
+    orderId: "moving-balance-1",
+    amount,
+  });
+
+  const completed = (overrides: Record<string, unknown> = {}) =>
+    mockEstimate({
+      id: 1,
+      estimateStatus: "COMPLETED",
+      price: 180000,
+      depositAmount: 18000,
+      depositPaidAt: new Date("2026-10-01"),
+      ...overrides,
+    });
+
+  const own = () =>
+    mockedPrisma.quotationRequest.findUnique.mockResolvedValue({ userId: 1 } as never);
+
+  // 요청을 무시한 채 결제하면 잔금이 정해지지 않은 채로 끝난다 — 먼저 응답하게 한다
+  test("응답하지 않은 추가 금액이 한 건이라도 남아 있으면 잔금을 결제할 수 없다", async () => {
+    mockedRepository.getById.mockResolvedValue(
+      completed({
+        extraCharges: [charge(1, 10000, "APPROVED"), charge(2, 5000, "PROPOSED")],
+      }) as never
+    );
+    own();
+
+    await expect(estimateService.pay(1, 1, balanceBody(172000))).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.EXTRA_CHARGE_PENDING,
+    });
+    expect(mockedToss).not.toHaveBeenCalled();
+  });
+
+  test("승인된 추가 금액은 모두 잔금에 포함돼 결제 금액이 달라진다", async () => {
+    const approved = completed({
+      extraCharges: [
+        charge(1, 10000, "APPROVED"),
+        charge(2, 5000, "APPROVED"),
+        charge(3, 7000, "REJECTED"),
+      ],
+    });
+    mockedRepository.getById.mockResolvedValue(approved as never);
+    own();
+
+    // 기존 잔금(162,000)으로는 결제할 수 없다
+    await expect(estimateService.pay(1, 1, balanceBody(162000))).rejects.toMatchObject({
+      code: ERROR_CODES.PAYMENT_FAILED,
+    });
+    expect(mockedToss).not.toHaveBeenCalled();
+
+    // 승인된 추가 금액(15,000)을 더한 잔금(177,000)이면 결제된다
+    mockedRepository.getById
+      .mockResolvedValueOnce(approved as never)
+      .mockResolvedValueOnce(approved as never);
+    mockedRepository.pay.mockResolvedValue(true);
+
+    await estimateService.pay(1, 1, balanceBody(177000));
+
+    expect(mockedToss).toHaveBeenCalledWith(balanceBody(177000));
+    expect(mockedRepository.pay).toHaveBeenCalledWith(1, "pk_bal");
+  });
+
+  test("거절된 추가 금액은 잔금에 포함되지 않는다", async () => {
+    const rejected = completed({ extraCharges: [charge(1, 10000, "REJECTED")] });
+    mockedRepository.getById
+      .mockResolvedValueOnce(rejected as never)
+      .mockResolvedValueOnce(rejected as never);
+    own();
+    mockedRepository.pay.mockResolvedValue(true);
+
+    await estimateService.pay(1, 1, balanceBody(162000));
+
+    expect(mockedRepository.pay).toHaveBeenCalledWith(1, "pk_bal");
   });
 });
 

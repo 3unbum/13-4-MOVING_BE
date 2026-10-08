@@ -26,6 +26,12 @@ router.use(requireAuth);
  *       - `NEW_REQUEST`: customerName, category, fromRegion, movingDate
  *       - `NEW_ESTIMATE`: moverNickName, category, price
  *       - `ESTIMATE_CONFIRMED`: moverNickName, customerName, category
+ *       - `PAYMENT_REQUEST`: moverNickName, category, price (고객 수신, 기사님이 결제를 요청)
+ *       - `PAYMENT_COMPLETED`: customerName, category, price (기사님 수신, 고객이 결제를 완료)
+ *       - `DEPOSIT_PAID`: customerName, category, amount (기사님 수신, 고객이 선수금을 결제해 확정)
+ *       - `DEPOSIT_EXPIRED`: moverNickName, customerName, category (고객·기사님 수신, 선수금 기한 만료로 확정 자동 취소)
+ *       - `EXTRA_CHARGE_PROPOSED`: moverNickName, category, amount (고객 수신, 기사님이 추가 금액을 요청)
+ *       - `EXTRA_CHARGE_RESPONDED`: customerName, category, amount, approved (기사님 수신, 고객이 승인·거절)
  *       - `MOVING_DAY_BEFORE` / `MOVING_DAY`: fromRegion, toRegion, fromAddress, toAddress, movingDate
  *       - `NEW_CHAT_MESSAGE`: roomId, senderName (받는 사람 기준 상대 이름. 메시지 내용은 싣지 않습니다)
  *
@@ -59,7 +65,7 @@ router.use(requireAuth);
  *                           id: { type: integer }
  *                           type:
  *                             type: string
- *                             enum: [NEW_REQUEST, NEW_ESTIMATE, ESTIMATE_CONFIRMED, MOVING_DAY_BEFORE, MOVING_DAY, NEW_CHAT_MESSAGE]
+ *                             enum: [NEW_REQUEST, NEW_ESTIMATE, ESTIMATE_CONFIRMED, MOVING_DAY_BEFORE, MOVING_DAY, NEW_CHAT_MESSAGE, PAYMENT_REQUEST, PAYMENT_COMPLETED, DEPOSIT_PAID, DEPOSIT_EXPIRED, EXTRA_CHARGE_PROPOSED, EXTRA_CHARGE_RESPONDED]
  *                           payload: { type: object }
  *                           isRead: { type: boolean }
  *                           createdAt: { type: string, format: date-time }

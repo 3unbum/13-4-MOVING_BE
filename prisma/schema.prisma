@@ -82,6 +82,25 @@ enum EstimateStatus {
   @@map("estimate_status")
 }
 
+/// 기사님이 이사 완료 후 요청하는 추가 금액 한 건의 상태.
+/// PROPOSED(고객 응답 대기) → APPROVED(잔금에 합산) | REJECTED(잔금은 기존 금액 그대로)
+enum ExtraChargeStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+
+  @@map("extra_charge_status")
+}
+
+/// 이사가 끝난(COMPLETED) 견적의 결제 여부. 결제 대상은 COMPLETED 견적뿐이라
+/// 다른 상태에서는 항상 UNPAID입니다.
+enum PaymentStatus {
+  UNPAID
+  PAID
+
+  @@map("payment_status")
+}
+
 enum ReviewStatus {
   PENDING
   CONFIRMED
@@ -97,6 +116,12 @@ enum NotificationType {
   MOVING_DAY_BEFORE /// 이사 전날 09:00 배치 → 고객 + 확정 기사님
   MOVING_DAY /// 이사 당일 09:00 배치 → 고객 + 확정 기사님
   NEW_CHAT_MESSAGE /// 채팅 메시지 도착 → 상대방. 방당 1건으로 합쳐 새 메시지가 오면 다시 읽지 않음으로 올립니다
+  PAYMENT_REQUEST /// 기사님이 이사 완료 견적의 결제를 요청 → 고객. 견적당 1번만
+  PAYMENT_COMPLETED /// 고객이 견적을 결제 → 그 견적을 보낸 기사님
+  DEPOSIT_PAID /// 고객이 선수금을 결제 → 그 견적을 보낸 기사님 (이사 확정)
+  DEPOSIT_EXPIRED /// 선수금 기한 만료로 확정이 자동 취소 → 고객 + 기사님
+  EXTRA_CHARGE_PROPOSED /// 기사님이 추가 금액을 요청 → 고객
+  EXTRA_CHARGE_RESPONDED /// 고객이 추가 금액을 승인·거절 → 그 견적을 보낸 기사님
 
   @@map("notification_type")
 }
@@ -339,27 +364,64 @@ model TargetedRequest {
 /// 한 요청에 기사님 1명당 견적 1건.
 /// 상한 8건(일반 5 + 지정 3) 계산의 전제입니다.
 model Estimate {
-  id                 Int            @id @default(autoincrement())
-  quotationRequestId Int            @map("quotation_request_id")
+  id                 Int                @id @default(autoincrement())
+  quotationRequestId Int                @map("quotation_request_id")
   /// 견적을 보낸(혹은 반려한) 기사님 (role=MOVER)
-  moverId            Int            @map("mover_id")
+  moverId            Int                @map("mover_id")
   /// REJECTED면 NULL
   price              Int?
   /// 견적 요청 보낼 때 요청 반려 모두 필숫값
   comment            String
-  estimateStatus     EstimateStatus @default(PENDING) @map("estimate_status")
-  createdAt          DateTime       @default(now()) @map("created_at")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
+  estimateStatus     EstimateStatus     @default(PENDING) @map("estimate_status")
+  /// 결제 여부. POST /estimates/:id/pay가 COMPLETED + UNPAID일 때만 PAID로 바꿉니다
+  paymentStatus      PaymentStatus      @default(UNPAID) @map("payment_status")
+  /// 결제 완료 시각. UNPAID면 NULL
+  paidAt             DateTime?          @map("paid_at")
+  /// 토스페이먼츠 결제 키. 같은 결제를 다른 견적에 재사용하지 못하도록 유니크. UNPAID면 NULL
+  paymentKey         String?            @unique @map("payment_key")
+  /// 기사님이 결제 요청 알림을 보낸 시각. 견적당 1번만 보낼 수 있어 NULL일 때만 요청할 수 있습니다
+  paymentRequestedAt DateTime?          @map("payment_requested_at")
+  /// 선수금(견적의 10%, 10원 단위 내림). 확정 시점에 정해 저장합니다. 확정 전·옛 데이터는 NULL
+  depositAmount      Int?               @map("deposit_amount")
+  /// 선수금 결제 기한 = min(확정 + 48시간, 이사일 0시 KST). 넘기면 확정이 자동 취소됩니다
+  depositDueAt       DateTime?          @map("deposit_due_at")
+  /// 선수금 결제 시각. NULL이면 미결제
+  depositPaidAt      DateTime?          @map("deposit_paid_at")
+  /// 선수금 토스 결제 키 (유니크 — 같은 결제를 다른 견적에 재사용하지 못하게)
+  depositPaymentKey  String?            @unique @map("deposit_payment_key")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
 
   quotationRequest QuotationRequest @relation(fields: [quotationRequestId], references: [id], onDelete: Cascade)
   mover            User             @relation(fields: [moverId], references: [id], onDelete: Cascade)
   review           Review?
   notifications    Notification[]
   chatRoom         ChatRoom?
+  extraCharges     EstimateExtraCharge[]
 
   @@unique([quotationRequestId, moverId])
   @@index([moverId, estimateStatus])
   @@map("estimate")
+}
+
+/// 기사님이 이사 완료 후 요청하는 추가 금액 한 건. 견적당 여러 건을 보낼 수 있고,
+/// 고객이 건별로 승인·거절합니다. 승인된 건의 합계가 잔금에 더해집니다.
+/// 금액 상한(견적의 20%)은 거절되지 않은 건(PROPOSED + APPROVED)의 **합계**에 적용합니다.
+model EstimateExtraCharge {
+  id          Int               @id @default(autoincrement())
+  estimateId  Int               @map("estimate_id")
+  amount      Int
+  /// 고객이 승인 여부를 판단하는 근거입니다
+  reason      String
+  status      ExtraChargeStatus @default(PROPOSED)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  /// 승인·거절한 시각. PROPOSED면 NULL
+  respondedAt DateTime?         @map("responded_at")
+
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([estimateId])
+  @@map("estimate_extra_charge")
 }
 
 /// DB가 보장하지 못하므로 API에서 반드시 검증하세요.

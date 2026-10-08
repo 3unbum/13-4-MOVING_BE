@@ -29,6 +29,47 @@ export const estimateListQuerySchema = z.object({
   status: z.enum(EstimateStatus).optional(),
 });
 
+// 결제 탭용 견적 목록 (#140) — 이사가 끝난 견적을 결제 여부로 나눠 봅니다 (대기 중인 결제 / 결제 내역 탭).
+// 고객(`GET /estimates`)과 기사님(`GET /mover/estimates`) 목록이 함께 씁니다.
+export const paymentEstimateListQuerySchema = estimateListQuerySchema.extend({
+  // DUE = 대기 중인 결제(선수금 + 잔금), PAID = 결제 내역
+  paymentStage: z.enum(["DUE", "PAID"]).optional(),
+  // 정렬 — latest(최신순, 기본) / oldest(오래된 순). 기준은 카드에 보이는 날짜(결제 내역은 결제일, 대기 중인 결제는 이사 완료일), 커서는 견적 id
+  sort: z.enum(["latest", "oldest"]).optional(),
+  // 월별 조회 — "YYYY-MM". 정렬과 같은 날짜가 그 달인 견적만 봅니다
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "month는 YYYY-MM 형식이어야 합니다.")
+    .optional(),
+});
+
+// 견적 결제 승인 (#140) — 토스 결제창이 successUrl로 돌려주는 값 그대로
+export const estimatePaySchema = z.object({
+  type: z.enum(["DEPOSIT", "BALANCE"]),
+  paymentKey: z.string().min(1).max(200),
+  orderId: z.string().min(6).max(64),
+  amount: z.int().positive(),
+});
+
+// 추가 금액 요청 (#140, 2단계) — 사유와 금액. 견적 금액 대비 20% 상한은 견적을 읽어야 알 수 있어 서비스에서 검증합니다.
+export const extraChargeProposeSchema = z.object({
+  amount: z
+    .int()
+    .min(1000, "추가 금액은 1,000원 이상이어야 합니다.")
+    .max(100_000_000, "추가 금액은 1억 원 이하로 입력해 주세요."),
+  reason: z
+    .string()
+    .trim()
+    .min(1, "사유를 입력해 주세요.")
+    .max(200, "사유는 200자 이내로 입력해 주세요."),
+});
+
+// 고객의 추가 금액 승인·거절 — 고른 건(chargeIds)에 같은 결정을 한 번에 적용한다
+export const extraChargeRespondSchema = z.object({
+  decision: z.enum(["APPROVE", "REJECT"]),
+  chargeIds: z.array(z.int().positive()).min(1).max(50),
+});
+
 // mover 받은 요청 목록 — status 대신 프론트 체크박스 필터(서비스 가능 지역/지정 견적/이사 유형) + 정렬 옵션 추가
 export const moverRequestQuerySchema = estimateListQuerySchema.omit({ status: true }).extend({
   isServiceRegion: z

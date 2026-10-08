@@ -107,6 +107,186 @@ describe("createManyNotifications", () => {
   });
 });
 
+describe("notificationService.list — PAYMENT_REQUEST (#140)", () => {
+  it("결제 요청은 기사님 이름·유형·금액 payload로 조립한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({ id: 5, type: "PAYMENT_REQUEST", estimateId: 42, estimate }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(1);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toEqual([
+      {
+        id: 5,
+        type: "PAYMENT_REQUEST",
+        isRead: false,
+        createdAt,
+        estimateId: 42,
+        quotationRequestId: null,
+        payload: { moverNickName: "김코드", category: "SMALL", price: 210000 },
+      },
+    ]);
+  });
+
+  it("견적 원본이 없으면 목록에서 제외한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({ id: 5, type: "PAYMENT_REQUEST", estimateId: 42, estimate: null }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(0);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toEqual([]);
+  });
+});
+
+describe("notificationService.list — PAYMENT_COMPLETED (#140)", () => {
+  it("결제 완료는 고객 이름·유형·금액 payload로 조립한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({ id: 6, type: "PAYMENT_COMPLETED", estimateId: 42, estimate }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(1);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toEqual([
+      {
+        id: 6,
+        type: "PAYMENT_COMPLETED",
+        isRead: false,
+        createdAt,
+        estimateId: 42,
+        quotationRequestId: null,
+        payload: { customerName: "김가나", category: "SMALL", price: 210000 },
+      },
+    ]);
+  });
+});
+
+describe("notificationService.list — 선수금 알림 (#140)", () => {
+  it("선수금 결제 완료는 고객 이름·유형·선수금 payload로 조립한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({
+        id: 7,
+        type: "DEPOSIT_PAID",
+        estimateId: 42,
+        estimate: { ...estimate, depositAmount: 21000 },
+      }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(1);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toEqual([
+      {
+        id: 7,
+        type: "DEPOSIT_PAID",
+        isRead: false,
+        createdAt,
+        estimateId: 42,
+        quotationRequestId: null,
+        payload: { customerName: "김가나", category: "SMALL", amount: 21000 },
+      },
+    ]);
+  });
+
+  it("선수금 기한 만료는 기사님·고객 이름 payload로 조립한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({ id: 8, type: "DEPOSIT_EXPIRED", estimateId: 42, estimate }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(1);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toEqual([
+      {
+        id: 8,
+        type: "DEPOSIT_EXPIRED",
+        isRead: false,
+        createdAt,
+        estimateId: 42,
+        quotationRequestId: null,
+        payload: { moverNickName: "김코드", customerName: "김가나", category: "SMALL" },
+      },
+    ]);
+  });
+});
+
+describe("notificationService.list — 추가 금액 알림 (#140)", () => {
+  it("추가 금액 요청은 기사님 이름·유형·금액 payload로 조립한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({
+        id: 9,
+        type: "EXTRA_CHARGE_PROPOSED",
+        estimateId: 42,
+        estimate: {
+          ...estimate,
+          extraCharges: [
+            { amount: 5000, status: "APPROVED", respondedAt: new Date("2026-10-07T01:00:00Z") },
+            { amount: 30000, status: "PROPOSED", respondedAt: null },
+          ],
+        },
+      }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(1);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toEqual([
+      {
+        id: 9,
+        type: "EXTRA_CHARGE_PROPOSED",
+        isRead: false,
+        createdAt,
+        estimateId: 42,
+        quotationRequestId: null,
+        payload: { moverNickName: "김코드", category: "SMALL", amount: 30000 },
+      },
+    ]);
+  });
+
+  it("추가 금액 응답은 고객 이름·금액·승인 여부 payload로 조립한다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({
+        id: 10,
+        type: "EXTRA_CHARGE_RESPONDED",
+        estimateId: 42,
+        estimate: {
+          ...estimate,
+          extraCharges: [
+            { amount: 5000, status: "REJECTED", respondedAt: new Date("2026-10-07T01:00:00Z") },
+            { amount: 30000, status: "APPROVED", respondedAt: new Date("2026-10-07T02:00:00Z") },
+          ],
+        },
+      }),
+      row({
+        id: 11,
+        type: "EXTRA_CHARGE_RESPONDED",
+        estimateId: 43,
+        estimate: {
+          ...estimate,
+          extraCharges: [
+            { amount: 30000, status: "REJECTED", respondedAt: new Date("2026-10-07T02:00:00Z") },
+          ],
+        },
+      }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(2);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toMatchObject([
+      {
+        type: "EXTRA_CHARGE_RESPONDED",
+        // 가장 최근 응답(승인 30,000)만 반영한다 — 앞서 거절한 5,000은 섞이지 않는다
+        payload: { customerName: "김가나", amount: 30000, approved: true },
+      },
+      { type: "EXTRA_CHARGE_RESPONDED", payload: { customerName: "김가나", approved: false } },
+    ]);
+  });
+});
+
 describe("notificationService.list", () => {
   it("type별로 payload를 조립한다", async () => {
     // Setup

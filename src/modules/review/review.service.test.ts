@@ -123,7 +123,7 @@ describe("reviewService.confirm", () => {
       id: 7,
       customerId: 1,
       status: "PENDING",
-      estimate: { moverId: 10, estimateStatus: "COMPLETED" },
+      estimate: { moverId: 10, estimateStatus: "COMPLETED", paymentStatus: "PAID" },
     } as never);
     mockedRepository.confirmOwned.mockResolvedValue({ avgRating: 4.5, reviewCount: 3 });
 
@@ -153,7 +153,7 @@ describe("reviewService.confirm", () => {
       id: 7,
       customerId: 2,
       status: "PENDING",
-      estimate: { moverId: 10, estimateStatus: "COMPLETED" },
+      estimate: { moverId: 10, estimateStatus: "COMPLETED", paymentStatus: "PAID" },
     } as never);
 
     await expect(
@@ -167,7 +167,7 @@ describe("reviewService.confirm", () => {
       id: 7,
       customerId: 1,
       status: "CONFIRMED",
-      estimate: { moverId: 10, estimateStatus: "COMPLETED" },
+      estimate: { moverId: 10, estimateStatus: "COMPLETED", paymentStatus: "PAID" },
     } as never);
     mockedRepository.updateOwned.mockResolvedValue({ avgRating: 4.5, reviewCount: 3 });
 
@@ -187,12 +187,26 @@ describe("reviewService.confirm", () => {
     expect(result.avgRating).toBe(4.5);
   });
 
+  it("잔금을 결제하지 않았으면 400을 던진다", async () => {
+    mockedRepository.findById.mockResolvedValue({
+      id: 7,
+      customerId: 1,
+      status: "PENDING",
+      estimate: { moverId: 10, estimateStatus: "COMPLETED", paymentStatus: "UNPAID" },
+    } as never);
+
+    await expect(
+      reviewService.confirm(1, 7, { rating: 5, comment: "정말 친절하고 안전하게 이사했습니다" })
+    ).rejects.toMatchObject({ statusCode: 400, code: ERROR_CODES.VALIDATION_ERROR });
+    expect(mockedRepository.confirmOwned).not.toHaveBeenCalled();
+  });
+
   it("이사가 완료되지 않았으면 400을 던진다", async () => {
     mockedRepository.findById.mockResolvedValue({
       id: 7,
       customerId: 1,
       status: "PENDING",
-      estimate: { moverId: 10, estimateStatus: "ASSIGNED" },
+      estimate: { moverId: 10, estimateStatus: "ASSIGNED", paymentStatus: "UNPAID" },
     } as never);
 
     await expect(

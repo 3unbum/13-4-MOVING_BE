@@ -9,12 +9,24 @@ import {
   toMoverRequestListResponse,
 } from "./estimate.dto";
 import estimateRepository, { moverRequestInclude } from "./estimate.repository";
-import { estimateListQuery, moverRequestQuery } from "./estimate.type";
+import {
+  paymentEstimateListQuery,
+  estimateListQuery,
+  estimatePayInput,
+  extraChargeProposeInput,
+  extraChargeRespondInput,
+  moverRequestQuery,
+} from "./estimate.type";
+import { calcBalanceAmount, calcExtraChargeMax, toPaymentStage } from "./estimate.payment";
+import { confirmTossPayment, toPaymentOrderId } from "./toss-payments";
 
-async function getMoverEstimates(moverId: number, query: estimateListQuery) {
+async function getMoverEstimates(moverId: number, query: paymentEstimateListQuery) {
   const estimates = await estimateRepository.getAllByMover({
     moverId,
     estimateStatus: query.status,
+    paymentStage: query.paymentStage,
+    sort: query.sort,
+    month: query.month,
     cursor: query.cursor,
     take: query.take,
   });
@@ -63,6 +75,22 @@ async function getPendingEstimates(userId: number, query: estimateListQuery) {
   const estimates = await estimateRepository.getAllByQuotationRequest({
     quotationRequestId: activeRequest.id,
     estimateStatus: query.status ?? PENDING_TAB_STATUSES,
+    cursor: query.cursor,
+    take: query.take,
+  });
+
+  return toEstimateListResponse(estimates);
+}
+
+// 내 견적 목록 (#140) — 요청과 무관하게 고객이 받은 견적 전체. paymentStage로 탭을 가른다
+// (대기 중인 결제 = 선수금 대기 + 잔금 대기, 결제 내역 = 잔금까지 결제 완료)
+async function getCustomerEstimates(userId: number, query: paymentEstimateListQuery) {
+  const estimates = await estimateRepository.getAllByCustomer({
+    userId,
+    estimateStatus: query.status,
+    paymentStage: query.paymentStage,
+    sort: query.sort,
+    month: query.month,
     cursor: query.cursor,
     take: query.take,
   });
@@ -152,6 +180,230 @@ async function confirm(estimateId: number, userId: number) {
   return estimateRepository.confirm(estimateId, estimate.moverId);
 }
 
+// 견적 결제 — customer만 가능. 선수금(확정 후 48시간 안)과 잔금(이사 완료 후)을 종류(type)로 가른다.
+// 금액·주문 번호는 서버가 종류별로 계산해 클라이언트 값과 대조한다 (토스 테스트 키면 실제 청구 없음).
+async function pay(estimateId: number, userId: number, input: estimatePayInput) {
+  const estimate = await estimateRepository.getById(estimateId);
+  if (!estimate) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
+
+  const quotationRequest = await prisma.quotationRequest.findUnique({
+    where: { id: estimate.quotationRequestId },
+    select: { userId: true },
+  });
+  if (quotationRequest?.userId !== userId) throw AppError.forbidden();
+
+  let expectedAmount: number;
+
+  if (input.type === "DEPOSIT") {
+    // 선수금은 확정됐고 선수금이 설정된 견적만 낼 수 있다
+    if (estimate.estimateStatus !== "CONFIRMED" || estimate.depositAmount === null) {
+      throw AppError.badRequest(
+        ERROR_CODES.DEPOSIT_NOT_REQUIRED,
+        "선수금을 결제할 수 있는 견적이 아닙니다"
+      );
+    }
+    if (estimate.depositPaidAt) {
+      throw AppError.conflict(ERROR_CODES.ALREADY_PAID, "이미 선수금을 결제한 견적입니다");
+    }
+    if (estimate.depositDueAt && estimate.depositDueAt.getTime() < Date.now()) {
+      throw AppError.badRequest(ERROR_CODES.DEPOSIT_EXPIRED, "선수금 결제 기한이 지났습니다");
+    }
+    expectedAmount = estimate.depositAmount;
+  } else {
+    if (estimate.paymentStatus === "PAID") {
+      throw AppError.conflict(ERROR_CODES.ALREADY_PAID, "이미 결제한 견적입니다");
+    }
+    if (estimate.estimateStatus !== "COMPLETED") {
+      throw AppError.badRequest(
+        ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+        "이사가 완료된 견적만 결제할 수 있습니다"
+      );
+    }
+    // 기사님이 추가 금액을 요청했는데 고객이 아직 응답하지 않았다면 잔금이 정해지지 않은 상태다 —
+    // 이대로 결제하면 요청을 무시하는 셈이라 먼저 응답하게 한다
+    if (estimate.extraCharges.some((c) => c.status === "PROPOSED")) {
+      throw AppError.badRequest(
+        ERROR_CODES.EXTRA_CHARGE_PENDING,
+        "추가 금액 요청에 먼저 응답해 주세요"
+      );
+    }
+    // 선수금이 있는 견적은 선수금부터 내야 잔금을 낼 수 있다 (옛 견적은 선수금이 없어 통과)
+    if (toPaymentStage(estimate) !== "BALANCE_DUE") {
+      throw AppError.badRequest(ERROR_CODES.DEPOSIT_NOT_PAID, "선수금을 먼저 결제해 주세요");
+    }
+    expectedAmount = calcBalanceAmount(estimate);
+  }
+
+  // 금액·주문 번호는 클라이언트가 보낸 값이라 서버 기준과 맞는지 먼저 확인한다 (승인 전에 걸러야 청구가 안 된다)
+  if (
+    input.amount !== expectedAmount ||
+    input.orderId !== toPaymentOrderId(estimateId, input.type)
+  ) {
+    throw AppError.badRequest(
+      ERROR_CODES.PAYMENT_FAILED,
+      "결제 금액 또는 주문 정보가 견적과 일치하지 않습니다"
+    );
+  }
+
+  await confirmTossPayment(input);
+
+  // 위 검증과 갱신 사이에 다른 요청이 먼저 결제했을 수 있어 조건부 갱신 결과를 다시 확인한다
+  let paid: boolean;
+  try {
+    paid =
+      input.type === "DEPOSIT"
+        ? await estimateRepository.payDeposit(estimateId, input.paymentKey)
+        : await estimateRepository.pay(estimateId, input.paymentKey);
+  } catch (error) {
+    // 토스는 이미 승인됐는데 DB 갱신이 실패한 경우 — 돈만 빠진 상태라 추적할 수 있게 남긴다
+    console.error(
+      `[payment] 토스 승인 후 DB 갱신 실패 estimateId=${estimateId} type=${input.type} paymentKey=${input.paymentKey}`,
+      error
+    );
+    throw error;
+  }
+  if (!paid) throw AppError.conflict(ERROR_CODES.ALREADY_PAID, "이미 결제한 견적입니다");
+
+  const updated = await estimateRepository.getById(estimateId);
+  return toEstimateResponse(updated!);
+}
+
+// 추가 금액 요청 — mover만 가능. 본인이 보낸 견적이 잔금 대기(이사 완료 후, 아직 미결제)일 때 여러 건 보낼 수 있다.
+// 건마다 사유가 필수이고, 거절되지 않은 건의 합계가 견적 금액의 20% 이내여야 한다. 고객이 승인한 건만 잔금에 합산된다.
+async function proposeExtraCharge(
+  estimateId: number,
+  moverId: number,
+  input: extraChargeProposeInput
+) {
+  const estimate = await getOwnBalanceDueEstimate(estimateId, moverId, "요청");
+  const max = calcExtraChargeMax(estimate.price);
+
+  if (input.amount > max) {
+    throw AppError.badRequest(
+      ERROR_CODES.EXTRA_CHARGE_TOO_LARGE,
+      "추가 금액은 견적 금액의 20%를 넘을 수 없습니다"
+    );
+  }
+
+  // 합계 상한은 동시 요청에도 어긋나지 않도록 repository가 트랜잭션 안에서 다시 검사한다
+  await estimateRepository.proposeExtraCharge(estimateId, input, max);
+
+  const updated = await estimateRepository.getById(estimateId);
+  return toEstimateResponse(updated!);
+}
+
+// 추가 금액 수정 — mover만 가능. 아직 고객이 응답하지 않은(PROPOSED) 본인 요청의 금액·사유만 고칠 수 있다.
+async function updateExtraCharge(
+  estimateId: number,
+  chargeId: number,
+  moverId: number,
+  input: extraChargeProposeInput
+) {
+  const estimate = await getOwnBalanceDueEstimate(estimateId, moverId, "수정");
+  const max = calcExtraChargeMax(estimate.price);
+
+  if (input.amount > max) {
+    throw AppError.badRequest(
+      ERROR_CODES.EXTRA_CHARGE_TOO_LARGE,
+      "추가 금액은 견적 금액의 20%를 넘을 수 없습니다"
+    );
+  }
+
+  await estimateRepository.updateExtraCharge(estimateId, chargeId, input, max);
+
+  const updated = await estimateRepository.getById(estimateId);
+  return toEstimateResponse(updated!);
+}
+
+// 본인이 보낸 견적이 잔금 대기 단계인지 확인한다 (추가 금액 요청·수정 공통)
+async function getOwnBalanceDueEstimate(estimateId: number, moverId: number, action: string) {
+  const estimate = await estimateRepository.getById(estimateId);
+  if (!estimate) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
+  if (estimate.moverId !== moverId) throw AppError.forbidden();
+
+  const stage = toPaymentStage(estimate);
+  if (stage === "PAID") {
+    throw AppError.conflict(
+      ERROR_CODES.ALREADY_PAID,
+      `이미 결제가 끝난 견적에는 추가 금액을 ${action}할 수 없습니다`
+    );
+  }
+  if (stage !== "BALANCE_DUE") {
+    throw AppError.badRequest(
+      ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+      `이사가 완료된 견적에만 추가 금액을 ${action}할 수 있습니다`
+    );
+  }
+  return estimate;
+}
+
+// 추가 금액 응답 — customer만 가능. 고른 건이 모두 응답 대기일 때 한 번에 승인(잔금에 합산)하거나 거절(잔금 그대로)한다.
+async function respondExtraCharge(
+  estimateId: number,
+  userId: number,
+  input: extraChargeRespondInput
+) {
+  const estimate = await estimateRepository.getById(estimateId);
+  if (!estimate) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
+
+  const quotationRequest = await prisma.quotationRequest.findUnique({
+    where: { id: estimate.quotationRequestId },
+    select: { userId: true },
+  });
+  if (quotationRequest?.userId !== userId) throw AppError.forbidden();
+
+  const chargeIds = [...new Set(input.chargeIds)];
+  const pendingIds = new Set(
+    estimate.extraCharges.filter((c) => c.status === "PROPOSED").map((c) => c.id)
+  );
+  if (!chargeIds.every((id) => pendingIds.has(id))) {
+    throw AppError.badRequest(
+      ERROR_CODES.EXTRA_CHARGE_NOT_PENDING,
+      "응답할 추가 금액 요청이 없습니다"
+    );
+  }
+
+  await estimateRepository.respondExtraCharges(
+    estimateId,
+    chargeIds,
+    input.decision === "APPROVE" ? "APPROVED" : "REJECTED"
+  );
+
+  const updated = await estimateRepository.getById(estimateId);
+  return toEstimateResponse(updated!);
+}
+
+// 결제 요청 — mover만 가능. 본인이 보낸 견적이 선수금 대기 또는 잔금 대기일 때, 단계마다 1번만.
+// 고객에게 결제 요청 알림이 간다. 알림 생성과 중복 방지는 repository.requestPayment가 한 트랜잭션으로 처리한다.
+async function requestPayment(estimateId: number, moverId: number) {
+  const estimate = await estimateRepository.getById(estimateId);
+  if (!estimate) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
+  if (estimate.moverId !== moverId) throw AppError.forbidden();
+
+  const stage = toPaymentStage(estimate);
+  if (stage === "PAID") {
+    throw AppError.conflict(ERROR_CODES.ALREADY_PAID, "이미 결제한 견적입니다");
+  }
+  // 선수금 대기(확정 후) 또는 잔금 대기(이사 완료 후)일 때만 결제를 요청할 수 있다
+  if (stage === "NONE") {
+    throw AppError.badRequest(
+      ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+      "결제를 요청할 수 있는 단계의 견적이 아닙니다"
+    );
+  }
+  if (estimate.paymentRequestedAt) {
+    throw AppError.conflict(
+      ERROR_CODES.PAYMENT_REQUEST_ALREADY_SENT,
+      "이미 결제를 요청한 견적입니다"
+    );
+  }
+
+  await estimateRepository.requestPayment(estimateId);
+
+  const updated = await estimateRepository.getById(estimateId);
+  return toEstimateResponse(updated!);
+}
+
 // mover 받은 요청 목록 — 기본은 전체 최신순, isServiceRegion/isTargeted/category 체크박스로 프론트에서 추가 필터
 // 이미 응답(견적/반려)한 건 항상 제외
 async function getMoverRequests(moverId: number, query: moverRequestQuery) {
@@ -213,10 +465,16 @@ async function getMoverRequests(moverId: number, query: moverRequestQuery) {
 export {
   confirm,
   getById,
+  getCustomerEstimates,
   getMoverEstimates,
   getMoverRequests,
   getPendingEstimates,
   getQuotationEstimates,
+  pay,
+  proposeExtraCharge,
   reject,
+  requestPayment,
+  respondExtraCharge,
+  updateExtraCharge,
   save,
 };
