@@ -83,11 +83,13 @@ router.post("/signup", validate(signupSchema), authController.signup);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [role, email]
+ *             required: [role, email, turnstileToken]
  *             properties:
  *               role: { type: string, enum: [CUSTOMER, MOVER] }
  *               email: { type: string, format: email }
- *               turnstileToken: { type: string, description: "Turnstile 위젯 토큰 (1회용)" }
+ *               turnstileToken:
+ *                 type: string
+ *                 description: Turnstile 위젯 토큰 (1회용). TURNSTILE_SECRET_KEY가 없는 로컬·CI에서는 생략 가능
  *     responses:
  *       204:
  *         description: 인증번호 발송 완료
