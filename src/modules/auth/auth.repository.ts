@@ -185,6 +185,12 @@ export const authRepository = {
     });
   },
 
+  /** 인증 가드용. 계정이 있고 탈퇴하지 않았는지만 봅니다 */
+  async isActiveUser(id: number): Promise<boolean> {
+    const user = await prisma.user.findUnique({ where: { id }, select: { deletedAt: true } });
+    return user != null && user.deletedAt == null;
+  },
+
   create(data: {
     role: UserRole;
     name: string;
