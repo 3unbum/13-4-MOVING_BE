@@ -2,7 +2,12 @@ import { EventEmitter } from "node:events";
 import type { Request, Response, NextFunction } from "express";
 import { ERROR_CODES } from "../errors/errorCodes";
 import type { RateLimitRequestHandler } from "express-rate-limit";
-import { loginRateLimiter, resetCodeRateLimiters, resetCodeDailyMailLimiter } from "./rateLimit";
+import {
+  loginRateLimiter,
+  moverAiMessageRateLimiter,
+  resetCodeRateLimiters,
+  resetCodeDailyMailLimiter,
+} from "./rateLimit";
 import { authController } from "../../modules/auth/auth.controller";
 import { authService } from "../../modules/auth/auth.service";
 
@@ -316,5 +321,43 @@ describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", ()
         retryAfterSeconds: expect.any(Number),
       },
     });
+  });
+});
+
+function makeUserReq(userId: number): Request {
+  return { user: { id: userId } } as unknown as Request;
+}
+
+describe("moverAiMessageRateLimiter", () => {
+  test("같은 유저는 분당 10건까지 통과하고 11번째부터 429를 응답한다", async () => {
+    const req = makeUserReq(9101);
+
+    const allowed = [];
+    for (let i = 0; i < 10; i++) {
+      allowed.push(await attempt(moverAiMessageRateLimiter, req));
+    }
+    const blocked = await attempt(moverAiMessageRateLimiter, req);
+
+    expect(allowed.every((result) => result.passed)).toBe(true);
+    expect(blocked.passed).toBe(false);
+    expect(blocked.res.status).toHaveBeenCalledWith(429);
+    expect(blocked.res.json).toHaveBeenCalledWith({
+      error: {
+        code: ERROR_CODES.TOO_MANY_REQUESTS,
+        message: "AI 찾기 요청이 너무 많습니다. 잠시 후 다시 시도해주세요",
+        retryAfterSeconds: expect.any(Number),
+      },
+    });
+  });
+
+  test("유저가 다르면 카운트를 공유하지 않는다", async () => {
+    for (let i = 0; i < 10; i++) {
+      await attempt(moverAiMessageRateLimiter, makeUserReq(9102));
+    }
+
+    const otherUser = await attempt(moverAiMessageRateLimiter, makeUserReq(9103));
+
+    expect(otherUser.passed).toBe(true);
+    expect(otherUser.res.status).not.toHaveBeenCalled();
   });
 });
