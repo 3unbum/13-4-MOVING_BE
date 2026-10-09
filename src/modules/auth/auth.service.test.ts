@@ -1284,13 +1284,15 @@ describe("authService.resetPassword", () => {
 
 describe("authService.deleteAccount", () => {
   const MINUTE = 60_000;
-  // 프로필 수정 진입 이메일 인증을 usedAgoMs 전에 통과한 계정
+  // 프로필을 등록했고, 프로필 수정 진입 이메일 인증을 usedAgoMs 전에 통과한 계정
   const makeDeletableUser = (overrides = {}, usedAgoMs: number | null = MINUTE) => ({
     id: 1,
     role: "CUSTOMER",
     deletedAt: null,
     profileEditVerificationCode:
       usedAgoMs === null ? null : { usedAt: new Date(Date.now() - usedAgoMs) },
+    customerProfile: { userId: 1 },
+    moverProfile: { userId: 1 },
     ...overrides,
   });
 
@@ -1343,6 +1345,27 @@ describe("authService.deleteAccount", () => {
     });
     expect(mockedRepository.deleteAccount).not.toHaveBeenCalled();
   });
+
+  /** 프로필 등록 전 계정은 활동 기록이 없어 잘못 탈퇴돼도 재가입으로 복구되므로 가입 취소처럼 처리한다 */
+  test.each([
+    ["고객", "CUSTOMER", { customerProfile: null }],
+    ["기사님", "MOVER", { moverProfile: null }],
+  ] as const)(
+    "프로필을 등록하지 않은 %s은 이메일 인증 기록이 없어도 탈퇴한다",
+    async (_label, role, noProfile) => {
+      // Setup
+      mockedRepository.findForDeleteAccount.mockResolvedValue(
+        makeDeletableUser({ role, ...noProfile }, null) as never
+      );
+      mockedRepository.deleteAccount.mockResolvedValue("DELETED");
+
+      // Exercise
+      await authService.deleteAccount(1);
+
+      // Assertion
+      expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(1, role);
+    }
+  );
 
   test.each([
     ["확정된 이사가 남아", "CONFIRMED_MOVE_EXISTS", ERROR_CODES.CONFIRMED_MOVE_EXISTS],
