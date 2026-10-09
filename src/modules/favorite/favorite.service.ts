@@ -74,6 +74,19 @@ export const favoriteService = {
     return result;
   },
 
+  /** 여러 기사님을 한 번에 찜합니다. 존재하지 않거나 본인인 id는 제외하고, 이미 찜한 기사님은 skip으로 셉니다 */
+  async bulkCreate(userId: number, moverIds: number[]) {
+    const uniqueMoverIds = [...new Set(moverIds)].filter((moverId) => moverId !== userId);
+    const validMoverIds =
+      uniqueMoverIds.length > 0 ? await favoriteRepository.findValidMoverIds(uniqueMoverIds) : [];
+    const { createdMoverIds } = await favoriteRepository.createManyOwned(userId, validMoverIds);
+
+    return {
+      createdCount: createdMoverIds.length,
+      skippedCount: validMoverIds.length - createdMoverIds.length,
+    };
+  },
+
   async bulkDelete(userId: number, moverIds: number[]) {
     const uniqueMoverIds = [...new Set(moverIds)];
     return favoriteRepository.deleteOwned(userId, uniqueMoverIds);

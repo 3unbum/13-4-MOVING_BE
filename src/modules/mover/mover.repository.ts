@@ -113,6 +113,13 @@ export const moverRepository = {
     });
   },
 
+  findListByUserIds(userIds: number[]) {
+    return prisma.moverProfile.findMany({
+      where: { userId: { in: userIds }, user: { role: "MOVER" } },
+      include: listInclude,
+    });
+  },
+
   async existsFavorite(userId: number, moverId: number) {
     const row = await prisma.favorite.findUnique({
       where: { userId_moverId: { userId, moverId } },

@@ -169,6 +169,7 @@ model User {
   chatRoomsAsCustomer         ChatRoom[]    @relation("ChatRoomCustomer")
   chatRoomsAsMover            ChatRoom[]    @relation("ChatRoomMover")
   chatMessages                ChatMessage[] @relation("ChatMessageSender")
+  moverAiSessions             MoverAiSession[]
 
   @@unique([role, provider, providerId])
   /// 로그인 조회용 — 유니크를 뺐으므로 인덱스는 별도로 유지합니다
@@ -571,4 +572,40 @@ model ChatMessage {
 
   @@index([roomId, id])
   @@map("chat_message")
+}
+
+/// 기사님 AI 찾기 대화 세션. CUSTOMER 로그인 유저만 생성합니다.
+model MoverAiSession {
+  id        String       @id @default(cuid())
+  userId    Int          @map("user_id")
+  /// 현재까지 확정된 검색 슬롯
+  region    RegionType?
+  service   ServiceType?
+  sort      String?
+  /// SHOW_MORE용 커서
+  cursor    String?
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages MoverAiMessage[]
+
+  @@index([userId, updatedAt])
+  @@map("mover_ai_session")
+}
+
+model MoverAiMessage {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  /// USER | ASSISTANT | SYSTEM
+  role      String
+  content   String
+  /// ASSISTANT일 때 filters/nextAction/moverIds 등 스냅샷
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session MoverAiSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("mover_ai_message")
 }
