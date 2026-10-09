@@ -12,6 +12,7 @@ jest.mock("./mover-ai.repository", () => ({
     findOwnedSessionWithMessages: jest.fn(),
     findRecentMessages: jest.fn(),
     findLatestAssistant: jest.fn(),
+    findRecentAssistants: jest.fn(),
     updateSessionSlots: jest.fn(),
   },
 }));
@@ -57,6 +58,7 @@ describe("moverAiService", () => {
     repository.updateSessionSlots.mockResolvedValue({} as never);
     repository.findRecentMessages.mockResolvedValue([]);
     repository.findLatestAssistant.mockResolvedValue(null);
+    repository.findRecentAssistants.mockResolvedValue([]);
     repository.findOwnedSession.mockResolvedValue(ownedSession() as never);
   });
 
@@ -162,9 +164,15 @@ describe("moverAiService", () => {
   });
 
   it("모두 찜하기는 직전 추천 id만 찜하고 카드는 다시 붙이지 않는다", async () => {
-    repository.findLatestAssistant.mockResolvedValue({
-      payload: { moverIds: [3, 4], listMeta: { nextCursor: null, hasNext: false } },
-    } as never);
+    repository.findRecentAssistants.mockResolvedValue([
+      { payload: { nextAction: "CLARIFY_UNSUPPORTED" } },
+      {
+        payload: {
+          moverIds: [3, 4],
+          listMeta: { nextCursor: null, hasNext: false },
+        },
+      },
+    ] as never);
     favorites.bulkCreate.mockResolvedValue({ createdCount: 1, skippedCount: 1 });
 
     const result = await moverAiService.postMessage(1, "sess-1", {

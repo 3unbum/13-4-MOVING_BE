@@ -48,6 +48,8 @@ function inferExplicitSort(message: string): MoverAiSort | null {
 }
 
 const HISTORY_LIMIT = 12;
+/** 찜하기가 가격 안내·찜 완료 말 뒤의 추천 카드를 찾도록 최근 어시스턴트만 훑습니다 */
+const RECENT_ASSISTANT_SCAN = 20;
 const MOVER_PAGE_SIZE = 3;
 const EMPTY_FILTERS: MoverAiFilters = { region: null, service: null, sort: null };
 
@@ -316,15 +318,26 @@ async function handleShowMore(
   return { sessionId, assistantMessage, filters };
 }
 
+/** 찜 완료·가격 안내처럼 moverIds가 없는 최신 말을 건너뛰고, 기사 카드가 있는 추천을 찾습니다 */
+async function findLatestRecommendation(
+  sessionId: string
+): Promise<MoverAiAssistantPayload | null> {
+  const rows = await moverAiRepository.findRecentAssistants(sessionId, RECENT_ASSISTANT_SCAN);
+  for (const row of rows) {
+    const payload = parsePayload(row.payload);
+    if (!payload || payload.favoriteResult) continue;
+    if ((payload.moverIds?.length ?? 0) > 0) return payload;
+  }
+  return null;
+}
+
 /** 직전에 추천한 기사님을 한꺼번에 찜합니다 */
 async function handleFavoriteAll(
   sessionId: string,
   userId: number,
   filters: MoverAiFilters
 ): Promise<PostMessageResult> {
-  const latest = parsePayload(
-    (await moverAiRepository.findLatestAssistant(sessionId))?.payload ?? null
-  );
+  const latest = await findLatestRecommendation(sessionId);
   const moverIds = latest?.moverIds ?? [];
   if (moverIds.length === 0) {
     throw AppError.badRequest(ERROR_CODES.VALIDATION_ERROR, "찜할 추천 기사님이 없습니다");

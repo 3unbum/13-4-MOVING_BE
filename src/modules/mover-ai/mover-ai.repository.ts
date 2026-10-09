@@ -83,4 +83,13 @@ export const moverAiRepository = {
       orderBy: { createdAt: "desc" },
     });
   },
+
+  /** 찜 대상 추천을 찾기 위해 최근 어시스턴트 메시지를 최신순으로 가져옵니다 */
+  findRecentAssistants(sessionId: string, take: number, db: Db = prisma) {
+    return db.moverAiMessage.findMany({
+      where: { sessionId, role: "ASSISTANT" },
+      orderBy: { createdAt: "desc" },
+      take,
+    });
+  },
 };
