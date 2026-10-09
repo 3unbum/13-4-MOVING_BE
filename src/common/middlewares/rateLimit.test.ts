@@ -6,18 +6,20 @@ import {
   loginRateLimiter,
   moverAiMessageRateLimiter,
   resetCodeRateLimiters,
-  resetCodeDailyMailLimiter,
+  signupCodeRateLimiters,
+  dailyMailLimiter,
 } from "./rateLimit";
 import { authController } from "../../modules/auth/auth.controller";
 import { authService } from "../../modules/auth/auth.service";
 
 // 발송 상한 환불은 컨트롤러가 서비스 결과로 결정하므로, 서비스만 흉내내고 DB·S3 의존 모듈은 막는다
 jest.mock("../../modules/auth/auth.service", () => ({
-  authService: { sendPasswordResetCode: jest.fn() },
+  authService: { sendPasswordResetCode: jest.fn(), sendSignupCode: jest.fn() },
 }));
 jest.mock("../../modules/profile/profile.service", () => ({ profileService: {} }));
 
 const mockedSendPasswordResetCode = jest.mocked(authService.sendPasswordResetCode);
+const mockedSendSignupCode = jest.mocked(authService.sendSignupCode);
 
 type Role = "CUSTOMER" | "MOVER";
 
@@ -223,6 +225,18 @@ describe("resetCodeRateLimiters (계정 기준 인증번호 발송 제한)", () 
     expect(otherEmail.passed).toBe(true);
     expect(otherRole.passed).toBe(true);
   });
+
+  test("같은 계정이어도 회원가입 인증번호 제한과는 카운트를 공유하지 않는다", async () => {
+    // Setup
+    const req = makeReq("reset-signup@test.com");
+    await attempt(perMinute, req);
+
+    // Exercise: 재설정 1분 한도를 소진한 계정이 회원가입 인증번호를 요청
+    const { passed } = await attempt(signupCodeRateLimiters[0], req);
+
+    // Assertion
+    expect(passed).toBe(true);
+  });
 });
 
 /**
@@ -238,7 +252,7 @@ async function sendCode(
   const res = makeRes();
   const next = jest.fn() as unknown as NextFunction;
 
-  await resetCodeDailyMailLimiter(req, res, next);
+  await dailyMailLimiter(req, res, next);
   const passed = (next as jest.Mock).mock.calls.length > 0;
 
   if (passed) {
@@ -257,14 +271,13 @@ async function sendCode(
   return { res, passed };
 }
 
-describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", () => {
-  const GLOBAL_KEY = "password-reset-mail";
-  const totalHits = async () =>
-    (await resetCodeDailyMailLimiter.getKey(GLOBAL_KEY))?.totalHits ?? 0;
+describe("dailyMailLimiter (서비스 전체 일일 발송 상한)", () => {
+  const GLOBAL_KEY = "verification-mail";
+  const totalHits = async () => (await dailyMailLimiter.getKey(GLOBAL_KEY))?.totalHits ?? 0;
 
   // Setup/Teardown: 키가 하나뿐인 전역 limiter라 테스트끼리 카운트가 섞이지 않도록 매번 비운다
   beforeEach(async () => {
-    await resetCodeDailyMailLimiter.resetKey(GLOBAL_KEY);
+    await dailyMailLimiter.resetKey(GLOBAL_KEY);
   });
 
   test("실제로 메일을 보내지 않은 요청(미가입 이메일 등)은 카운트를 되돌린다", async () => {
@@ -283,7 +296,7 @@ describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", ()
     // Setup
     const req = makeReq("error@test.com");
     const res = makeRes();
-    await resetCodeDailyMailLimiter(req, res, jest.fn());
+    await dailyMailLimiter(req, res, jest.fn());
     mockedSendPasswordResetCode.mockRejectedValueOnce(new Error("db down"));
     const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
 
@@ -321,6 +334,27 @@ describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", ()
         retryAfterSeconds: expect.any(Number),
       },
     });
+  });
+
+  test("회원가입 인증번호도 같은 상한을 쓰며, 보낸 메일만 남기고 실패(409·발송 실패)는 되돌린다", async () => {
+    // Setup
+    const send = async (email: string) => {
+      const req = makeReq(email);
+      await dailyMailLimiter(req, makeRes(), jest.fn());
+      await authController.sendSignupCode(req, makeRes(), jest.fn());
+    };
+    mockedSendSignupCode
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error("이미 가입된 이메일"))
+      .mockRejectedValueOnce(new Error("smtp down"));
+
+    // Exercise
+    await send("signup-ok@test.com");
+    await send("signup-exists@test.com");
+    await send("signup-smtp@test.com");
+
+    // Assertion
+    expect(await totalHits()).toBe(1);
   });
 });
 

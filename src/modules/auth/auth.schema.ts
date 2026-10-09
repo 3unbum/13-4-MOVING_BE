@@ -36,6 +36,15 @@ export const findEmailSchema = z.object({
   phoneNumber: z.string().regex(/^01[016789]\d{7,8}$/, "올바른 전화번호 형식이 아닙니다"),
 });
 
+export const sendSignupCodeSchema = checkEmailSchema.extend({
+  /** Turnstile 토큰. 검증은 `verifyTurnstile`이 하고, 여기서 빼면 zod가 걸러 버려 미들웨어가 못 봅니다 */
+  turnstileToken: z.string().optional(),
+});
+
+export const verifySignupCodeSchema = checkEmailSchema.extend({
+  code: z.string().regex(/^\d{6}$/, "인증번호 6자리를 입력해주세요"),
+});
+
 export const sendResetCodeSchema = checkEmailSchema;
 
 export const verifyResetCodeSchema = checkEmailSchema.extend({
@@ -64,6 +73,8 @@ export type SignupDto = z.infer<typeof signupSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
 export type CheckEmailDto = z.infer<typeof checkEmailSchema>;
 export type FindEmailDto = z.infer<typeof findEmailSchema>;
+export type SendSignupCodeDto = z.infer<typeof sendSignupCodeSchema>;
+export type VerifySignupCodeDto = z.infer<typeof verifySignupCodeSchema>;
 export type SendResetCodeDto = z.infer<typeof sendResetCodeSchema>;
 export type VerifyResetCodeDto = z.infer<typeof verifyResetCodeSchema>;
 export type ResetPasswordDto = z.infer<typeof resetPasswordSchema>;

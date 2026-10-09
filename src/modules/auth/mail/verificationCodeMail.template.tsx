@@ -11,15 +11,27 @@ const COLORS = {
 
 const FONT_FAMILY = "'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif";
 
-interface ResetCodeEmailProps {
+interface VerificationCodeEmailProps {
   code: string;
   ttlMinutes: number;
+  /** 제목·미리보기에 쓰는 용도 이름 (예: "비밀번호 재설정") */
+  purpose: string;
+  description: string;
+  /** 본인이 요청하지 않았을 때 안내 문구 */
+  ignoreNotice: string;
 }
 
-export const ResetCodeEmail = ({ code, ttlMinutes }: ResetCodeEmailProps) => (
+/** 인증번호 메일 공통 템플릿 — 비밀번호 재설정·회원가입 이메일 인증이 함께 씁니다 */
+export const VerificationCodeEmail = ({
+  code,
+  ttlMinutes,
+  purpose,
+  description,
+  ignoreNotice,
+}: VerificationCodeEmailProps) => (
   <Html lang="ko">
     <Head />
-    <Preview>{`무빙 비밀번호 재설정 인증번호는 ${code}입니다`}</Preview>
+    <Preview>{`무빙 ${purpose} 인증번호는 ${code}입니다`}</Preview>
     <Body style={{ backgroundColor: COLORS.background, fontFamily: FONT_FAMILY, margin: 0 }}>
       <Container
         style={{
@@ -37,10 +49,10 @@ export const ResetCodeEmail = ({ code, ttlMinutes }: ResetCodeEmailProps) => (
         <Text
           style={{ color: COLORS.text, fontSize: "20px", fontWeight: 700, margin: "32px 0 8px" }}
         >
-          비밀번호 재설정 인증번호
+          {purpose} 인증번호
         </Text>
         <Text style={{ color: COLORS.subText, fontSize: "15px", lineHeight: "24px", margin: 0 }}>
-          안녕하세요, 무빙입니다. 아래 인증번호를 입력해 비밀번호 재설정을 진행해 주세요.
+          {description}
         </Text>
 
         <Section
@@ -71,7 +83,7 @@ export const ResetCodeEmail = ({ code, ttlMinutes }: ResetCodeEmailProps) => (
         <Text
           style={{ color: COLORS.subText, fontSize: "14px", lineHeight: "22px", margin: "4px 0 0" }}
         >
-          본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.
+          {ignoreNotice}
         </Text>
 
         <Hr style={{ borderColor: COLORS.line, margin: "32px 0 16px" }} />

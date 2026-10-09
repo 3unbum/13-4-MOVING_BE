@@ -1,5 +1,28 @@
 @baseUrl = http://localhost:3001/api
 
+# 회원가입은 같은 (email, role)로 인증번호 발송 → 확인을 마친 뒤 30분 안에만 됩니다 (안 하면 403 EMAIL_NOT_VERIFIED)
+# 실제로 메일을 받을 수 있는 주소로 바꿔서 쓰세요. MOVER도 role만 바꿔 같은 순서로 진행합니다
+### 회원가입 인증번호 발송 - CUSTOMER (1분에 1번, 이미 가입된 이메일이면 409)
+# 로컬 BE의 TURNSTILE_SECRET_KEY가 비어 있으면 봇 검증을 건너뛰고, Cloudflare 테스트 키면 아무 토큰이나 통과합니다
+POST {{baseUrl}}/auth/signup/code
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "customer1@test.com",
+  "turnstileToken": "XXXX.DUMMY.TOKEN.XXXX"
+}
+
+### 회원가입 인증번호 확인 - CUSTOMER (메일로 받은 6자리)
+POST {{baseUrl}}/auth/signup/verify
+Content-Type: application/json
+
+{
+  "role": "CUSTOMER",
+  "email": "customer1@test.com",
+  "code": "000000"
+}
+
 ### 회원가입 - CUSTOMER
 POST {{baseUrl}}/auth/signup
 Content-Type: application/json
