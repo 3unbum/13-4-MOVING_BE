@@ -36,6 +36,13 @@ const notificationDetailInclude = {
   estimate: {
     select: {
       price: true,
+      // 선수금 알림 문구에 쓰는 금액
+      depositAmount: true,
+      // 추가 금액 알림 문구에 쓰는 금액과 고객의 응답 결과
+      extraCharges: {
+        select: { amount: true, status: true, respondedAt: true },
+        orderBy: { id: "asc" },
+      },
       mover: {
         select: {
           name: true,
@@ -133,7 +140,18 @@ export const notificationRepository = {
             quotationRequestId: { not: null },
           },
           {
-            type: { in: ["NEW_ESTIMATE", "ESTIMATE_CONFIRMED"] },
+            type: {
+              in: [
+                "NEW_ESTIMATE",
+                "ESTIMATE_CONFIRMED",
+                "PAYMENT_REQUEST",
+                "PAYMENT_COMPLETED",
+                "DEPOSIT_PAID",
+                "DEPOSIT_EXPIRED",
+                "EXTRA_CHARGE_PROPOSED",
+                "EXTRA_CHARGE_RESPONDED",
+              ],
+            },
             estimateId: { not: null },
           },
           {

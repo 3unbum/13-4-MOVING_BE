@@ -73,7 +73,12 @@ export const reviewRepository = {
       where: {
         customerId,
         status: "PENDING",
-        estimate: { estimateStatus: "COMPLETED", mover: { moverProfile: { isNot: null } } },
+        // 이사가 끝나고 잔금까지 결제한 견적의 리뷰만 작성할 수 있습니다
+        estimate: {
+          estimateStatus: "COMPLETED",
+          paymentStatus: "PAID",
+          mover: { moverProfile: { isNot: null } },
+        },
       },
       include: reviewDetailInclude,
       ...listArgs(cursor, take),
@@ -103,7 +108,9 @@ export const reviewRepository = {
   findById(id: number) {
     return prisma.review.findUnique({
       where: { id },
-      include: { estimate: { select: { moverId: true, estimateStatus: true } } },
+      include: {
+        estimate: { select: { moverId: true, estimateStatus: true, paymentStatus: true } },
+      },
     });
   },
 
@@ -230,7 +237,7 @@ export const reviewRepository = {
                 id: reviewId,
                 customerId,
                 status: "PENDING",
-                estimate: { estimateStatus: "COMPLETED" },
+                estimate: { estimateStatus: "COMPLETED", paymentStatus: "PAID" },
               },
               data: { rating, comment, status: "CONFIRMED" },
             });

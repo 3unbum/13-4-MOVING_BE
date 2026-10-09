@@ -8,6 +8,17 @@ import {
   runAfterCommitPublish,
 } from "../notification/notification.publish";
 import {
+  balanceDueWhere,
+  calcDepositAmount,
+  calcDepositDueAt,
+  depositDueWhere,
+  kstMonthRange,
+  monthRange,
+  paymentStageWhere,
+  type PaymentStageFilter,
+} from "./estimate.payment";
+import {
+  EstimateGetAllByCustomerParams,
   EstimateGetAllByMoverParams,
   EstimateGetAllByQuotationRequestParams,
   EstimateInputField,
@@ -58,6 +69,8 @@ export const estimateInclude = {
       },
     },
   },
+  /// 추가 금액 요청 목록(오래된 순) — 잔금 계산과 고객·기사님 화면이 씁니다
+  extraCharges: { orderBy: { id: "asc" } },
   /// 지정 견적 여부 판별용 — estimate.is_targeted 플래그는 8/28에 미채택이라 조인으로 봅니다.
   /// 요청에 달린 지정 목록에 이 견적의 기사님이 있으면 지정 견적입니다.
   ///
@@ -179,16 +192,53 @@ async function reject({ quotationRequestId, moverId, comment }: EstimateRejectIn
     },
   });
 }
+/**
+ * 결제 탭 목록의 정렬·월별 조회 — 카드에 보이는 날짜 기준입니다.
+ * 결제 내역(PAID)은 결제일(`paidAt`, KST 월), 대기 중인 결제는 이사 완료일(= 이사일).
+ * 같은 날은 id로 가려 순서가 흔들리지 않게 하고, 커서는 id 그대로라 어느 방향이든
+ * skip:1 + cursor로 다음 페이지가 이어집니다.
+ */
+function payListArgs(
+  paymentStage: PaymentStageFilter | undefined,
+  sort: "latest" | "oldest",
+  month: string | undefined
+) {
+  const isHistory = paymentStage === "PAID";
+  const direction = sort === "oldest" ? "asc" : "desc";
+
+  const monthWhere: Prisma.EstimateWhereInput = month
+    ? isHistory
+      ? { paidAt: kstMonthRange(month) }
+      : { quotationRequest: { movingDate: monthRange(month) } }
+    : {};
+  const orderBy: Prisma.EstimateOrderByWithRelationInput[] = [
+    isHistory ? { paidAt: direction } : { quotationRequest: { movingDate: direction } },
+    { id: direction },
+  ];
+
+  return { monthWhere, orderBy };
+}
+
 // 기사님 기준 견적 조회
 async function getAllByMover({
   moverId,
   estimateStatus,
+  paymentStage,
+  sort = "latest",
+  month,
   cursor,
   take = 6,
 }: EstimateGetAllByMoverParams) {
+  const { monthWhere, orderBy } = payListArgs(paymentStage, sort, month);
+
   return prisma.estimate.findMany({
-    where: { moverId, ...(estimateStatus && { estimateStatus }) },
-    orderBy: { id: "desc" },
+    where: {
+      moverId,
+      ...(estimateStatus && { estimateStatus }),
+      ...(paymentStage && paymentStageWhere(paymentStage)),
+      ...monthWhere,
+    },
+    orderBy,
     take,
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
     include: estimateInclude,
@@ -217,27 +267,63 @@ async function getAllByQuotationRequest({
   });
 }
 
+// 고객 기준 견적 조회 — 요청 단위가 아니라 고객이 받은 견적 전체 (결제 탭용)
+async function getAllByCustomer({
+  userId,
+  estimateStatus,
+  paymentStage,
+  sort = "latest",
+  month,
+  cursor,
+  take = 6,
+}: EstimateGetAllByCustomerParams) {
+  const { monthWhere, orderBy } = payListArgs(paymentStage, sort, month);
+
+  return prisma.estimate.findMany({
+    where: {
+      quotationRequest: { userId },
+      ...(estimateStatus && { estimateStatus }),
+      ...(paymentStage && paymentStageWhere(paymentStage)),
+      // 이사일 조건이 quotationRequest를 덮어쓰지 않도록 AND로 겹칩니다
+      ...(month && { AND: [monthWhere] }),
+    },
+    orderBy,
+    take,
+    ...(cursor && { skip: 1, cursor: { id: cursor } }),
+    include: estimateInclude,
+  });
+}
+
 // 견적서 id 로 상세조회
 async function getById(id: number) {
   return prisma.estimate.findUnique({ where: { id }, include: estimateInclude });
 }
 
-// 견적 확정(배정) — estimate CONFIRMED, quotationRequest ASSIGNED, mover confirmedCount+1, notification 생성을 한 트랜잭션으로 처리
+// 견적 확정(배정) — estimate CONFIRMED + 선수금 설정, quotationRequest ASSIGNED, mover confirmedCount+1, notification 생성을 한 트랜잭션으로 처리
+// 고객·기사님 1:1 채팅방도 이때 열립니다. 선수금을 기한 안에 못 내면 expireDeposits가 확정을 취소하면서 방을 지웁니다.
 // COMPLETED는 이사일 경과 후 expireRequests.job.ts가 처리 (여기서 건드리지 않음)
 async function confirm(estimateId: number, moverId: number) {
   return runAfterCommitPublish(() =>
     prisma.$transaction(async (tx) => {
       const existing = await tx.estimate.findUnique({
         where: { id: estimateId },
-        // 확정 알림은 고객도 받으므로 요청자 id를 함께 읽습니다
-        select: { quotationRequestId: true, quotationRequest: { select: { userId: true } } },
+        // 확정 알림은 고객도 받으므로 요청자 id를 함께 읽습니다. 선수금은 견적가와 이사일로 정합니다
+        select: {
+          price: true,
+          quotationRequestId: true,
+          quotationRequest: { select: { userId: true, movingDate: true } },
+        },
       });
       if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
 
       // PENDING 조건부 갱신 — 동시에 두 번 확정 시도해도 하나만 성공하도록 (count로 검증)
       const estimateUpdate = await tx.estimate.updateMany({
         where: { id: estimateId, estimateStatus: "PENDING" },
-        data: { estimateStatus: "CONFIRMED" },
+        data: {
+          estimateStatus: "CONFIRMED",
+          depositAmount: calcDepositAmount(existing.price ?? 0),
+          depositDueAt: calcDepositDueAt(new Date(), existing.quotationRequest.movingDate),
+        },
       });
       if (estimateUpdate.count !== 1) {
         throw AppError.badRequest(ERROR_CODES.ESTIMATE_ALREADY_PROCESSED, "이미 처리된 견적입니다");
@@ -256,20 +342,255 @@ async function confirm(estimateId: number, moverId: number) {
         where: { userId: moverId },
         data: { confirmedCount: { increment: 1 } },
       });
+      // 확정된 고객·기사님 1:1 채팅방 (estimateId unique) — 선수금을 내기 전에도 대화할 수 있게 확정 즉시 엽니다
+      // 선수금 기한 만료로 확정이 취소돼도 채팅방은 남기므로, 다시 확정하면 기존 방을 그대로 씁니다
+      await tx.chatRoom.upsert({
+        where: { estimateId },
+        create: { estimateId, customerId: existing.quotationRequest.userId, moverId },
+        update: {},
+      });
       // 확정은 기사님·고객 양쪽이 받습니다. 같은 type이라 문구 분기는 FE가 자기 role로 처리합니다
       await createManyNotifications(tx, [
         { userId: moverId, estimateId, type: "ESTIMATE_CONFIRMED" },
         { userId: existing.quotationRequest.userId, estimateId, type: "ESTIMATE_CONFIRMED" },
       ]);
       enqueueNotificationPublish([moverId, existing.quotationRequest.userId], "ESTIMATE_CONFIRMED");
-      // 확정된 고객·기사님 1:1 채팅방 (estimateId unique)
-      await tx.chatRoom.create({
-        data: { estimateId, customerId: existing.quotationRequest.userId, moverId },
-      });
 
       return tx.estimate.findUniqueOrThrow({ where: { id: estimateId } });
     })
   );
 }
 
-export default { confirm, getAllByMover, getAllByQuotationRequest, getById, reject, save };
+// 선수금 결제 기록 — 선수금 대기 단계(CONFIRMED + 선수금 설정 + 미결제)이고 기한 안일 때만 기록한다.
+// 같은 트랜잭션에서 기사님에게 알린다 (채팅방은 확정할 때 이미 열려 있다).
+// 기사님이 보낸 결제 요청은 선수금을 냈으니 지운다 — 잔금 때 한 번 더 보낼 수 있게.
+async function payDeposit(estimateId: number, paymentKey: string) {
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const { count } = await tx.estimate.updateMany({
+        where: { id: estimateId, ...depositDueWhere, depositDueAt: { gte: now } },
+        data: { depositPaidAt: now, depositPaymentKey: paymentKey, paymentRequestedAt: null },
+      });
+      if (count !== 1) return false;
+
+      const { moverId } = await tx.estimate.findUniqueOrThrow({
+        where: { id: estimateId },
+        select: { moverId: true },
+      });
+      await createNotification(tx, { userId: moverId, estimateId, type: "DEPOSIT_PAID" });
+      enqueueNotificationPublish([moverId], "DEPOSIT_PAID");
+
+      return true;
+    })
+  );
+}
+
+// 잔금 결제 기록 — 잔금 대기 단계(COMPLETED + UNPAID, 선수금을 냈거나 선수금 없는 옛 견적)일 때만 PAID로 바꾸고, 견적을 보낸 기사님에게 알린다.
+// 조건부 갱신이라 동시에 두 번 눌러도 하나만 성공한다(confirm과 같은 패턴). 성공 여부를 돌려준다.
+// 결제하면 고객이 쓸 수 있는 리뷰(PENDING)도 같이 만든다. 상태 갱신·리뷰·알림 생성은 한 트랜잭션이고, SSE는 커밋 뒤에만 나간다.
+async function pay(estimateId: number, paymentKey: string) {
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const { count } = await tx.estimate.updateMany({
+        where: { id: estimateId, ...balanceDueWhere },
+        data: { paymentStatus: "PAID", paidAt: new Date(), paymentKey },
+      });
+      if (count !== 1) return false;
+
+      const { moverId, quotationRequest } = await tx.estimate.findUniqueOrThrow({
+        where: { id: estimateId },
+        select: { moverId: true, quotationRequest: { select: { userId: true } } },
+      });
+      // 작성 가능한 리뷰는 잔금을 결제하면 열립니다. 이미 있으면(예전 방식으로 만들어진 행) 그대로 둡니다
+      await tx.review.upsert({
+        where: { estimateId },
+        create: { estimateId, customerId: quotationRequest.userId, status: "PENDING" },
+        update: {},
+      });
+      await createNotification(tx, { userId: moverId, estimateId, type: "PAYMENT_COMPLETED" });
+      enqueueNotificationPublish([moverId], "PAYMENT_COMPLETED");
+
+      return true;
+    })
+  );
+}
+
+// 추가 금액 요청 — 잔금 대기(이사 완료 + 잔금 미결제) 단계일 때 한 건을 추가하고 고객에게 알린다. 견적당 여러 건 가능.
+// 견적 행을 먼저 갱신해 잠그므로(조건부 updateMany) 동시에 보내도 상한 검사가 서로 어긋나지 않는다.
+async function proposeExtraCharge(
+  estimateId: number,
+  input: { amount: number; reason: string },
+  maxTotal: number
+) {
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const { count } = await tx.estimate.updateMany({
+        where: { id: estimateId, ...balanceDueWhere },
+        data: { updatedAt: new Date() },
+      });
+      if (count !== 1) {
+        throw AppError.badRequest(
+          ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+          "추가 금액을 요청할 수 있는 단계가 아닙니다"
+        );
+      }
+
+      const existing = await tx.estimateExtraCharge.aggregate({
+        where: { estimateId, status: { in: ["PROPOSED", "APPROVED"] } },
+        _sum: { amount: true },
+      });
+      if ((existing._sum.amount ?? 0) + input.amount > maxTotal) {
+        throw AppError.badRequest(
+          ERROR_CODES.EXTRA_CHARGE_TOO_LARGE,
+          "추가 금액 합계는 견적 금액의 20%를 넘을 수 없습니다"
+        );
+      }
+
+      await tx.estimateExtraCharge.create({
+        data: { estimateId, amount: input.amount, reason: input.reason },
+      });
+
+      const { quotationRequest } = await tx.estimate.findUniqueOrThrow({
+        where: { id: estimateId },
+        select: { quotationRequest: { select: { userId: true } } },
+      });
+      const customerId = quotationRequest.userId;
+      await createNotification(tx, {
+        userId: customerId,
+        estimateId,
+        type: "EXTRA_CHARGE_PROPOSED",
+      });
+      enqueueNotificationPublish([customerId], "EXTRA_CHARGE_PROPOSED");
+    })
+  );
+}
+
+// 추가 금액 수정 — 아직 응답 대기(PROPOSED)인 건만, 잔금 대기 단계에서 금액·사유를 고친다. 고객에게 알림은 다시 보내지 않는다.
+// 상한은 이 건을 뺀 나머지 합계 기준으로 다시 검사한다.
+async function updateExtraCharge(
+  estimateId: number,
+  chargeId: number,
+  input: { amount: number; reason: string },
+  maxTotal: number
+) {
+  return prisma.$transaction(async (tx) => {
+    const { count: locked } = await tx.estimate.updateMany({
+      where: { id: estimateId, ...balanceDueWhere },
+      data: { updatedAt: new Date() },
+    });
+    if (locked !== 1) {
+      throw AppError.badRequest(
+        ERROR_CODES.ESTIMATE_NOT_COMPLETED,
+        "추가 금액을 수정할 수 있는 단계가 아닙니다"
+      );
+    }
+
+    const others = await tx.estimateExtraCharge.aggregate({
+      where: { estimateId, id: { not: chargeId }, status: { in: ["PROPOSED", "APPROVED"] } },
+      _sum: { amount: true },
+    });
+    if ((others._sum.amount ?? 0) + input.amount > maxTotal) {
+      throw AppError.badRequest(
+        ERROR_CODES.EXTRA_CHARGE_TOO_LARGE,
+        "추가 금액 합계는 견적 금액의 20%를 넘을 수 없습니다"
+      );
+    }
+
+    const { count } = await tx.estimateExtraCharge.updateMany({
+      where: { id: chargeId, estimateId, status: "PROPOSED" },
+      data: { amount: input.amount, reason: input.reason },
+    });
+    if (count !== 1) {
+      throw AppError.badRequest(
+        ERROR_CODES.EXTRA_CHARGE_NOT_PENDING,
+        "응답 대기 중인 추가 금액 요청만 수정할 수 있습니다"
+      );
+    }
+  });
+}
+
+// 추가 금액 승인·거절 — 고른 건(chargeIds) 전부가 응답 대기(PROPOSED)이고 잔금 대기 단계일 때만 한 번에 바꾸고, 기사님에게 알린다(알림은 1건).
+// 승인한 건은 잔금(calcBalanceAmount)에 합산된다. 거절한 건은 기록으로 남고 잔금은 그대로다.
+async function respondExtraCharges(
+  estimateId: number,
+  chargeIds: number[],
+  status: "APPROVED" | "REJECTED"
+) {
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const { count } = await tx.estimateExtraCharge.updateMany({
+        where: {
+          id: { in: chargeIds },
+          estimateId,
+          status: "PROPOSED",
+          estimate: balanceDueWhere,
+        },
+        data: { status, respondedAt: new Date() },
+      });
+      if (count !== chargeIds.length) {
+        // 일부만 바뀌었으면 롤백해 "전부 아니면 전무"로 맞춘다
+        throw AppError.badRequest(
+          ERROR_CODES.EXTRA_CHARGE_NOT_PENDING,
+          "응답할 추가 금액 요청이 없습니다"
+        );
+      }
+
+      const { moverId } = await tx.estimate.findUniqueOrThrow({
+        where: { id: estimateId },
+        select: { moverId: true },
+      });
+      await createNotification(tx, { userId: moverId, estimateId, type: "EXTRA_CHARGE_RESPONDED" });
+      enqueueNotificationPublish([moverId], "EXTRA_CHARGE_RESPONDED");
+    })
+  );
+}
+
+// 결제 요청 — 선수금 대기 또는 잔금 대기 단계이고 아직 요청 안 한 견적에 한 번만(선수금을 내면 초기화돼 잔금 때 다시 보낼 수 있다). 시각 기록과 고객 알림을 한 트랜잭션으로 처리한다.
+// 조건부 갱신이라 동시에 두 번 눌러도 하나만 성공한다(confirm과 같은 패턴).
+async function requestPayment(estimateId: number) {
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const existing = await tx.estimate.findUnique({
+        where: { id: estimateId },
+        select: { quotationRequest: { select: { userId: true } } },
+      });
+      if (!existing) throw AppError.notFound("해당 견적을 찾을 수 없습니다");
+
+      const { count } = await tx.estimate.updateMany({
+        where: {
+          id: estimateId,
+          paymentRequestedAt: null,
+          OR: [depositDueWhere, balanceDueWhere],
+        },
+        data: { paymentRequestedAt: new Date() },
+      });
+      if (count !== 1) {
+        throw AppError.conflict(
+          ERROR_CODES.PAYMENT_REQUEST_ALREADY_SENT,
+          "이미 결제를 요청한 견적입니다"
+        );
+      }
+
+      const customerId = existing.quotationRequest.userId;
+      await createNotification(tx, { userId: customerId, estimateId, type: "PAYMENT_REQUEST" });
+      enqueueNotificationPublish([customerId], "PAYMENT_REQUEST");
+    })
+  );
+}
+
+export default {
+  confirm,
+  getAllByCustomer,
+  getAllByMover,
+  getAllByQuotationRequest,
+  getById,
+  pay,
+  payDeposit,
+  proposeExtraCharge,
+  reject,
+  requestPayment,
+  respondExtraCharges,
+  save,
+  updateExtraCharge,
+};
