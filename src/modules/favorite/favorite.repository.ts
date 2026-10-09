@@ -77,6 +77,46 @@ export const favoriteRepository = {
     }
   },
 
+  findValidMoverIds(moverIds: number[]) {
+    return prisma.user
+      .findMany({
+        where: { id: { in: moverIds }, role: "MOVER", moverProfile: { isNot: null } },
+        select: { id: true },
+      })
+      .then((rows) => rows.map((row) => row.id));
+  },
+
+  incrementFavoriteCounts(moverIds: number[], tx: PrismaTransaction = prisma) {
+    return tx.moverProfile.updateMany({
+      where: { userId: { in: moverIds } },
+      data: { favoriteCount: { increment: 1 } },
+    });
+  },
+
+  /** 이미 찜한 기사님은 건너뛰고, 실제로 추가된 기사님만 favoriteCount를 올립니다 */
+  async createManyOwned(userId: number, moverIds: number[]) {
+    if (moverIds.length === 0) {
+      return { createdMoverIds: [] as number[] };
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const values = moverIds.map((moverId) => Prisma.sql`(${userId}, ${moverId}, NOW())`);
+      const inserted = await tx.$queryRaw<{ mover_id: number }[]>`
+        INSERT INTO favorite (user_id, mover_id, updated_at)
+        VALUES ${Prisma.join(values)}
+        ON CONFLICT (user_id, mover_id) DO NOTHING
+        RETURNING mover_id
+      `;
+      const createdMoverIds = inserted.map((row) => row.mover_id);
+
+      if (createdMoverIds.length > 0) {
+        await favoriteRepository.incrementFavoriteCounts(createdMoverIds, tx);
+      }
+
+      return { createdMoverIds };
+    });
+  },
+
   decrementFavoriteCounts(moverIds: number[], tx: PrismaTransaction = prisma) {
     return tx.moverProfile.updateMany({
       where: { userId: { in: moverIds } },
