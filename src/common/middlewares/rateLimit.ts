@@ -93,6 +93,16 @@ export const profileEditCodeRateLimiters = [
   profileEditCodeUserLimiter(DAY, 10, PROFILE_EDIT_CODE_LIMIT_MESSAGE),
 ];
 
+/** AI 기사님 찾기 — 메시지마다 Gemini를 호출하므로 비용·할당량 보호용으로 유저당 분당 10건. requireAuth 뒤에 둡니다 */
+export const moverAiMessageRateLimiter = rateLimit({
+  windowMs: MINUTE,
+  limit: 10,
+  standardHeaders: false,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => String(req.user?.id),
+  handler: tooManyRequestsHandler("AI 찾기 요청이 너무 많습니다. 잠시 후 다시 시도해주세요"),
+});
+
 /** 채팅 도배 방지 — 유저당 분당 30건. requireAuth 뒤에 둬서 req.user.id로 셉니다 */
 export const chatMessageRateLimiter = rateLimit({
   windowMs: MINUTE,
