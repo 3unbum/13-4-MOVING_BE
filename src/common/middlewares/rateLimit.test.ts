@@ -2,17 +2,24 @@ import { EventEmitter } from "node:events";
 import type { Request, Response, NextFunction } from "express";
 import { ERROR_CODES } from "../errors/errorCodes";
 import type { RateLimitRequestHandler } from "express-rate-limit";
-import { loginRateLimiter, resetCodeRateLimiters, resetCodeDailyMailLimiter } from "./rateLimit";
+import {
+  loginRateLimiter,
+  moverAiMessageRateLimiter,
+  resetCodeRateLimiters,
+  signupCodeRateLimiters,
+  dailyMailLimiter,
+} from "./rateLimit";
 import { authController } from "../../modules/auth/auth.controller";
 import { authService } from "../../modules/auth/auth.service";
 
 // 발송 상한 환불은 컨트롤러가 서비스 결과로 결정하므로, 서비스만 흉내내고 DB·S3 의존 모듈은 막는다
 jest.mock("../../modules/auth/auth.service", () => ({
-  authService: { sendPasswordResetCode: jest.fn() },
+  authService: { sendPasswordResetCode: jest.fn(), sendSignupCode: jest.fn() },
 }));
 jest.mock("../../modules/profile/profile.service", () => ({ profileService: {} }));
 
 const mockedSendPasswordResetCode = jest.mocked(authService.sendPasswordResetCode);
+const mockedSendSignupCode = jest.mocked(authService.sendSignupCode);
 
 type Role = "CUSTOMER" | "MOVER";
 
@@ -218,6 +225,18 @@ describe("resetCodeRateLimiters (계정 기준 인증번호 발송 제한)", () 
     expect(otherEmail.passed).toBe(true);
     expect(otherRole.passed).toBe(true);
   });
+
+  test("같은 계정이어도 회원가입 인증번호 제한과는 카운트를 공유하지 않는다", async () => {
+    // Setup
+    const req = makeReq("reset-signup@test.com");
+    await attempt(perMinute, req);
+
+    // Exercise: 재설정 1분 한도를 소진한 계정이 회원가입 인증번호를 요청
+    const { passed } = await attempt(signupCodeRateLimiters[0], req);
+
+    // Assertion
+    expect(passed).toBe(true);
+  });
 });
 
 /**
@@ -233,7 +252,7 @@ async function sendCode(
   const res = makeRes();
   const next = jest.fn() as unknown as NextFunction;
 
-  await resetCodeDailyMailLimiter(req, res, next);
+  await dailyMailLimiter(req, res, next);
   const passed = (next as jest.Mock).mock.calls.length > 0;
 
   if (passed) {
@@ -252,14 +271,13 @@ async function sendCode(
   return { res, passed };
 }
 
-describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", () => {
-  const GLOBAL_KEY = "password-reset-mail";
-  const totalHits = async () =>
-    (await resetCodeDailyMailLimiter.getKey(GLOBAL_KEY))?.totalHits ?? 0;
+describe("dailyMailLimiter (서비스 전체 일일 발송 상한)", () => {
+  const GLOBAL_KEY = "verification-mail";
+  const totalHits = async () => (await dailyMailLimiter.getKey(GLOBAL_KEY))?.totalHits ?? 0;
 
   // Setup/Teardown: 키가 하나뿐인 전역 limiter라 테스트끼리 카운트가 섞이지 않도록 매번 비운다
   beforeEach(async () => {
-    await resetCodeDailyMailLimiter.resetKey(GLOBAL_KEY);
+    await dailyMailLimiter.resetKey(GLOBAL_KEY);
   });
 
   test("실제로 메일을 보내지 않은 요청(미가입 이메일 등)은 카운트를 되돌린다", async () => {
@@ -278,7 +296,7 @@ describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", ()
     // Setup
     const req = makeReq("error@test.com");
     const res = makeRes();
-    await resetCodeDailyMailLimiter(req, res, jest.fn());
+    await dailyMailLimiter(req, res, jest.fn());
     mockedSendPasswordResetCode.mockRejectedValueOnce(new Error("db down"));
     const consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
 
@@ -316,5 +334,64 @@ describe("resetCodeDailyMailLimiter (서비스 전체 일일 발송 상한)", ()
         retryAfterSeconds: expect.any(Number),
       },
     });
+  });
+
+  test("회원가입 인증번호도 같은 상한을 쓰며, 보낸 메일만 남기고 실패(409·발송 실패)는 되돌린다", async () => {
+    // Setup
+    const send = async (email: string) => {
+      const req = makeReq(email);
+      await dailyMailLimiter(req, makeRes(), jest.fn());
+      await authController.sendSignupCode(req, makeRes(), jest.fn());
+    };
+    mockedSendSignupCode
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error("이미 가입된 이메일"))
+      .mockRejectedValueOnce(new Error("smtp down"));
+
+    // Exercise
+    await send("signup-ok@test.com");
+    await send("signup-exists@test.com");
+    await send("signup-smtp@test.com");
+
+    // Assertion
+    expect(await totalHits()).toBe(1);
+  });
+});
+
+function makeUserReq(userId: number): Request {
+  return { user: { id: userId } } as unknown as Request;
+}
+
+describe("moverAiMessageRateLimiter", () => {
+  test("같은 유저는 분당 10건까지 통과하고 11번째부터 429를 응답한다", async () => {
+    const req = makeUserReq(9101);
+
+    const allowed = [];
+    for (let i = 0; i < 10; i++) {
+      allowed.push(await attempt(moverAiMessageRateLimiter, req));
+    }
+    const blocked = await attempt(moverAiMessageRateLimiter, req);
+
+    expect(allowed.every((result) => result.passed)).toBe(true);
+    expect(blocked.passed).toBe(false);
+    expect(blocked.res.status).toHaveBeenCalledWith(429);
+    expect(blocked.res.json).toHaveBeenCalledWith({
+      error: {
+        code: ERROR_CODES.TOO_MANY_REQUESTS,
+        message: "AI 찾기 요청이 너무 많습니다. 잠시 후 다시 시도해주세요",
+        retryAfterSeconds: expect.any(Number),
+      },
+    });
+  });
+
+  test("유저가 다르면 카운트를 공유하지 않는다", async () => {
+    for (let i = 0; i < 10; i++) {
+      await attempt(moverAiMessageRateLimiter, makeUserReq(9102));
+    }
+
+    const otherUser = await attempt(moverAiMessageRateLimiter, makeUserReq(9103));
+
+    expect(otherUser.passed).toBe(true);
+    expect(otherUser.res.status).not.toHaveBeenCalled();
   });
 });

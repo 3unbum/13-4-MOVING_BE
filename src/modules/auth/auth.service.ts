@@ -3,21 +3,30 @@ import { z } from "zod";
 import { Prisma, type User } from "../../../generated/prisma/client";
 import { mailer, MAIL_FROM } from "../../config/mailer";
 import { authRepository } from "./auth.repository";
-import { RESET_CODE_TTL_MINUTES, RESET_CODE_MAX_FAILED_ATTEMPTS } from "./auth.constants";
+import {
+  RESET_CODE_TTL_MINUTES,
+  RESET_CODE_MAX_FAILED_ATTEMPTS,
+  SIGNUP_CODE_TTL_MINUTES,
+  SIGNUP_CODE_MAX_FAILED_ATTEMPTS,
+  SIGNUP_VERIFIED_TTL_MINUTES,
+} from "./auth.constants";
 import { PROFILE_EDIT_VERIFIED_TTL_MINUTES } from "../profile/profile.constants";
 import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
 import { AppError } from "../../common/errors/AppError";
-import { ERROR_CODES } from "../../common/errors/errorCodes";
+import { ERROR_CODES, type ErrorCode } from "../../common/errors/errorCodes";
 import { exchangeOAuthCode, toSocialProvider, type OAuthProviderName } from "./oauth/dispatcher";
 import oauthSignupTokenUtil from "./oauth/oauthSignupToken.util";
-import { buildResetCodeMail } from "./password-reset/resetCodeMail";
+import { buildResetCodeMail } from "./mail/resetCodeMail";
+import { buildSignupCodeMail } from "./mail/signupCodeMail";
 import passwordResetTokenUtil from "./password-reset/passwordResetToken.util";
 import type {
   SignupDto,
   LoginDto,
   CheckEmailDto,
   FindEmailDto,
+  SendSignupCodeDto,
+  VerifySignupCodeDto,
   SendResetCodeDto,
   VerifyResetCodeDto,
   ResetPasswordDto,
@@ -34,15 +43,21 @@ const createAuthTokens = async (userId: User["id"], role: User["role"]) => {
   return { accessToken, refreshToken };
 };
 
-/** 미가입·코드 없음·사용된 코드도 같은 에러 — 가입 여부 숨김 */
-const invalidResetCodeError = () =>
-  AppError.badRequest(ERROR_CODES.INVALID_RESET_CODE, "인증번호가 일치하지 않습니다");
+/** 비밀번호 재설정·회원가입 인증번호가 함께 쓰는 에러 — 용도별 에러 코드만 다르게 넘깁니다 */
+const invalidCodeError = (code: ErrorCode) =>
+  AppError.badRequest(code, "인증번호가 일치하지 않습니다");
 
-const resetCodeAttemptsExceededError = () =>
+const codeExpiredError = (code: ErrorCode) =>
+  AppError.badRequest(code, "인증번호가 만료되었습니다. 인증번호를 다시 받아주세요");
+
+const codeAttemptsExceededError = (code: ErrorCode) =>
   AppError.badRequest(
-    ERROR_CODES.RESET_CODE_ATTEMPTS_EXCEEDED,
+    code,
     "인증번호를 여러 번 틀려 무효가 되었습니다. 인증번호를 다시 받아주세요"
   );
+
+const emailAlreadyExistsError = () =>
+  AppError.conflict(ERROR_CODES.EMAIL_ALREADY_EXISTS, "이미 가입된 이메일입니다");
 
 const generateResetCode = () => randomInt(0, 1_000_000).toString().padStart(6, "0");
 
@@ -85,29 +100,38 @@ const verifyRefreshTokenOwner = async (
 };
 
 export const authService = {
+  /** 이메일 인증(POST /auth/signup/verify) 후 SIGNUP_VERIFIED_TTL_MINUTES 안에만 가입할 수 있다 */
   async signup(dto: SignupDto): Promise<AuthResult> {
     const existing = await authRepository.findByEmailAndRole(dto.email, dto.role);
-    if (existing) {
-      throw AppError.conflict(ERROR_CODES.EMAIL_ALREADY_EXISTS, "이미 가입된 이메일입니다");
-    }
+    if (existing) throw emailAlreadyExistsError();
 
     const hashedPassword = await hashUtil.hashPassword(dto.password);
-    let user: User;
+    const verifiedSince = new Date(Date.now() - SIGNUP_VERIFIED_TTL_MINUTES * 60 * 1000);
+    let user: User | null;
     try {
-      user = await authRepository.create({
-        role: dto.role,
-        name: dto.name,
-        email: dto.email,
-        phoneNumber: dto.phoneNumber,
-        password: hashedPassword,
-        provider: "LOCAL",
-      });
+      user = await authRepository.createVerifiedLocalUser(
+        {
+          role: dto.role,
+          name: dto.name,
+          email: dto.email,
+          phoneNumber: dto.phoneNumber,
+          password: hashedPassword,
+        },
+        verifiedSince
+      );
     } catch (error) {
       // 사전 조회 이후 동시 요청이 먼저 저장하면 user_role_email_local_key가 막고 P2002를 던짐
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw AppError.conflict(ERROR_CODES.EMAIL_ALREADY_EXISTS, "이미 가입된 이메일입니다");
+        throw emailAlreadyExistsError();
       }
       throw error;
+    }
+    if (!user) {
+      throw new AppError(
+        403,
+        ERROR_CODES.EMAIL_NOT_VERIFIED,
+        "이메일 인증이 필요합니다. 인증번호를 다시 받아주세요"
+      );
     }
 
     const { accessToken, refreshToken } = await createAuthTokens(user.id, user.role);
@@ -184,6 +208,71 @@ export const authService = {
     };
   },
 
+  /**
+   * 가입 전 이메일로 인증번호를 보낸다. 실제로 메일을 보냈으면 true.
+   * 비밀번호 재설정과 달리 가입 여부를 숨기지 않는다(/check-email·/signup이 이미 알려줌) —
+   * 이미 가입된 이메일이면 409, 메일 발송 실패는 그대로 에러로 던진다.
+   */
+  async sendSignupCode(dto: SendSignupCodeDto): Promise<boolean> {
+    const existing = await authRepository.existsByEmailAndRole(dto.email, dto.role);
+    if (existing) throw emailAlreadyExistsError();
+
+    const code = generateResetCode();
+    const expiresAt = new Date(Date.now() + SIGNUP_CODE_TTL_MINUTES * 60 * 1000);
+    try {
+      await authRepository.replaceSignupVerificationCode(
+        dto.email,
+        dto.role,
+        hashUtil.hashResetCode(code),
+        expiresAt
+      );
+    } catch (error) {
+      // 같은 (email, role)의 동시 요청이 먼저 행을 만들면 유니크가 막음 — 먼저 온 요청이 메일을 보내므로 여기선 발송하지 않음
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return false;
+      }
+      throw error;
+    }
+
+    await mailer.sendMail({
+      from: MAIL_FROM,
+      to: dto.email,
+      ...(await buildSignupCodeMail(code, SIGNUP_CODE_TTL_MINUTES)),
+    });
+    return true;
+  },
+
+  async verifySignupCode(dto: VerifySignupCodeDto): Promise<void> {
+    const signupCode = await authRepository.findSignupVerificationCode(dto.email, dto.role);
+    if (!signupCode) throw invalidCodeError(ERROR_CODES.INVALID_SIGNUP_CODE);
+
+    if (signupCode.expiresAt <= new Date()) {
+      throw codeExpiredError(ERROR_CODES.SIGNUP_CODE_EXPIRED);
+    }
+    if (signupCode.failedAttempts >= SIGNUP_CODE_MAX_FAILED_ATTEMPTS) {
+      throw codeAttemptsExceededError(ERROR_CODES.SIGNUP_CODE_ATTEMPTS_EXCEEDED);
+    }
+
+    if (!hashUtil.compareResetCode(dto.code, signupCode.codeHash)) {
+      const failedAttempts = await authRepository.incrementSignupCodeFailedAttempts(
+        signupCode.id,
+        SIGNUP_CODE_MAX_FAILED_ATTEMPTS
+      );
+      // null: 동시 요청이 먼저 상한을 채움 / 상한 도달: 이번이 마지막 기회였음 → 둘 다 이제 이 코드는 무효
+      if (failedAttempts === null || failedAttempts >= SIGNUP_CODE_MAX_FAILED_ATTEMPTS) {
+        throw codeAttemptsExceededError(ERROR_CODES.SIGNUP_CODE_ATTEMPTS_EXCEEDED);
+      }
+      throw invalidCodeError(ERROR_CODES.INVALID_SIGNUP_CODE);
+    }
+
+    // 확인하는 사이 재발송으로 행이 바뀌었거나, 만료됐거나, 동시 오답 요청이 상한을 채웠으면 이 인증번호는 이미 무효
+    const verified = await authRepository.markSignupCodeVerified(
+      signupCode.id,
+      SIGNUP_CODE_MAX_FAILED_ATTEMPTS
+    );
+    if (!verified) throw invalidCodeError(ERROR_CODES.INVALID_SIGNUP_CODE);
+  },
+
   async sendPasswordResetCode(dto: SendResetCodeDto): Promise<boolean> {
     const user = await authRepository.existsByEmailAndRole(dto.email, dto.role);
     if (!user) return false;
@@ -219,20 +308,18 @@ export const authService = {
   },
 
   async verifyPasswordResetCode(dto: VerifyResetCodeDto): Promise<string> {
+    // 미가입·코드 없음·사용된 코드도 실제 불일치와 같은 에러 — 가입 여부 숨김
     const user = await authRepository.existsByEmailAndRole(dto.email, dto.role);
-    if (!user) throw invalidResetCodeError();
+    if (!user) throw invalidCodeError(ERROR_CODES.INVALID_RESET_CODE);
 
     const resetCode = await authRepository.findPasswordResetCodeByUserId(user.id);
-    if (!resetCode || resetCode.usedAt) throw invalidResetCodeError();
+    if (!resetCode || resetCode.usedAt) throw invalidCodeError(ERROR_CODES.INVALID_RESET_CODE);
 
     if (resetCode.expiresAt <= new Date()) {
-      throw AppError.badRequest(
-        ERROR_CODES.RESET_CODE_EXPIRED,
-        "인증번호가 만료되었습니다. 인증번호를 다시 받아주세요"
-      );
+      throw codeExpiredError(ERROR_CODES.RESET_CODE_EXPIRED);
     }
     if (resetCode.failedAttempts >= RESET_CODE_MAX_FAILED_ATTEMPTS) {
-      throw resetCodeAttemptsExceededError();
+      throw codeAttemptsExceededError(ERROR_CODES.RESET_CODE_ATTEMPTS_EXCEEDED);
     }
 
     if (!hashUtil.compareResetCode(dto.code, resetCode.codeHash)) {
@@ -242,9 +329,9 @@ export const authService = {
       );
       // null: 동시 요청이 먼저 상한을 채움 / 상한 도달: 이번이 마지막 기회였음 → 둘 다 이제 이 코드는 무효
       if (failedAttempts === null || failedAttempts >= RESET_CODE_MAX_FAILED_ATTEMPTS) {
-        throw resetCodeAttemptsExceededError();
+        throw codeAttemptsExceededError(ERROR_CODES.RESET_CODE_ATTEMPTS_EXCEEDED);
       }
-      throw invalidResetCodeError();
+      throw invalidCodeError(ERROR_CODES.INVALID_RESET_CODE);
     }
 
     return passwordResetTokenUtil.create({ userId: user.id, codeId: resetCode.id });

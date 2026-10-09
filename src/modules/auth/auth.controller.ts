@@ -15,7 +15,7 @@ import {
 } from "../../common/utils/cookie.util";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
-import { refundResetCodeMailCount } from "../../common/middlewares/rateLimit";
+import { refundDailyMailCount } from "../../common/middlewares/rateLimit";
 import type { OAuthProviderName } from "./oauth/dispatcher";
 
 const getRefreshTokenOrThrow = (req: Request): string => {
@@ -109,6 +109,28 @@ export const authController = {
     }
   }) as RequestHandler,
 
+  /** 가입 여부를 숨기지 않으므로 발송 결과를 기다려 응답. 메일을 보내지 못했으면 일일 상한 카운트를 되돌림 */
+  sendSignupCode: (async (req, res, next) => {
+    let sent = false;
+    try {
+      sent = await authService.sendSignupCode(req.body);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    } finally {
+      if (!sent) await refundDailyMailCount();
+    }
+  }) as RequestHandler,
+
+  verifySignupCode: (async (req, res, next) => {
+    try {
+      await authService.verifySignupCode(req.body);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
   /** 발송 전에 먼저 응답 — 기다리면 가입된 계정만 늦게 응답해 응답 시간으로 가입 여부가 드러남 */
   sendPasswordResetCode: (async (req, res) => {
     res.status(204).send();
@@ -119,7 +141,7 @@ export const authController = {
     } catch (error) {
       console.error("[passwordReset] 인증번호 발송 처리 실패", error);
     } finally {
-      if (!sent) await refundResetCodeMailCount();
+      if (!sent) await refundDailyMailCount();
     }
   }) as RequestHandler,
 

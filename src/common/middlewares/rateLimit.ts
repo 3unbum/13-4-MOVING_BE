@@ -37,7 +37,8 @@ export const loginRateLimiter = rateLimit({
   handler: tooManyRequestsHandler("로그인 시도 횟수를 초과했습니다. 잠시 후 다시 시도해주세요"),
 });
 
-const resetCodeAccountLimiter = (windowMs: number, limit: number, message: string) =>
+/** 인증번호 발송 계정(role + 이메일) 기준 제한. 용도마다 따로 만들어 카운트를 섞지 않습니다 */
+const codeAccountLimiter = (windowMs: number, limit: number, message: string) =>
   rateLimit({
     windowMs,
     limit,
@@ -47,31 +48,38 @@ const resetCodeAccountLimiter = (windowMs: number, limit: number, message: strin
     handler: tooManyRequestsHandler(message),
   });
 
-const RESET_CODE_LIMIT_MESSAGE = "인증번호 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요";
+const CODE_LIMIT_MESSAGE = "인증번호 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요";
 
-export const resetCodeRateLimiters = [
-  resetCodeAccountLimiter(MINUTE, 1, "인증번호는 1분에 한 번만 요청할 수 있습니다"),
-  resetCodeAccountLimiter(HOUR, 5, RESET_CODE_LIMIT_MESSAGE),
-  resetCodeAccountLimiter(DAY, 10, RESET_CODE_LIMIT_MESSAGE),
+const createCodeRateLimiters = () => [
+  codeAccountLimiter(MINUTE, 1, "인증번호는 1분에 한 번만 요청할 수 있습니다"),
+  codeAccountLimiter(HOUR, 5, CODE_LIMIT_MESSAGE),
+  codeAccountLimiter(DAY, 10, CODE_LIMIT_MESSAGE),
 ];
 
-const RESET_CODE_MAIL_KEY = "password-reset-mail";
-const resetCodeMailStore = new MemoryStore();
+export const resetCodeRateLimiters = createCodeRateLimiters();
 
-/** 요청 시 미리 세고, 컨트롤러가 발송 결과로 환불. skipFailedRequests는 연결 종료 시 무조건 환불해 우회 가능하므로 쓰지 않음 */
-export const resetCodeDailyMailLimiter = rateLimit({
+export const signupCodeRateLimiters = createCodeRateLimiters();
+
+const DAILY_MAIL_KEY = "verification-mail";
+const dailyMailStore = new MemoryStore();
+
+/**
+ * 서비스 전체 인증번호 메일 일일 상한(메일 서버 한도 보호). 비밀번호 재설정·회원가입 인증이 함께 씁니다.
+ * 요청 시 미리 세고, 컨트롤러가 발송 결과로 환불. skipFailedRequests는 연결 종료 시 무조건 환불해 우회 가능하므로 쓰지 않음
+ */
+export const dailyMailLimiter = rateLimit({
   windowMs: DAY,
   limit: 400,
   standardHeaders: false,
   legacyHeaders: false,
-  store: resetCodeMailStore,
-  keyGenerator: () => RESET_CODE_MAIL_KEY,
+  store: dailyMailStore,
+  keyGenerator: () => DAILY_MAIL_KEY,
   handler: tooManyRequestsHandler(
     "일시적으로 인증번호를 보낼 수 없습니다. 잠시 후 다시 시도해주세요"
   ),
 });
 
-export const refundResetCodeMailCount = () => resetCodeMailStore.decrement(RESET_CODE_MAIL_KEY);
+export const refundDailyMailCount = () => dailyMailStore.decrement(DAILY_MAIL_KEY);
 
 /** 프로필 수정 진입 인증 메일 도배 방지 — requireAuth 뒤에 둬서 req.user.id로 셉니다 */
 const profileEditCodeUserLimiter = (windowMs: number, limit: number, message: string) =>
@@ -92,6 +100,16 @@ export const profileEditCodeRateLimiters = [
   profileEditCodeUserLimiter(HOUR, 5, PROFILE_EDIT_CODE_LIMIT_MESSAGE),
   profileEditCodeUserLimiter(DAY, 10, PROFILE_EDIT_CODE_LIMIT_MESSAGE),
 ];
+
+/** AI 기사님 찾기 — 메시지마다 Gemini를 호출하므로 비용·할당량 보호용으로 유저당 분당 10건. requireAuth 뒤에 둡니다 */
+export const moverAiMessageRateLimiter = rateLimit({
+  windowMs: MINUTE,
+  limit: 10,
+  standardHeaders: false,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => String(req.user?.id),
+  handler: tooManyRequestsHandler("AI 찾기 요청이 너무 많습니다. 잠시 후 다시 시도해주세요"),
+});
 
 /** 채팅 도배 방지 — 유저당 분당 30건. requireAuth 뒤에 둬서 req.user.id로 셉니다 */
 export const chatMessageRateLimiter = rateLimit({

@@ -171,6 +171,7 @@ model User {
   chatRoomsAsCustomer         ChatRoom[]    @relation("ChatRoomCustomer")
   chatRoomsAsMover            ChatRoom[]    @relation("ChatRoomMover")
   chatMessages                ChatMessage[] @relation("ChatMessageSender")
+  moverAiSessions             MoverAiSession[]
 
   @@unique([role, provider, providerId])
   /// 로그인 조회용 — 유니크를 뺐으므로 인덱스는 별도로 유지합니다
@@ -215,6 +216,26 @@ model ProfileEditVerificationCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("profile_edit_verification_code")
+}
+
+/// 이메일 회원가입 인증번호 — (email, role)당 한 행만 유지합니다.
+/// 가입 전이라 User와 관계가 없습니다. 인증에 성공하면 verifiedAt을 기록하고, 가입이 끝나면 행을 지웁니다.
+/// 가입하지 않고 남은 행은 따로 정리하지 않습니다(다시 요청하면 지우고 새로 만듭니다).
+model SignupEmailVerificationCode {
+  id             Int       @id @default(autoincrement())
+  email          String
+  role           UserRole
+  /// 인증번호 평문은 저장하지 않습니다
+  codeHash       String    @map("code_hash")
+  expiresAt      DateTime  @map("expires_at")
+  /// 틀린 입력 횟수 — 상한 도달 시 이 코드는 무효
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  /// 인증 성공 시각 — 이후 일정 시간 안에만 가입할 수 있습니다
+  verifiedAt     DateTime? @map("verified_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@unique([email, role])
+  @@map("signup_email_verification_code")
 }
 
 /// row 존재 여부가 곧 "프로필 등록 완료" 여부입니다.
@@ -553,4 +574,40 @@ model ChatMessage {
 
   @@index([roomId, id])
   @@map("chat_message")
+}
+
+/// 기사님 AI 찾기 대화 세션. CUSTOMER 로그인 유저만 생성합니다.
+model MoverAiSession {
+  id        String       @id @default(cuid())
+  userId    Int          @map("user_id")
+  /// 현재까지 확정된 검색 슬롯
+  region    RegionType?
+  service   ServiceType?
+  sort      String?
+  /// SHOW_MORE용 커서
+  cursor    String?
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages MoverAiMessage[]
+
+  @@index([userId, updatedAt])
+  @@map("mover_ai_session")
+}
+
+model MoverAiMessage {
+  id        String   @id @default(cuid())
+  sessionId String   @map("session_id")
+  /// USER | ASSISTANT | SYSTEM
+  role      String
+  content   String
+  /// ASSISTANT일 때 filters/nextAction/moverIds 등 스냅샷
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session MoverAiSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("mover_ai_message")
 }
