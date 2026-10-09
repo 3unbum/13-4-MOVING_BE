@@ -56,6 +56,8 @@ async function deleteCustomerAccount(
   });
   await tx.passwordResetCode.deleteMany({ where: { userId } });
   await tx.profileEditVerificationCode.deleteMany({ where: { userId } });
+  // AI 찾기 대화 기록은 본인만 보므로 지웁니다. 메시지는 세션 Cascade로 함께 지워집니다
+  await tx.moverAiSession.deleteMany({ where: { userId } });
   // 작성하지 않은 리뷰는 쓸 사람이 없어 지우고, 작성한 리뷰(CONFIRMED)는 기사님 평점과 함께 남깁니다
   await tx.review.deleteMany({ where: { customerId: userId, status: "PENDING" } });
 
