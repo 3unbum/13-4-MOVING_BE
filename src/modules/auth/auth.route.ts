@@ -537,6 +537,7 @@ router.get("/me", requireAuth, authController.me);
  *
  *       - 프로필 수정 진입 이메일 인증(`POST /profiles/email-verification/verify`)을 30분 이내에 통과했어야 합니다.
  *         다시 인증을 요구하지 않고, 프로필 수정 페이지에 들어올 때 한 인증 기록만 확인합니다.
+ *         프로필을 아직 등록하지 않은 계정은 인증 없이 탈퇴합니다(가입 취소 — 프로필 등록 페이지에서 호출).
  *       - 확정된 이사(고객: 기사님 확정 후 이사 전 요청, 기사님: 확정된 견적)가 있으면 탈퇴할 수 없습니다.
  *         이사일 다음 날 완료 처리되면 탈퇴할 수 있습니다.
  *       - 이사가 끝났지만 잔금 결제가 끝나지 않은 견적이 있으면 탈퇴할 수 없습니다.
@@ -547,7 +548,7 @@ router.get("/me", requireAuth, authController.me);
  *       401:
  *         description: accessToken이 없거나 만료·위조됨(ACCESS_TOKEN_INVALID/ACCESS_TOKEN_EXPIRED)
  *       403:
- *         description: 이메일 인증을 하지 않았거나 30분이 지남 (PROFILE_EDIT_VERIFICATION_REQUIRED) — 다시 인증 후 요청
+ *         description: 프로필을 등록한 계정인데 이메일 인증을 하지 않았거나 30분이 지남 (PROFILE_EDIT_VERIFICATION_REQUIRED) — 다시 인증 후 요청
  *       404:
  *         description: 이미 탈퇴했거나 존재하지 않는 계정 (NOT_FOUND)
  *       409:

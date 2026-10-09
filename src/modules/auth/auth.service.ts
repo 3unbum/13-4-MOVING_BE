@@ -373,14 +373,18 @@ export const authService = {
       throw AppError.notFound("이미 탈퇴했거나 존재하지 않는 계정입니다");
     }
 
-    const verifiedAt = user.profileEditVerificationCode?.usedAt;
-    const verifiedSince = new Date(Date.now() - PROFILE_EDIT_VERIFIED_TTL_MINUTES * 60_000);
-    if (!verifiedAt || verifiedAt < verifiedSince) {
-      throw new AppError(
-        403,
-        ERROR_CODES.PROFILE_EDIT_VERIFICATION_REQUIRED,
-        "이메일 인증 후 탈퇴할 수 있습니다. 다시 인증해 주세요."
-      );
+    // 프로필을 등록하지 않은 계정은 서비스 활동 기록이 없어 잘못 탈퇴돼도 재가입으로 복구되므로 인증 없이 탈퇴(가입 취소)합니다
+    const hasProfile = user.role === "MOVER" ? !!user.moverProfile : !!user.customerProfile;
+    if (hasProfile) {
+      const verifiedAt = user.profileEditVerificationCode?.usedAt;
+      const verifiedSince = new Date(Date.now() - PROFILE_EDIT_VERIFIED_TTL_MINUTES * 60_000);
+      if (!verifiedAt || verifiedAt < verifiedSince) {
+        throw new AppError(
+          403,
+          ERROR_CODES.PROFILE_EDIT_VERIFICATION_REQUIRED,
+          "이메일 인증 후 탈퇴할 수 있습니다. 다시 인증해 주세요."
+        );
+      }
     }
 
     const result = await authRepository.deleteAccount(user.id, user.role);

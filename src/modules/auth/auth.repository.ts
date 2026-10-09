@@ -332,6 +332,8 @@ export const authRepository = {
         role: true,
         deletedAt: true,
         profileEditVerificationCode: { select: { usedAt: true } },
+        customerProfile: { select: { userId: true } },
+        moverProfile: { select: { userId: true } },
       },
     });
   },
