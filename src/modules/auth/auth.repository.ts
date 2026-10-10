@@ -1,6 +1,150 @@
 import { prisma } from "../../config/prisma";
 import type { PrismaTransaction } from "../../config/prisma";
+import { Prisma } from "../../../generated/prisma/client.ts";
 import type { SocialProvider, UserRole } from "../../../generated/prisma/enums.ts";
+import { AppError } from "../../common/errors/AppError";
+import { ERROR_CODES } from "../../common/errors/errorCodes";
+import { REGION_LABELS } from "../mover/mover.type";
+
+const DELETE_ACCOUNT_MAX_RETRIES = 3;
+
+/** 탈퇴 결과. 탈퇴하지 못했으면 아무것도 지우지 않고 막힌 이유를 돌려줍니다 */
+export type DeleteAccountResult = "DELETED" | "CONFIRMED_MOVE_EXISTS" | "UNPAID_PAYMENT_EXISTS";
+
+/**
+ * 탈퇴 후 User 행에 남기는 값. 행은 리뷰·완료된 견적이 참조하므로 지우지 않고 개인정보만 덮어씁니다.
+ * 이름은 역할마다 달라 여기서 다루지 않습니다(고객은 그대로, 기사님은 별명으로 바꿈)
+ */
+const anonymizedUser = (userId: number) => ({
+  // NOT NULL이라 비울 수 없어 실제로 존재할 수 없는 도메인(.invalid)으로 바꿉니다
+  email: `deleted-${userId}@deleted.invalid`,
+  phoneNumber: "",
+  password: null,
+  // provider를 비워야 이메일 가입 부분 유니크(WHERE provider = 'LOCAL')와 소셜 유니크에 걸리지 않아 재가입이 됩니다
+  provider: null,
+  providerId: null,
+  refreshToken: null,
+  deletedAt: new Date(),
+});
+
+/** 고객 탈퇴. 확정된 이사(ASSIGNED)나 잔금을 내지 않은 완료 견적이 있으면 아무것도 지우지 않습니다 */
+async function deleteCustomerAccount(
+  tx: PrismaTransaction,
+  userId: number
+): Promise<DeleteAccountResult> {
+  const assignedCount = await tx.quotationRequest.count({
+    where: { userId, quotationStatus: "ASSIGNED" },
+  });
+  if (assignedCount > 0) return "CONFIRMED_MOVE_EXISTS";
+
+  // 탈퇴하면 로그인할 수 없어 잔금을 낼 방법이 없어지고, 기사님은 돈을 받지 못합니다
+  const unpaidCount = await tx.estimate.count({
+    where: { quotationRequest: { userId }, estimateStatus: "COMPLETED", paymentStatus: "UNPAID" },
+  });
+  if (unpaidCount > 0) return "UNPAID_PAYMENT_EXISTS";
+
+  await tx.chatRoom.deleteMany({ where: { customerId: userId } });
+  // 본인 알림과, 남기는 요청·견적에 걸린 기사님 쪽 알림까지 지웁니다(탈퇴한 사람과의 지난 알림은 남길 이유가 없음)
+  await tx.notification.deleteMany({
+    where: {
+      OR: [
+        { userId },
+        { quotationRequest: { userId } },
+        { estimate: { quotationRequest: { userId } } },
+      ],
+    },
+  });
+  await tx.passwordResetCode.deleteMany({ where: { userId } });
+  await tx.profileEditVerificationCode.deleteMany({ where: { userId } });
+  // AI 찾기 대화 기록은 본인만 보므로 지웁니다. 메시지는 세션 Cascade로 함께 지워집니다
+  await tx.moverAiSession.deleteMany({ where: { userId } });
+  // 작성하지 않은 리뷰는 쓸 사람이 없어 지우고, 작성한 리뷰(CONFIRMED)는 기사님 평점과 함께 남깁니다
+  await tx.review.deleteMany({ where: { customerId: userId, status: "PENDING" } });
+
+  // 이사가 끝난(COMPLETED) 요청만 남깁니다. 나머지는 Cascade로 견적·지정 요청·알림이 함께 지워집니다
+  await tx.quotationRequest.deleteMany({
+    where: { userId, quotationStatus: { not: "COMPLETED" } },
+  });
+  await tx.estimate.deleteMany({
+    where: { quotationRequest: { userId }, estimateStatus: { in: ["PENDING", "REJECTED"] } },
+  });
+
+  // 남긴 요청의 주소는 시도 이름만 남깁니다. 빈 문자열이면 기사님 견적 카드가 빈칸으로 나옵니다
+  const keptRequests = await tx.quotationRequest.findMany({
+    where: { userId },
+    select: { id: true, fromRegion: true, toRegion: true },
+  });
+  for (const request of keptRequests) {
+    await tx.quotationRequest.update({
+      where: { id: request.id },
+      data: {
+        fromPostalCode: "",
+        fromAddress: REGION_LABELS[request.fromRegion],
+        fromDetailAddress: "",
+        toPostalCode: "",
+        toAddress: REGION_LABELS[request.toRegion],
+        toDetailAddress: "",
+      },
+    });
+  }
+
+  await tx.customerService.deleteMany({ where: { userId } });
+  await tx.customerProfile.deleteMany({ where: { userId } });
+  // 찜(favorite)은 남깁니다. 지우면 기사님의 favoriteCount와 실제 행 수가 어긋납니다
+
+  // 이름은 덮어쓰지 않습니다 — 기사님 화면의 지난 견적·결제 내역에 원래 이름이 그대로 나옵니다
+  await tx.user.update({ where: { id: userId }, data: anonymizedUser(userId) });
+  return "DELETED";
+}
+
+/** 기사님 탈퇴. 확정된 이사(CONFIRMED 견적)나 잔금을 받지 않은 완료 견적이 있으면 아무것도 지우지 않습니다 */
+async function deleteMoverAccount(
+  tx: PrismaTransaction,
+  userId: number
+): Promise<DeleteAccountResult> {
+  const confirmedCount = await tx.estimate.count({
+    where: { moverId: userId, estimateStatus: "CONFIRMED" },
+  });
+  if (confirmedCount > 0) return "CONFIRMED_MOVE_EXISTS";
+
+  // 탈퇴하면 결제 요청·추가 금액 응답을 처리할 기사님이 없어집니다
+  const unpaidCount = await tx.estimate.count({
+    where: { moverId: userId, estimateStatus: "COMPLETED", paymentStatus: "UNPAID" },
+  });
+  if (unpaidCount > 0) return "UNPAID_PAYMENT_EXISTS";
+
+  // 프로필을 지우기 전에 별명을 읽어 둡니다. 견적·결제 내역은 프로필이 없으면 User.name을 별명 자리에 씁니다(estimate.dto)
+  const profile = await tx.moverProfile.findUnique({
+    where: { userId },
+    select: { nickName: true },
+  });
+
+  await tx.chatRoom.deleteMany({ where: { moverId: userId } });
+  // 본인 알림과, 남기는 완료 견적에 걸린 고객 쪽 알림까지 지웁니다
+  await tx.notification.deleteMany({
+    where: { OR: [{ userId }, { estimate: { moverId: userId } }] },
+  });
+  await tx.passwordResetCode.deleteMany({ where: { userId } });
+  await tx.profileEditVerificationCode.deleteMany({ where: { userId } });
+  // 받은 리뷰는 모두 지웁니다(작성한 것·작성 전 모두). 남길 대상은 고객이 기사님에게 남긴 평가뿐인데 받을 기사님이 없어집니다
+  await tx.review.deleteMany({ where: { estimate: { moverId: userId } } });
+  // 완료된 견적(COMPLETED)은 고객의 이사 내역·결제 내역이 참조하므로 남깁니다
+  await tx.estimate.deleteMany({
+    where: { moverId: userId, estimateStatus: { in: ["PENDING", "REJECTED"] } },
+  });
+  await tx.targetedRequest.deleteMany({ where: { moverId: userId } });
+  await tx.favorite.deleteMany({ where: { moverId: userId } });
+
+  // 프로필을 지우면 기사님 찾기·상세·찜 목록에서 빠집니다(모두 프로필 존재 여부로 거름)
+  await tx.moverService.deleteMany({ where: { moverId: userId } });
+  await tx.moverRegion.deleteMany({ where: { moverId: userId } });
+  await tx.moverProfile.deleteMany({ where: { userId } });
+
+  // 실명 대신 별명을 남겨 고객이 지난 견적에서 누구였는지 알아볼 수 있게 합니다
+  const name = profile ? `${profile.nickName} (탈퇴)` : "탈퇴한 기사님";
+  await tx.user.update({ where: { id: userId }, data: { ...anonymizedUser(userId), name } });
+  return "DELETED";
+}
 
 /** 프로필 등록 여부 판단에 필요한 관계만 선택합니다. */
 const withProfiles = {
@@ -39,6 +183,12 @@ export const authRepository = {
       where: { id },
       include: withProfiles,
     });
+  },
+
+  /** 인증 가드용. 계정이 있고 탈퇴하지 않았는지만 봅니다 */
+  async isActiveUser(id: number): Promise<boolean> {
+    const user = await prisma.user.findUnique({ where: { id }, select: { deletedAt: true } });
+    return user != null && user.deletedAt == null;
   },
 
   create(data: {
@@ -171,5 +321,52 @@ export const authRepository = {
       });
       return true;
     });
+  },
+
+  /** 탈퇴 전 확인용 — 탈퇴 여부와 프로필 수정 진입 이메일 인증 시각(usedAt) */
+  findForDeleteAccount(id: number) {
+    return prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        role: true,
+        deletedAt: true,
+        profileEditVerificationCode: { select: { usedAt: true } },
+        customerProfile: { select: { userId: true } },
+        moverProfile: { select: { userId: true } },
+      },
+    });
+  },
+
+  /**
+   * 회원 탈퇴. 탈퇴했으면 "DELETED", 확정된 이사나 미결제 견적이 남아 탈퇴하지 못했으면 그 이유.
+   *
+   * 확인과 삭제 사이에 견적이 확정되면 확정된 이사를 지우게 되므로 Serializable로 묶고,
+   * 직렬화 충돌(P2034)은 재시도합니다.
+   */
+  async deleteAccount(userId: number, role: UserRole): Promise<DeleteAccountResult> {
+    for (let attempt = 1; attempt <= DELETE_ACCOUNT_MAX_RETRIES; attempt++) {
+      try {
+        return await prisma.$transaction(
+          (tx: PrismaTransaction) =>
+            role === "MOVER" ? deleteMoverAccount(tx, userId) : deleteCustomerAccount(tx, userId),
+          { isolationLevel: "Serializable" }
+        );
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+          if (attempt < DELETE_ACCOUNT_MAX_RETRIES) continue;
+          throw AppError.conflict(
+            ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
+            "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+          );
+        }
+        throw error;
+      }
+    }
+
+    throw AppError.conflict(
+      ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
+      "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+    );
   },
 };

@@ -3,12 +3,13 @@ import { AppError } from "../errors/AppError";
 import { ERROR_CODES } from "../errors/errorCodes";
 import jwtUtil from "../utils/jwt.util";
 import { ACCESS_TOKEN_COOKIE } from "../utils/cookie.util";
+import { authRepository } from "../../modules/auth/auth.repository";
 
 /**
  * 로그인 필수. httpOnly 쿠키의 access token을 검증해 req.user를 채웁니다.
  * 만료/위조를 구분해 응답해야 프론트가 만료 시에만 /auth/refresh로 재시도할 수 있습니다.
  */
-export const requireAuth: RequestHandler = (req, _res, next) => {
+export const requireAuth: RequestHandler = async (req, _res, next) => {
   const token = req.cookies?.[ACCESS_TOKEN_COOKIE] ?? null;
 
   if (!token) {
@@ -16,10 +17,9 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
     return;
   }
 
+  let decoded: ReturnType<typeof jwtUtil.verifyToken>;
   try {
-    const decoded = jwtUtil.verifyToken(token, "access");
-    req.user = { id: decoded.userId, role: decoded.role };
-    next();
+    decoded = jwtUtil.verifyToken(token, "access");
   } catch (error) {
     const isExpired = error instanceof Error && error.name === "TokenExpiredError";
     next(
@@ -29,7 +29,23 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
         isExpired ? "토큰이 만료되었습니다" : "유효하지 않은 토큰입니다"
       )
     );
+    return;
   }
+
+  // 탈퇴 전에 발급된 access token은 만료 전까지 서명이 유효하므로 계정 상태를 직접 확인합니다.
+  // EXPIRED가 아닌 INVALID로 응답해야 프론트가 재발급을 시도하지 않습니다(refresh token도 탈퇴 때 지워짐)
+  try {
+    if (!(await authRepository.isActiveUser(decoded.userId))) {
+      next(new AppError(401, ERROR_CODES.ACCESS_TOKEN_INVALID, "유효하지 않은 토큰입니다"));
+      return;
+    }
+  } catch (error) {
+    next(error);
+    return;
+  }
+
+  req.user = { id: decoded.userId, role: decoded.role };
+  next();
 };
 
 /**

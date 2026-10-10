@@ -10,6 +10,7 @@ import {
   SIGNUP_CODE_MAX_FAILED_ATTEMPTS,
   SIGNUP_VERIFIED_TTL_MINUTES,
 } from "./auth.constants";
+import { PROFILE_EDIT_VERIFIED_TTL_MINUTES } from "../profile/profile.constants";
 import hashUtil from "../../common/utils/hash.util";
 import jwtUtil from "../../common/utils/jwt.util";
 import { AppError } from "../../common/errors/AppError";
@@ -357,6 +358,48 @@ export const authService = {
       hashedPassword
     );
     if (!completed) throw invalidTokenError;
+  },
+
+  /**
+   * 회원 탈퇴. User 행은 남기고 개인정보만 지웁니다(삭제하면 리뷰·완료된 견적이 Cascade로 사라짐).
+   *
+   * 탈퇴 버튼은 프로필 수정 페이지(진입 시 이메일 인증)에 있어, 그 인증을 최근에 통과했을 때만 허용합니다(403).
+   * 사용자에게 다시 인증을 받지 않고 이미 남은 인증 기록만 확인합니다 — 로그인 쿠키만으로 바로 탈퇴되지 않게.
+   * 확정된 이사나 잔금을 결제하지 않은 견적이 남아 있으면 409.
+   */
+  async deleteAccount(userId: User["id"]): Promise<void> {
+    const user = await authRepository.findForDeleteAccount(userId);
+    if (!user || user.deletedAt) {
+      throw AppError.notFound("이미 탈퇴했거나 존재하지 않는 계정입니다");
+    }
+
+    // 프로필을 등록하지 않은 계정은 서비스 활동 기록이 없어 잘못 탈퇴돼도 재가입으로 복구되므로 인증 없이 탈퇴(가입 취소)합니다
+    const hasProfile = user.role === "MOVER" ? !!user.moverProfile : !!user.customerProfile;
+    if (hasProfile) {
+      const verifiedAt = user.profileEditVerificationCode?.usedAt;
+      const verifiedSince = new Date(Date.now() - PROFILE_EDIT_VERIFIED_TTL_MINUTES * 60_000);
+      if (!verifiedAt || verifiedAt < verifiedSince) {
+        throw new AppError(
+          403,
+          ERROR_CODES.PROFILE_EDIT_VERIFICATION_REQUIRED,
+          "이메일 인증 후 탈퇴할 수 있습니다. 다시 인증해 주세요."
+        );
+      }
+    }
+
+    const result = await authRepository.deleteAccount(user.id, user.role);
+    if (result === "CONFIRMED_MOVE_EXISTS") {
+      throw AppError.conflict(
+        ERROR_CODES.CONFIRMED_MOVE_EXISTS,
+        "확정된 이사가 있어 탈퇴할 수 없습니다. 이사 완료 후 다시 시도해 주세요."
+      );
+    }
+    if (result === "UNPAID_PAYMENT_EXISTS") {
+      throw AppError.conflict(
+        ERROR_CODES.UNPAID_PAYMENT_EXISTS,
+        "결제가 끝나지 않은 견적이 있어 탈퇴할 수 없습니다. 결제 완료 후 다시 시도해 주세요."
+      );
+    }
   },
 
   /**

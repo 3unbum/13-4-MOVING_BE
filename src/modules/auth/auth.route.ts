@@ -523,6 +523,44 @@ router.get("/me", requireAuth, authController.me);
 
 /**
  * @swagger
+ * /auth/me:
+ *   delete:
+ *     tags: [Auth]
+ *     summary: 회원 탈퇴
+ *     description: |
+ *       계정 행은 남기고 개인정보(이메일·전화번호·비밀번호·소셜 연결)를 지웁니다.
+ *       잔금까지 결제한 완료 견적(결제 내역 포함)은 상대방 기록으로 남습니다.
+ *       - 고객: 이름은 그대로 남고, 작성한 리뷰도 기사님 평점과 함께 남습니다.
+ *       - 기사님: 이름이 "별명 (탈퇴)"로 바뀌어 고객의 지난 견적·결제 내역에 표시되고, 받은 리뷰는 지워집니다.
+ *       탈퇴한 사람과 관련된 상대방의 지난 알림도 함께 지워집니다.
+ *       같은 이메일·소셜 계정으로 바로 다시 가입할 수 있습니다.
+ *
+ *       - 프로필 수정 진입 이메일 인증(`POST /profiles/email-verification/verify`)을 30분 이내에 통과했어야 합니다.
+ *         다시 인증을 요구하지 않고, 프로필 수정 페이지에 들어올 때 한 인증 기록만 확인합니다.
+ *         프로필을 아직 등록하지 않은 계정은 인증 없이 탈퇴합니다(가입 취소 — 프로필 등록 페이지에서 호출).
+ *       - 확정된 이사(고객: 기사님 확정 후 이사 전 요청, 기사님: 확정된 견적)가 있으면 탈퇴할 수 없습니다.
+ *         이사일 다음 날 완료 처리되면 탈퇴할 수 있습니다.
+ *       - 이사가 끝났지만 잔금 결제가 끝나지 않은 견적이 있으면 탈퇴할 수 없습니다.
+ *       - 성공 시 인증 쿠키를 지웁니다.
+ *     responses:
+ *       204:
+ *         description: 탈퇴 완료 — 인증 쿠키 clear
+ *       401:
+ *         description: accessToken이 없거나 만료·위조됨(ACCESS_TOKEN_INVALID/ACCESS_TOKEN_EXPIRED)
+ *       403:
+ *         description: 프로필을 등록한 계정인데 이메일 인증을 하지 않았거나 30분이 지남 (PROFILE_EDIT_VERIFICATION_REQUIRED) — 다시 인증 후 요청
+ *       404:
+ *         description: 이미 탈퇴했거나 존재하지 않는 계정 (NOT_FOUND)
+ *       409:
+ *         description: |
+ *           확정된 이사가 있음 (CONFIRMED_MOVE_EXISTS)
+ *           / 잔금 결제가 끝나지 않은 견적이 있음 (UNPAID_PAYMENT_EXISTS)
+ *           / 동시 요청 충돌 (CONCURRENT_REQUEST_CONFLICT)
+ */
+router.delete("/me", requireAuth, authController.deleteAccount);
+
+/**
+ * @swagger
  * /auth/oauth/signup:
  *   post:
  *     tags: [Auth]
