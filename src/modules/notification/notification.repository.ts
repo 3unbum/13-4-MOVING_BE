@@ -144,6 +144,7 @@ export const notificationRepository = {
               in: [
                 "NEW_ESTIMATE",
                 "ESTIMATE_CONFIRMED",
+                "ESTIMATE_REJECTED",
                 "PAYMENT_REQUEST",
                 "PAYMENT_COMPLETED",
                 "DEPOSIT_PAID",

@@ -389,6 +389,24 @@ describe("notificationService.list", () => {
     expect(result.nextCursor).toBe(4);
   });
 
+  it("지정 견적 반려 알림은 기사님 닉네임과 이사 유형만 담는다", async () => {
+    mockedRepository.findManyByUserId.mockResolvedValue([
+      row({ id: 6, type: "ESTIMATE_REJECTED", estimateId: 42, estimate }),
+    ] as never);
+    mockedRepository.countUnread.mockResolvedValue(1);
+
+    const result = await notificationService.list(7, {});
+
+    expect(result.items).toMatchObject([
+      {
+        id: 6,
+        type: "ESTIMATE_REJECTED",
+        estimateId: 42,
+        payload: { moverNickName: "김코드", category: "SMALL" },
+      },
+    ]);
+  });
+
   it("프로필이 없어도 기사님 이름으로 견적 알림을 남긴다", async () => {
     mockedRepository.findManyByUserId.mockResolvedValue([
       row({
