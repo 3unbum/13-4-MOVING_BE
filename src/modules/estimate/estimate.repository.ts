@@ -174,23 +174,47 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
   );
 }
 
-// 사용자가 요청한 지정 견적 요청에 대한 반려
+// 지정 견적 반려. 처음 REJECTED가 될 때만 요청 고객에게 알립니다.
+// 이미 반려된 건을 다시 저장하면 사유만 바꾸고 알림은 만들지 않습니다.
 async function reject({ quotationRequestId, moverId, comment }: EstimateRejectInput) {
-  return prisma.estimate.upsert({
-    where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
-    create: {
-      comment,
-      price: null,
-      estimateStatus: "REJECTED",
-      quotationRequest: { connect: { id: quotationRequestId } },
-      mover: { connect: { id: moverId } },
-    },
-    update: {
-      comment,
-      price: null,
-      estimateStatus: "REJECTED",
-    },
-  });
+  return runAfterCommitPublish(() =>
+    prisma.$transaction(async (tx) => {
+      const existing = await tx.estimate.findUnique({
+        where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
+        select: { estimateStatus: true },
+      });
+
+      const saved = await tx.estimate.upsert({
+        where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
+        create: {
+          comment,
+          price: null,
+          estimateStatus: "REJECTED",
+          quotationRequest: { connect: { id: quotationRequestId } },
+          mover: { connect: { id: moverId } },
+        },
+        update: {
+          comment,
+          price: null,
+          estimateStatus: "REJECTED",
+        },
+      });
+
+      if (existing?.estimateStatus === "REJECTED") return saved;
+
+      const request = await tx.quotationRequest.findUniqueOrThrow({
+        where: { id: quotationRequestId },
+        select: { userId: true },
+      });
+      await createNotification(tx, {
+        userId: request.userId,
+        estimateId: saved.id,
+        type: "ESTIMATE_REJECTED",
+      });
+      enqueueNotificationPublish([request.userId], "ESTIMATE_REJECTED");
+      return saved;
+    })
+  );
 }
 /**
  * 결제 탭 목록의 정렬·월별 조회 — 카드에 보이는 날짜 기준입니다.

@@ -216,6 +216,18 @@ function toItem(row: NotificationRow): NotificationItem | null {
       };
     }
 
+    case "ESTIMATE_REJECTED": {
+      if (!row.estimate) return null;
+      return {
+        ...base,
+        type: "ESTIMATE_REJECTED",
+        payload: {
+          moverNickName: moverDisplayName(row.estimate.mover),
+          category: row.estimate.quotationRequest.category,
+        },
+      };
+    }
+
     case "MOVING_DAY":
     case "MOVING_DAY_BEFORE": {
       const request = row.quotationRequest;

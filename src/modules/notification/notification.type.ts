@@ -86,6 +86,12 @@ export interface EstimateConfirmedPayload {
   category: ServiceType;
 }
 
+/** 고객 수신 — 지정 견적을 반려한 기사님. 반려 사유는 견적 상세에서 봅니다 */
+export interface EstimateRejectedPayload {
+  moverNickName: string;
+  category: ServiceType;
+}
+
 /** 고객·기사님 수신 — type으로 전날/당일을 가릅니다 */
 export interface MovingDayPayload {
   fromRegion: RegionType;
@@ -119,6 +125,7 @@ export type NotificationItem =
   | (NotificationBase & { type: "NEW_REQUEST"; payload: NewRequestPayload })
   | (NotificationBase & { type: "NEW_ESTIMATE"; payload: NewEstimatePayload })
   | (NotificationBase & { type: "ESTIMATE_CONFIRMED"; payload: EstimateConfirmedPayload })
+  | (NotificationBase & { type: "ESTIMATE_REJECTED"; payload: EstimateRejectedPayload })
   | (NotificationBase & { type: "MOVING_DAY_BEFORE"; payload: MovingDayPayload })
   | (NotificationBase & { type: "MOVING_DAY"; payload: MovingDayPayload })
   | (NotificationBase & { type: "NEW_CHAT_MESSAGE"; payload: ChatMessagePayload })
