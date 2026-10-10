@@ -573,6 +573,9 @@ describe("estimateRepository.reject", () => {
     const result = await estimateRepository.reject(input);
 
     expect(result).toEqual({ id: 40 });
+    expect(mockedPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
     expect(createNotification).toHaveBeenCalledWith(tx, {
       userId: 7,
       estimateId: 40,
