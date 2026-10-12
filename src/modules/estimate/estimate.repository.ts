@@ -174,23 +174,69 @@ async function save(estimate: EstimateInputField, isTargeted: boolean) {
   );
 }
 
-// 사용자가 요청한 지정 견적 요청에 대한 반려
+// 지정 견적 반려. 처음 REJECTED가 될 때만 요청 고객에게 알립니다.
+// 이미 반려된 건을 다시 저장하면 사유만 바꾸고 알림은 만들지 않습니다.
+// 동시에 두 번 반려하면 둘 다 처음 반려로 읽을 수 있어, save와 같이 Serializable로 한 건만 통과시킵니다.
+// 재시도마다 runAfterCommitPublish로 감싸야 롤백된 시도의 알림이 나가지 않습니다.
 async function reject({ quotationRequestId, moverId, comment }: EstimateRejectInput) {
-  return prisma.estimate.upsert({
-    where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
-    create: {
-      comment,
-      price: null,
-      estimateStatus: "REJECTED",
-      quotationRequest: { connect: { id: quotationRequestId } },
-      mover: { connect: { id: moverId } },
-    },
-    update: {
-      comment,
-      price: null,
-      estimateStatus: "REJECTED",
-    },
-  });
+  for (let attempt = 1; attempt <= SAVE_MAX_RETRIES; attempt++) {
+    try {
+      return await runAfterCommitPublish(() =>
+        prisma.$transaction(
+          async (tx) => {
+            const existing = await tx.estimate.findUnique({
+              where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
+              select: { estimateStatus: true },
+            });
+
+            const saved = await tx.estimate.upsert({
+              where: { quotationRequestId_moverId: { quotationRequestId, moverId } },
+              create: {
+                comment,
+                price: null,
+                estimateStatus: "REJECTED",
+                quotationRequest: { connect: { id: quotationRequestId } },
+                mover: { connect: { id: moverId } },
+              },
+              update: {
+                comment,
+                price: null,
+                estimateStatus: "REJECTED",
+              },
+            });
+
+            if (existing?.estimateStatus === "REJECTED") return saved;
+
+            const request = await tx.quotationRequest.findUniqueOrThrow({
+              where: { id: quotationRequestId },
+              select: { userId: true },
+            });
+            await createNotification(tx, {
+              userId: request.userId,
+              estimateId: saved.id,
+              type: "ESTIMATE_REJECTED",
+            });
+            enqueueNotificationPublish([request.userId], "ESTIMATE_REJECTED");
+            return saved;
+          },
+          { isolationLevel: "Serializable" }
+        )
+      );
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2034" &&
+        attempt < SAVE_MAX_RETRIES
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw AppError.conflict(
+    ERROR_CODES.CONCURRENT_REQUEST_CONFLICT,
+    "요청이 몰려 처리하지 못했습니다. 다시 시도해주세요."
+  );
 }
 /**
  * 결제 탭 목록의 정렬·월별 조회 — 카드에 보이는 날짜 기준입니다.

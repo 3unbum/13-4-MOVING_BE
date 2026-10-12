@@ -113,6 +113,7 @@ enum NotificationType {
   NEW_REQUEST /// 견적 요청 생성·지정 요청 → 해당 지역 기사님
   NEW_ESTIMATE /// 기사님이 견적 발송 → 요청한 유저
   ESTIMATE_CONFIRMED /// 유저가 견적 확정 → 기사님 + 고객
+  ESTIMATE_REJECTED /// 기사님이 지정 견적을 반려 → 요청한 고객
   MOVING_DAY_BEFORE /// 이사 전날 09:00 배치 → 고객 + 확정 기사님
   MOVING_DAY /// 이사 당일 09:00 배치 → 고객 + 확정 기사님
   NEW_CHAT_MESSAGE /// 채팅 메시지 도착 → 상대방. 방당 1건으로 합쳐 새 메시지가 오면 다시 읽지 않음으로 올립니다

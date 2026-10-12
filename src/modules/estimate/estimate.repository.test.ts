@@ -37,6 +37,7 @@ function makeTx() {
       create: jest.fn(),
       count: jest.fn(),
       updateMany: jest.fn(),
+      upsert: jest.fn(),
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
     },
@@ -552,6 +553,44 @@ describe("estimateRepository.pay (#140)", () => {
 
     expect(await estimateRepository.pay(5, "pk_test_1")).toBe(false);
     expect(tx.review.upsert).not.toHaveBeenCalled();
+    expect(createNotification).not.toHaveBeenCalled();
+    expect(publishNotification).not.toHaveBeenCalled();
+  });
+});
+
+describe("estimateRepository.reject", () => {
+  const input = {
+    quotationRequestId: 100,
+    moverId: 5,
+    comment: "일정이 맞지 않아 반려합니다",
+  };
+
+  it("처음 반려하면 요청 고객에게 ESTIMATE_REJECTED 알림을 보낸다", async () => {
+    tx.estimate.findUnique.mockResolvedValue(null);
+    tx.estimate.upsert.mockResolvedValue({ id: 40 });
+    tx.quotationRequest.findUniqueOrThrow.mockResolvedValue({ userId: 7 });
+
+    const result = await estimateRepository.reject(input);
+
+    expect(result).toEqual({ id: 40 });
+    expect(mockedPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+    expect(createNotification).toHaveBeenCalledWith(tx, {
+      userId: 7,
+      estimateId: 40,
+      type: "ESTIMATE_REJECTED",
+    });
+    expect(publishNotification).toHaveBeenCalledWith([7], { type: "ESTIMATE_REJECTED" });
+  });
+
+  it("이미 반려된 견적을 다시 저장하면 알림을 만들지 않는다", async () => {
+    tx.estimate.findUnique.mockResolvedValue({ estimateStatus: "REJECTED" });
+    tx.estimate.upsert.mockResolvedValue({ id: 40 });
+
+    await estimateRepository.reject(input);
+
+    expect(tx.estimate.upsert).toHaveBeenCalled();
     expect(createNotification).not.toHaveBeenCalled();
     expect(publishNotification).not.toHaveBeenCalled();
   });
