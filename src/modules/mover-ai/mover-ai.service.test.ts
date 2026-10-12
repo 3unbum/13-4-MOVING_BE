@@ -309,6 +309,7 @@ describe("moverAiService", () => {
         filters: { region: "SEOUL", service: "HOME", sort: null },
         nextAction: "SHOW_RECOMMENDATION",
         candidateCount: 2,
+        recommendation: { moverId: 4, onlyOne: false, reason: "", reviewSummary: null },
       },
     } as never);
     gemini.mockResolvedValue({
@@ -344,6 +345,66 @@ describe("moverAiService", () => {
       "이 기사님 찜하기",
       "조건 바꾸기",
     ]);
+  });
+
+  it("무관한 말에는 저장해 둔 추천 기사님을 유지하고, 후보에서 빠지면 새 1등을 고른다", async () => {
+    repository.findOwnedSession.mockResolvedValue(
+      ownedSession({ region: "SEOUL", service: "HOME" }) as never
+    );
+    const candidates = [
+      {
+        userId: 4,
+        nickName: "높음",
+        avgRating: 4.8,
+        reviewCount: 40,
+        career: 12,
+        confirmedCount: 30,
+      },
+      { userId: 3, nickName: "낮음", avgRating: 4, reviewCount: 2, career: 1, confirmedCount: 1 },
+    ];
+    movers.listRankCandidates.mockResolvedValue(candidates);
+    movers.listByIds.mockImplementation(async (ids: number[]) =>
+      ids.map((id) => ({ id, nickName: id === 3 ? "낮음" : "높음" }) as never)
+    );
+    gemini.mockResolvedValue({
+      reply: "일정은 찾아드릴 수 없어요.",
+      filters: { region: "SEOUL", service: "HOME", sort: null },
+      nextAction: "CLARIFY_UNSUPPORTED",
+    });
+
+    repository.findLatestAssistant.mockResolvedValue({
+      payload: {
+        listMode: "recommend",
+        filters: { region: "SEOUL", service: "HOME", sort: null },
+        nextAction: "SHOW_RECOMMENDATION",
+        candidateCount: 2,
+        recommendation: { moverId: 3, onlyOne: false, reason: "", reviewSummary: null },
+      },
+    } as never);
+
+    const kept = await moverAiService.postMessage(1, "sess-1", {
+      message: "놀러가고 싶어",
+      clientAction: null,
+    });
+
+    expect(kept.assistantMessage.ui?.movers).toEqual([{ id: 3, nickName: "낮음" }]);
+
+    repository.findLatestAssistant.mockResolvedValue({
+      payload: {
+        listMode: "recommend",
+        filters: { region: "SEOUL", service: "HOME", sort: null },
+        nextAction: "SHOW_RECOMMENDATION",
+        candidateCount: 2,
+        recommendation: { moverId: 99, onlyOne: false, reason: "", reviewSummary: null },
+      },
+    } as never);
+
+    const replaced = await moverAiService.postMessage(1, "sess-1", {
+      message: "놀러가고 싶어",
+      clientAction: null,
+    });
+
+    expect(replaced.assistantMessage.ui?.movers).toEqual([{ id: 4, nickName: "높음" }]);
   });
 
   it("모두 찜하기는 직전 추천 id만 찜하고 카드는 다시 붙이지 않는다", async () => {

@@ -310,7 +310,8 @@ async function respondShowRecommendation(
   sessionId: string,
   filters: MoverAiFilters,
   knownCandidates?: RankCandidate[],
-  lead?: string
+  lead?: string,
+  pinnedMoverId?: number
 ): Promise<PostMessageResult> {
   if (!filters.region || !filters.service) {
     throw AppError.badRequest(ERROR_CODES.VALIDATION_ERROR, "검색 조건이 아직 완성되지 않았습니다");
@@ -318,7 +319,12 @@ async function respondShowRecommendation(
 
   const candidates =
     knownCandidates ?? (await moverService.listRankCandidates(filters.region, filters.service));
-  const best = pickBestMover(candidates);
+  // 같은 추천을 다시 그릴 때는 점수를 다시 매기지 않습니다. 그 기사님이 빠졌을 때만 새 1등을 고릅니다.
+  const pinned =
+    pinnedMoverId == null
+      ? null
+      : (candidates.find((candidate) => candidate.userId === pinnedMoverId) ?? null);
+  const best = pinned ?? pickBestMover(candidates);
   if (!best) {
     await moverAiRepository.updateSessionSlots(sessionId, { ...filters, cursor: null });
     const assistantMessage = await persistAssistant({
@@ -770,7 +776,13 @@ export const moverAiService = {
     ) {
       const lead = unrelated ? UNSUPPORTED_REPLY : undefined;
       if (showingRecommendation) {
-        return respondShowRecommendation(sessionId, filters, undefined, lead);
+        return respondShowRecommendation(
+          sessionId,
+          filters,
+          undefined,
+          lead,
+          latestAssistant?.recommendation?.moverId
+        );
       }
       const assistantMessage = await respondShowMovers({
         sessionId,
