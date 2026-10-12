@@ -134,6 +134,19 @@ export const moverService = {
     };
   },
 
+  /** 지역·유형이 맞는 기사님의 평점·경력·확정만 반환합니다. AI 추천 점수용입니다. */
+  async listRankCandidates(region: RegionType, service: ServiceType) {
+    const rows = await moverRepository.findRankCandidates(region, service);
+    return rows.map((row) => ({
+      userId: row.userId,
+      nickName: row.nickName,
+      avgRating: Number(row.avgRating),
+      reviewCount: row.reviewCount,
+      career: row.career,
+      confirmedCount: row.confirmedCount,
+    }));
+  },
+
   /** 기사님 id 목록 순서를 유지해 목록 카드로 반환합니다 (탈퇴 등으로 없는 id는 제외) */
   async listByIds(moverIds: number[]): Promise<MoverListItemResponse[]> {
     if (moverIds.length === 0) return [];
