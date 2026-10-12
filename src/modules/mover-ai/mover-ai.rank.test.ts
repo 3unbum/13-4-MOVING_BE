@@ -39,6 +39,26 @@ describe("pickBestMover", () => {
     expect(pickBestMover([junior, senior])?.userId).toBe(2);
   });
 
+  it("기준 평점이 실제 평점보다 높으면 리뷰 0개가 평점 항목에서 유리해진다", () => {
+    const noReview = candidate({
+      userId: 1,
+      avgRating: 0,
+      reviewCount: 0,
+      career: 18,
+      confirmedCount: 0,
+    });
+    const reviewed = candidate({
+      userId: 2,
+      avgRating: 3.8,
+      reviewCount: 9,
+      career: 12,
+      confirmedCount: 10,
+    });
+
+    expect(pickBestMover([noReview, reviewed], 4)?.userId).toBe(1);
+    expect(pickBestMover([noReview, reviewed], 3.6)?.userId).toBe(2);
+  });
+
   it("후보가 한 명이면 그 기사님을 반환한다", () => {
     const only = candidate({ userId: 7 });
     expect(pickBestMover([only])).toEqual(only);

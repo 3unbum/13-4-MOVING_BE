@@ -134,6 +134,12 @@ export const moverService = {
     };
   },
 
+  /** 리뷰가 있는 기사님 전체의 평균 평점. 리뷰가 없으면 null입니다. */
+  async getReviewedRatingMean(): Promise<number | null> {
+    const row = await moverRepository.findReviewedAvgRating();
+    return row._avg.avgRating == null ? null : Number(row._avg.avgRating);
+  },
+
   /** 지역·유형이 맞는 기사님의 평점·경력·확정만 반환합니다. AI 추천 점수용입니다. */
   async listRankCandidates(region: RegionType, service: ServiceType) {
     const rows = await moverRepository.findRankCandidates(region, service);

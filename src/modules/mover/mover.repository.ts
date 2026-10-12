@@ -121,6 +121,14 @@ export const moverRepository = {
     });
   },
 
+  /** 리뷰가 1개 이상인 기사님의 평점 평균. 추천 보정 평점의 기준값입니다. */
+  findReviewedAvgRating() {
+    return prisma.moverProfile.aggregate({
+      where: { reviewCount: { gt: 0 } },
+      _avg: { avgRating: true },
+    });
+  },
+
   /** 지역·유형이 맞는 기사님의 추천 점수 재료만 가져옵니다 */
   findRankCandidates(region: RegionType, service: ServiceType) {
     return prisma.moverProfile.findMany({

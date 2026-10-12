@@ -12,7 +12,7 @@ import {
   matchClarifyRegionChoice,
   resolveRegionFromMessage,
 } from "./mover-ai.region";
-import { pickBestMover, type RankScores } from "./mover-ai.rank";
+import { EMPTY_REVIEW_PRIOR_MEAN, pickBestMover, type RankScores } from "./mover-ai.rank";
 import { moverAiRepository } from "./mover-ai.repository";
 import { moverAiSortSchema, type ClientActionDto, type PostMessageDto } from "./mover-ai.schema";
 import type {
@@ -332,7 +332,12 @@ async function respondShowRecommendation(
     pinnedMoverId == null
       ? null
       : (candidates.find((candidate) => candidate.userId === pinnedMoverId) ?? null);
-  const best = pinned ?? pickBestMover(candidates);
+  const best =
+    pinned ??
+    pickBestMover(
+      candidates,
+      (await moverService.getReviewedRatingMean()) ?? EMPTY_REVIEW_PRIOR_MEAN
+    );
   if (!best) {
     await moverAiRepository.updateSessionSlots(sessionId, { ...filters, cursor: null });
     const assistantMessage = await persistAssistant({

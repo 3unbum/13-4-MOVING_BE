@@ -9,14 +9,17 @@ export type RankScores = {
 
 /** 리뷰가 적어도 평점이 치솟지 않도록 가정하는 리뷰 수 */
 const PRIOR_WEIGHT = 5;
-/** 리뷰가 없을 때 기대하는 평점. 후보수 평균을 쓰면 만점 1개가 다수 리뷰보다 높아집니다. */
-const PRIOR_MEAN = 4;
+/**
+ * 리뷰가 있는 기사님이 한 명도 없을 때의 기준 평점.
+ * 그 경우 후보 전원의 보정 평점이 같아서 순위에는 영향이 없습니다.
+ */
+export const EMPTY_REVIEW_PRIOR_MEAN = 4;
 
 /** 리뷰 수를 반영한 보정 평점 */
 export function bayesianRating(
   avgRating: number,
   reviewCount: number,
-  priorMean = PRIOR_MEAN
+  priorMean = EMPTY_REVIEW_PRIOR_MEAN
 ): number {
   return (reviewCount * avgRating + PRIOR_WEIGHT * priorMean) / (reviewCount + PRIOR_WEIGHT);
 }
@@ -36,13 +39,17 @@ function isBetterTie(left: RankScores, right: RankScores): boolean {
 /**
  * 같은 지역·유형 후보 안에서 한 명을 고릅니다.
  * 보정 평점, 경력, 확정 수를 각각 0~1로 맞춘 뒤 같은 비중으로 더합니다.
+ * priorMean은 리뷰가 있는 기사님 전체의 평균 평점입니다. 이번 후보만의 평균은 쓰지 않습니다.
  */
-export function pickBestMover<T extends RankScores>(candidates: T[]): T | null {
+export function pickBestMover<T extends RankScores>(
+  candidates: T[],
+  priorMean = EMPTY_REVIEW_PRIOR_MEAN
+): T | null {
   if (candidates.length === 0) return null;
 
   const scored = candidates.map((candidate) => ({
     candidate,
-    bayes: bayesianRating(candidate.avgRating, candidate.reviewCount),
+    bayes: bayesianRating(candidate.avgRating, candidate.reviewCount, priorMean),
   }));
   const bayesValues = scored.map((row) => row.bayes);
   const careerValues = candidates.map((candidate) => candidate.career);

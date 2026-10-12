@@ -28,6 +28,7 @@ jest.mock("../mover/mover.service", () => ({
     listByFilters: jest.fn(),
     listByIds: jest.fn(),
     listRankCandidates: jest.fn(),
+    getReviewedRatingMean: jest.fn(),
   },
 }));
 
@@ -65,6 +66,7 @@ describe("moverAiService", () => {
     repository.findRecentAssistants.mockResolvedValue([]);
     repository.findConfirmedReviewComments.mockResolvedValue([]);
     movers.listRankCandidates.mockResolvedValue([]);
+    movers.getReviewedRatingMean.mockResolvedValue(4);
     summarize.mockResolvedValue(null);
     repository.findOwnedSession.mockResolvedValue(ownedSession() as never);
   });
