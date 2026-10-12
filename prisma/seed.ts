@@ -733,6 +733,10 @@ async function seedBulk(password: string, fixedMoverIds: number[]) {
       // 이사 완료 → 리뷰 row 생성 (배치가 하는 일)
       if (estimateStatus === "COMPLETED") {
         const written = i >= 18; // user18~20만 리뷰 작성 완료
+        // 작성 완료분에는 사진을 1~3장 넣습니다. 이 세 건이 "내가 작성한 리뷰" 화면을
+        // 채우는 유일한 데이터라, 사진이 없으면 고객 쪽에서 첨부 기능을 볼 수 없습니다.
+        // 장수를 달리 해 1장·2장·3장이 모두 한 화면에 나오게 합니다.
+        const images = written ? pickReviewImages((i - 18) * 3, i - 17) : [];
         await prisma.review.create({
           data: {
             estimateId: estimate.id,
@@ -742,6 +746,7 @@ async function seedBulk(password: string, fixedMoverIds: number[]) {
             comment: written
               ? "시간 약속 잘 지켜주시고 짐도 꼼꼼하게 포장해주셨어요. 감사합니다!"
               : null,
+            ...(images.length > 0 ? { images: { create: toImageRows(images) } } : {}),
           },
         });
       }
