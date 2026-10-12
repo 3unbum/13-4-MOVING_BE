@@ -1,4 +1,10 @@
 import type { Prisma } from "../../../generated/prisma/client.ts";
+import {
+  calcBalanceAmount,
+  calcExtraChargeMax,
+  sumExtraCharges,
+  toPaymentStage,
+} from "./estimate.payment";
 import { estimateInclude, moverRequestInclude } from "./estimate.repository";
 
 /// estimate.repository의 estimateInclude로 조회한 결과 타입.
@@ -17,6 +23,18 @@ export function toEstimateResponse(estimate: EstimateWithMover) {
 
   return {
     ...rest,
+    /// 지금 결제 단계 — FE가 어떤 결제 버튼(선수금/잔금)을 보여줄지 이걸로 정합니다
+    paymentStage: toPaymentStage(estimate),
+    /// 잔금 = 견적가 − 선수금 (선수금이 없는 옛 견적은 전액)
+    balanceAmount: calcBalanceAmount(estimate),
+    /// 추가 금액 상한(견적의 20%) — 거절되지 않은 건의 합계에 적용됩니다
+    extraChargeMax: calcExtraChargeMax(estimate.price),
+    /// 아직 추가할 수 있는 금액 = 상한 − (응답 대기 + 승인) 합계 — 입력 안내에 씁니다
+    extraChargeRemaining: Math.max(
+      0,
+      calcExtraChargeMax(estimate.price) -
+        sumExtraCharges(estimate.extraCharges, ["PROPOSED", "APPROVED"])
+    ),
     /// 요청에 지정된 기사님 목록에 이 견적의 기사님이 있으면 지정 견적입니다.
     isTargeted: quotationRequest.targetedRequests.some((t) => t.moverId === estimate.moverId),
     quotationRequest: {
@@ -24,8 +42,14 @@ export function toEstimateResponse(estimate: EstimateWithMover) {
       category: quotationRequest.category,
       movingDate: quotationRequest.movingDate,
       createdAt: quotationRequest.createdAt,
+      /// 상세 주소·우편번호는 기사님이 실제로 찾아가는 데 필요합니다.
+      /// 도로명만으로는 동·호수를 알 수 없어 견적을 보낸 뒤 연락이 한 번 더 오가게 됩니다.
+      fromPostalCode: quotationRequest.fromPostalCode,
       fromAddress: quotationRequest.fromAddress,
+      fromDetailAddress: quotationRequest.fromDetailAddress,
+      toPostalCode: quotationRequest.toPostalCode,
       toAddress: quotationRequest.toAddress,
+      toDetailAddress: quotationRequest.toDetailAddress,
       /// 카드·상세의 "OOO 고객님" — 중첩(`user.name`)을 그대로 두면 호출부마다
       /// 옵셔널 체이닝이 붙고 user 객체가 통째로 노출됩니다.
       userName: quotationRequest.user.name,

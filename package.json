@@ -37,6 +37,7 @@
   "homepage": "https://github.com/3unbum/13-4-MOVING_BE#readme",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1124.0",
+    "@google/genai": "^2.27.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@react-email/components": "^1.0.12",

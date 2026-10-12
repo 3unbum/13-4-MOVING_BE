@@ -8,6 +8,7 @@ import type {
   MoverProfileCreateDto,
   CustomerProfileUpdateDto,
   MoverProfileUpdateDto,
+  VerifyProfileEmailVerificationCodeDto,
 } from "./profile.schema";
 
 export const profileController = {
@@ -94,6 +95,27 @@ export const profileController = {
       const dto = req.body as MoverProfileUpdateDto;
       const result = await profileService.updateMoverAccount(userId, dto);
       res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  sendProfileEmailVerificationCode: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      await profileService.sendProfileEmailVerificationCode(userId);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  verifyProfileEmailVerificationCode: (async (req, res, next) => {
+    try {
+      const userId = req.user!.id;
+      const dto = req.body as VerifyProfileEmailVerificationCodeDto;
+      await profileService.verifyProfileEmailVerificationCode(userId, dto.code);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

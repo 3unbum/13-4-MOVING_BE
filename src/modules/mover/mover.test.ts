@@ -1,6 +1,7 @@
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { favoriteService } from "@/modules/favorite/favorite.service";
 import { moverRepository } from "./mover.repository";
+import { moverReviewImagesQuerySchema, moverReviewsQuerySchema } from "./mover.schema";
 import { moverService } from "./mover.service";
 
 jest.mock("./mover.repository", () => ({
@@ -11,6 +12,7 @@ jest.mock("./mover.repository", () => ({
     isTargetedInActiveRequest: jest.fn(),
     existsMover: jest.fn(),
     findConfirmedReviewsByMoverId: jest.fn(),
+    findConfirmedReviewImagesByMoverId: jest.fn(),
     getRatingDistribution: jest.fn(),
   },
 }));
@@ -401,16 +403,20 @@ describe("moverService.listReviews", () => {
           comment: "친절했어요",
           createdAt,
           customer: { name: "김소비" },
+          images: [
+            { imageUrl: "https://cdn.example/b.jpg" },
+            { imageUrl: "https://cdn.example/a.jpg" },
+          ],
         },
       ],
       11,
     ] as never);
 
     // Exercise
-    const result = await moverService.listReviews(10, { page: 2, limit: 5 });
+    const result = await moverService.listReviews(10, { page: 2, limit: 5, sort: "latest" });
 
     // Assertion
-    expect(mockedRepository.findConfirmedReviewsByMoverId).toHaveBeenCalledWith(10, 2, 5);
+    expect(mockedRepository.findConfirmedReviewsByMoverId).toHaveBeenCalledWith(10, 2, 5, "latest");
     expect(result).toEqual({
       data: [
         {
@@ -419,6 +425,7 @@ describe("moverService.listReviews", () => {
           comment: "친절했어요",
           createdAt: "2026-01-15T00:00:00.000Z",
           customerName: "김소비",
+          imageUrls: ["https://cdn.example/b.jpg", "https://cdn.example/a.jpg"],
         },
       ],
       page: 2,
@@ -438,16 +445,17 @@ describe("moverService.listReviews", () => {
           comment: null,
           createdAt: new Date("2026-02-01T00:00:00.000Z"),
           customer: { name: "박신규" },
+          images: [],
         },
       ],
       1,
     ] as never);
 
     // Exercise
-    const result = await moverService.listReviews(10, { page: 1, limit: 5 });
+    const result = await moverService.listReviews(10, { page: 1, limit: 5, sort: "latest" });
 
     // Assertion
-    expect(result.data[0]).toMatchObject({ rating: 0, comment: "" });
+    expect(result.data[0]).toMatchObject({ rating: 0, comment: "", imageUrls: [] });
   });
 
   test("리뷰가 없으면 totalPages는 0이다", async () => {
@@ -456,7 +464,7 @@ describe("moverService.listReviews", () => {
     mockedRepository.findConfirmedReviewsByMoverId.mockResolvedValue([[], 0] as never);
 
     // Exercise
-    const result = await moverService.listReviews(10, { page: 1, limit: 5 });
+    const result = await moverService.listReviews(10, { page: 1, limit: 5, sort: "latest" });
 
     // Assertion
     expect(result).toEqual({ data: [], page: 1, totalPages: 0, totalCount: 0 });
@@ -468,7 +476,7 @@ describe("moverService.listReviews", () => {
     mockedRepository.findConfirmedReviewsByMoverId.mockResolvedValue([[], 10] as never);
 
     // Exercise
-    const result = await moverService.listReviews(10, { page: 1, limit: 5 });
+    const result = await moverService.listReviews(10, { page: 1, limit: 5, sort: "latest" });
 
     // Assertion
     expect(result.totalPages).toBe(2);
@@ -480,7 +488,9 @@ describe("moverService.listReviews", () => {
     mockedRepository.existsMover.mockResolvedValue(false);
 
     // Exercise + Assertion
-    await expect(moverService.listReviews(999, { page: 1, limit: 5 })).rejects.toMatchObject({
+    await expect(
+      moverService.listReviews(999, { page: 1, limit: 5, sort: "latest" })
+    ).rejects.toMatchObject({
       statusCode: 404,
       code: ERROR_CODES.NOT_FOUND,
     });
@@ -496,7 +506,66 @@ describe("moverService.listReviews", () => {
     await moverService.listReviews(10, {} as never);
 
     // Assertion
-    expect(mockedRepository.findConfirmedReviewsByMoverId).toHaveBeenCalledWith(10, 1, 5);
+    expect(mockedRepository.findConfirmedReviewsByMoverId).toHaveBeenCalledWith(10, 1, 5, "latest");
+  });
+
+  test("sort를 조회에 전달한다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(true);
+    mockedRepository.findConfirmedReviewsByMoverId.mockResolvedValue([[], 0] as never);
+
+    await moverService.listReviews(10, { page: 1, limit: 5, sort: "ratingDesc" });
+
+    expect(mockedRepository.findConfirmedReviewsByMoverId).toHaveBeenCalledWith(
+      10,
+      1,
+      5,
+      "ratingDesc"
+    );
+  });
+});
+
+describe("moverService.listReviewImages", () => {
+  test("확정 리뷰 사진을 페이지 응답으로 매핑한다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(true);
+    mockedRepository.findConfirmedReviewImagesByMoverId.mockResolvedValue([
+      [
+        { reviewId: 8, imageUrl: "https://cdn.example/1.jpg" },
+        { reviewId: 8, imageUrl: "https://cdn.example/2.jpg" },
+      ],
+      6,
+    ] as never);
+
+    const result = await moverService.listReviewImages(10, { page: 2, limit: 5 });
+
+    expect(mockedRepository.findConfirmedReviewImagesByMoverId).toHaveBeenCalledWith(10, 2, 5);
+    expect(result).toEqual({
+      data: [
+        { reviewId: 8, imageUrl: "https://cdn.example/1.jpg" },
+        { reviewId: 8, imageUrl: "https://cdn.example/2.jpg" },
+      ],
+      page: 2,
+      totalPages: 2,
+      totalCount: 6,
+    });
+  });
+
+  test("사진이 없으면 totalPages는 0이다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(true);
+    mockedRepository.findConfirmedReviewImagesByMoverId.mockResolvedValue([[], 0] as never);
+
+    const result = await moverService.listReviewImages(10, { page: 1, limit: 5 });
+
+    expect(result).toEqual({ data: [], page: 1, totalPages: 0, totalCount: 0 });
+  });
+
+  test("기사님이 없으면 404를 던진다", async () => {
+    mockedRepository.existsMover.mockResolvedValue(false);
+
+    await expect(moverService.listReviewImages(999, { page: 1, limit: 5 })).rejects.toMatchObject({
+      statusCode: 404,
+      code: ERROR_CODES.NOT_FOUND,
+    });
+    expect(mockedRepository.findConfirmedReviewImagesByMoverId).not.toHaveBeenCalled();
   });
 });
 
@@ -602,5 +671,28 @@ describe("moverService.deleteFavorite", () => {
       statusCode: 404,
       code: ERROR_CODES.NOT_FOUND,
     });
+  });
+});
+
+describe("moverReviewsQuerySchema", () => {
+  test("sort를 생략하면 latest다", () => {
+    expect(moverReviewsQuerySchema.parse({})).toMatchObject({
+      page: 1,
+      limit: 5,
+      sort: "latest",
+    });
+  });
+
+  test("허용된 정렬 값을 받는다", () => {
+    expect(moverReviewsQuerySchema.parse({ sort: "ratingAsc" }).sort).toBe("ratingAsc");
+  });
+
+  test("모르는 sort는 거절한다", () => {
+    expect(moverReviewsQuerySchema.safeParse({ sort: "popular" }).success).toBe(false);
+  });
+
+  test("사진 모음은 page·limit만 받고 기본값이 같다", () => {
+    expect(moverReviewImagesQuerySchema.parse({})).toEqual({ page: 1, limit: 5 });
+    expect(moverReviewImagesQuerySchema.safeParse({ limit: 6 }).success).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { requireAuth } from "../../common/middlewares/auth";
 import { requireRole } from "../../common/middlewares/role";
 import { requireProfile } from "../../common/middlewares/profile";
 import { validate } from "../../common/middlewares/validate";
+import { profileEditCodeRateLimiters } from "../../common/middlewares/rateLimit";
 import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { PROFILE_IMAGE_MAX_SIZE_BYTES, isAllowedImageMimeType } from "./profile.constants";
@@ -12,6 +13,7 @@ import {
   moverProfileCreateSchema,
   customerProfileUpdateSchema,
   moverProfileUpdateSchema,
+  verifyProfileEmailVerificationCodeSchema,
 } from "./profile.schema";
 import { profileController } from "./profile.controller";
 
@@ -150,7 +152,7 @@ router.get("/mover", requireAuth, requireRole("MOVER"), profileController.getMov
  *                 type: string
  *                 minLength: 8
  *                 description: 영문 + 숫자 + 특수문자 포함, 72바이트 이하
- *               image: { type: string, description: "POST /profiles/image 응답의 imageUrl" }
+ *               image: { type: string, nullable: true, description: "POST /profiles/image 응답의 imageUrl, null이면 프로필 이미지 삭제, 생략하면 변경 없음" }
  *               region:
  *                 type: string
  *                 enum: [SEOUL, GYEONGGI, INCHEON, GANGWON, CHUNGBUK, CHUNGNAM, SEJONG, DAEJEON, JEONBUK, JEONNAM, GWANGJU, GYEONGBUK, GYEONGNAM, DAEGU, ULSAN, BUSAN, JEJU]
@@ -169,7 +171,10 @@ router.get("/mover", requireAuth, requireRole("MOVER"), profileController.getMov
  *       401:
  *         description: 인증되지 않음, 또는 currentPassword 불일치 (INVALID_CREDENTIALS)
  *       403:
- *         description: CUSTOMER 계정이 아님 (FORBIDDEN)
+ *         description: |
+ *           CUSTOMER 계정이 아님 (FORBIDDEN), 또는 계정 정보(name/phoneNumber/currentPassword/newPassword)를
+ *           수정하는데 최근 30분 이내 이메일 인증이 없음 (PROFILE_EDIT_VERIFICATION_REQUIRED) —
+ *           POST /profiles/email-verification/send, verify로 다시 인증 후 재시도
  */
 router.patch(
   "/customer",
@@ -205,7 +210,7 @@ router.patch(
  *                 type: string
  *                 minLength: 8
  *                 description: 영문 + 숫자 + 특수문자 포함, 72바이트 이하
- *               image: { type: string, description: "POST /profiles/image 응답의 imageUrl" }
+ *               image: { type: string, nullable: true, description: "POST /profiles/image 응답의 imageUrl, null이면 프로필 이미지 삭제, 생략하면 변경 없음" }
  *               nickName: { type: string, minLength: 1 }
  *               career: { type: integer, minimum: 0 }
  *               bio: { type: string, minLength: 1 }
@@ -230,7 +235,10 @@ router.patch(
  *       401:
  *         description: 인증되지 않음, 또는 currentPassword 불일치 (INVALID_CREDENTIALS)
  *       403:
- *         description: MOVER 계정이 아님 (FORBIDDEN)
+ *         description: |
+ *           MOVER 계정이 아님 (FORBIDDEN), 또는 계정 정보(name/phoneNumber/currentPassword/newPassword)를
+ *           수정하는데 최근 30분 이내 이메일 인증이 없음 (PROFILE_EDIT_VERIFICATION_REQUIRED) —
+ *           POST /profiles/email-verification/send, verify로 다시 인증 후 재시도
  */
 router.patch(
   "/mover",
@@ -239,6 +247,72 @@ router.patch(
   requireProfile,
   validate(moverProfileUpdateSchema),
   profileController.updateMoverAccount
+);
+
+/**
+ * @swagger
+ * /profiles/email-verification/send:
+ *   post:
+ *     tags: [Profile]
+ *     summary: 프로필 수정 진입 이메일 인증번호 발송
+ *     description: |
+ *       내 정보 수정 화면 진입 시 본인 확인용 인증번호를 로그인 계정 이메일로 발송합니다.
+ *       소셜 로그인 계정도 비밀번호 없이 동일하게 이 절차로 본인 확인을 합니다.
+ *       비밀번호 재설정(찾기) 인증번호와는 별개의 테이블/절차입니다.
+ *       1분에 1회, 1시간에 5회, 1일에 10회로 제한됩니다.
+ *     responses:
+ *       204:
+ *         description: 인증번호 메일 발송 완료
+ *       401:
+ *         description: 인증되지 않음
+ *       429:
+ *         description: 요청 횟수 초과 (TOO_MANY_REQUESTS)
+ *       500:
+ *         description: |
+ *           메일 발송 실패(INTERNAL_ERROR). 비밀번호 재설정과 달리 로그인한 본인에게 보내는 것이라
+ *           실패를 숨기지 않습니다. 인증번호는 이미 새로 만들어진 상태이며, 요청 제한에는 포함되므로 1분 뒤 다시 요청해주세요.
+ */
+router.post(
+  "/email-verification/send",
+  requireAuth,
+  ...profileEditCodeRateLimiters,
+  profileController.sendProfileEmailVerificationCode
+);
+
+/**
+ * @swagger
+ * /profiles/email-verification/verify:
+ *   post:
+ *     tags: [Profile]
+ *     summary: 프로필 수정 진입 이메일 인증번호 확인
+ *     description: |
+ *       발송된 6자리 인증번호를 확인합니다. 성공 시 별도 토큰 발급 없이 현재 세션에서
+ *       내 정보 수정 화면 진입이 허용된 것으로 간주합니다(PATCH /profiles/customer|mover
+ *       자체는 기존처럼 requireAuth + requireProfile로만 보호됩니다).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code: { type: string, description: "6자리 숫자" }
+ *     responses:
+ *       204:
+ *         description: 인증 성공 — 이후 30분간 계정 정보(이름/전화번호/비밀번호) 수정이 허용되고, 계정 조회 응답의 isProfileEditVerified가 true가 됩니다
+ *       400:
+ *         description: |
+ *           유효성 검사 실패(VALIDATION_ERROR), 인증번호 불일치(INVALID_PROFILE_EDIT_CODE),
+ *           만료(PROFILE_EDIT_CODE_EXPIRED), 시도 횟수 초과(PROFILE_EDIT_CODE_ATTEMPTS_EXCEEDED)
+ *       401:
+ *         description: 인증되지 않음
+ */
+router.post(
+  "/email-verification/verify",
+  requireAuth,
+  validate(verifyProfileEmailVerificationCodeSchema),
+  profileController.verifyProfileEmailVerificationCode
 );
 
 export default router;

@@ -32,13 +32,20 @@ jest.mock("./auth.repository", () => ({
     findBySocialAndRole: jest.fn(),
     findById: jest.fn(),
     create: jest.fn(),
+    createVerifiedLocalUser: jest.fn(),
     updateRefreshToken: jest.fn(),
     existsByEmailAndRole: jest.fn(),
     findAccountsByNameAndPhone: jest.fn(),
+    replaceSignupVerificationCode: jest.fn(),
+    findSignupVerificationCode: jest.fn(),
+    incrementSignupCodeFailedAttempts: jest.fn(),
+    markSignupCodeVerified: jest.fn(),
     replacePasswordResetCode: jest.fn(),
     findPasswordResetCodeByUserId: jest.fn(),
     incrementResetCodeFailedAttempts: jest.fn(),
     completePasswordReset: jest.fn(),
+    findForDeleteAccount: jest.fn(),
+    deleteAccount: jest.fn(),
   },
 }));
 
@@ -143,24 +150,28 @@ describe("authService.signup", () => {
     password: "Test1234!",
   };
 
-  test("신규 유저를 생성하고 토큰을 발급한다", async () => {
+  test("30분 안에 이메일 인증을 마쳤으면 신규 유저를 생성하고 토큰을 발급한다", async () => {
     // Setup
     mockedRepository.findByEmailAndRole.mockResolvedValue(null);
     mockedHashUtil.hashPassword.mockResolvedValue("hashed-password");
-    mockedRepository.create.mockResolvedValue(makeUser() as never);
+    mockedRepository.createVerifiedLocalUser.mockResolvedValue(makeUser() as never);
+    const before = Date.now();
 
     // Exercise
     const result = await authService.signup(dto);
 
     // Assertion
-    expect(mockedRepository.create).toHaveBeenCalledWith({
+    const [data, verifiedSince] = mockedRepository.createVerifiedLocalUser.mock.calls[0];
+    expect(data).toEqual({
       role: "CUSTOMER",
       name: "김코드",
       email: "test@moving.com",
       phoneNumber: "01012345678",
       password: "hashed-password",
-      provider: "LOCAL",
     });
+    // 지금으로부터 30분 전 이후에 인증한 기록만 인정
+    expect(before - verifiedSince.getTime()).toBeLessThanOrEqual(30 * 60 * 1000);
+    expect(Date.now() - verifiedSince.getTime()).toBeGreaterThanOrEqual(30 * 60 * 1000);
     expect(result.hasProfile).toBe(false);
     expect(result.user).toEqual({
       id: 1,
@@ -188,14 +199,31 @@ describe("authService.signup", () => {
       statusCode: 409,
       code: ERROR_CODES.EMAIL_ALREADY_EXISTS,
     });
-    expect(mockedRepository.create).not.toHaveBeenCalled();
+    expect(mockedRepository.createVerifiedLocalUser).not.toHaveBeenCalled();
+  });
+
+  test("이메일 인증 기록이 없거나 30분이 지났으면 403 EMAIL_NOT_VERIFIED를 던진다", async () => {
+    // Setup: 조건에 맞는 인증 행이 없으면 저장소가 유저를 만들지 않고 null을 돌려준다
+    mockedRepository.findByEmailAndRole.mockResolvedValue(null);
+    mockedHashUtil.hashPassword.mockResolvedValue("hashed-password");
+    mockedRepository.createVerifiedLocalUser.mockResolvedValue(null);
+
+    // Exercise
+    const result = authService.signup(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 403,
+      code: ERROR_CODES.EMAIL_NOT_VERIFIED,
+    });
+    expect(mockedJwtUtil.createToken).not.toHaveBeenCalled();
   });
 
   test("거의 동시에 같은 이메일로 가입 요청이 겹치면 409를 던진다", async () => {
     // Setup
     mockedRepository.findByEmailAndRole.mockResolvedValue(null);
     mockedHashUtil.hashPassword.mockResolvedValue("hashed-password");
-    mockedRepository.create.mockRejectedValue(makeP2002Error());
+    mockedRepository.createVerifiedLocalUser.mockRejectedValue(makeP2002Error());
 
     // Exercise
     const result = authService.signup(dto);
@@ -212,7 +240,7 @@ describe("authService.signup", () => {
     mockedRepository.findByEmailAndRole.mockResolvedValue(null);
     mockedHashUtil.hashPassword.mockResolvedValue("hashed-password");
     const unknownError = new Error("db down");
-    mockedRepository.create.mockRejectedValue(unknownError);
+    mockedRepository.createVerifiedLocalUser.mockRejectedValue(unknownError);
 
     // Exercise
     const result = authService.signup(dto);
@@ -720,6 +748,238 @@ describe("authService.findEmail", () => {
   });
 });
 
+describe("authService.sendSignupCode", () => {
+  const dto = { role: "CUSTOMER" as const, email: "new@moving.com" };
+
+  test("가입되지 않은 이메일이면 6자리 인증번호를 해시로 저장하고, 같은 번호를 메일로 보낸 뒤 true를 반환한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue(null);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedRepository.replaceSignupVerificationCode.mockResolvedValue({} as never);
+    mockedMailer.sendMail.mockResolvedValue({} as never);
+    const before = Date.now();
+
+    // Exercise
+    const result = await authService.sendSignupCode(dto);
+
+    // Assertion
+    expect(result).toBe(true);
+
+    const [code] = mockedHashUtil.hashResetCode.mock.calls[0];
+    expect(code).toMatch(/^\d{6}$/);
+
+    const [email, role, codeHash, expiresAt] =
+      mockedRepository.replaceSignupVerificationCode.mock.calls[0];
+    expect(email).toBe("new@moving.com");
+    expect(role).toBe("CUSTOMER");
+    expect(codeHash).toBe("hashed-code");
+    // 유효시간 5분
+    expect(expiresAt.getTime() - before).toBeGreaterThanOrEqual(5 * 60 * 1000);
+    expect(expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(5 * 60 * 1000);
+
+    const [mail] = mockedMailer.sendMail.mock.calls[0];
+    expect(mail.to).toBe("new@moving.com");
+    expect(mail.subject).toBe("[무빙] 회원가입 이메일 인증번호");
+    // DB엔 해시만, 메일엔 평문 — 해시한 원본과 메일 속 번호가 같아야 한다
+    expect(mail.text).toContain(`인증번호: ${code}`);
+  });
+
+  test("같은 role로 이미 가입된 이메일이면 409를 던지고 저장도 발송도 하지 않는다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue({ id: 1 } as never);
+
+    // Exercise
+    const result = authService.sendSignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 409,
+      code: ERROR_CODES.EMAIL_ALREADY_EXISTS,
+    });
+    expect(mockedRepository.replaceSignupVerificationCode).not.toHaveBeenCalled();
+    expect(mockedMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test("같은 이메일의 동시 요청으로 저장이 충돌하면 메일을 보내지 않고 false를 반환한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue(null);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedRepository.replaceSignupVerificationCode.mockRejectedValueOnce(makeP2002Error());
+
+    // Exercise
+    const result = await authService.sendSignupCode(dto);
+
+    // Assertion
+    expect(result).toBe(false);
+    expect(mockedMailer.sendMail).not.toHaveBeenCalled();
+  });
+
+  test("동시 요청 충돌이 아닌 다른 이유로 저장이 실패하면 에러를 그대로 전파한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue(null);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    const unknownError = new Error("db down");
+    mockedRepository.replaceSignupVerificationCode.mockRejectedValueOnce(unknownError);
+
+    // Exercise
+    const result = authService.sendSignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toBe(unknownError);
+  });
+
+  test("메일 발송이 실패하면 숨기지 않고 에러를 그대로 전파한다", async () => {
+    // Setup
+    mockedRepository.existsByEmailAndRole.mockResolvedValue(null);
+    mockedHashUtil.hashResetCode.mockReturnValue("hashed-code");
+    mockedRepository.replaceSignupVerificationCode.mockResolvedValue({} as never);
+    const smtpError = new Error("smtp down");
+    mockedMailer.sendMail.mockRejectedValueOnce(smtpError as never);
+
+    // Exercise
+    const result = authService.sendSignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toBe(smtpError);
+  });
+});
+
+describe("authService.verifySignupCode", () => {
+  const dto = { role: "CUSTOMER" as const, email: "new@moving.com", code: "123456" };
+
+  function makeSignupCode(overrides = {}) {
+    return {
+      id: 9,
+      email: "new@moving.com",
+      role: "CUSTOMER" as const,
+      codeHash: "hashed-code",
+      expiresAt: new Date(Date.now() + 60 * 1000),
+      failedAttempts: 0,
+      verifiedAt: null,
+      createdAt: new Date(),
+      ...overrides,
+    };
+  }
+
+  test("인증번호가 맞으면 인증 성공을 기록한다", async () => {
+    // Setup
+    mockedRepository.findSignupVerificationCode.mockResolvedValue(makeSignupCode());
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+    mockedRepository.markSignupCodeVerified.mockResolvedValue(true);
+
+    // Exercise
+    await authService.verifySignupCode(dto);
+
+    // Assertion
+    expect(mockedRepository.findSignupVerificationCode).toHaveBeenCalledWith(
+      "new@moving.com",
+      "CUSTOMER"
+    );
+    expect(mockedHashUtil.compareResetCode).toHaveBeenCalledWith("123456", "hashed-code");
+    expect(mockedRepository.markSignupCodeVerified).toHaveBeenCalledWith(9, 5);
+    expect(mockedRepository.incrementSignupCodeFailedAttempts).not.toHaveBeenCalled();
+  });
+
+  test("발송 이력이 없으면 INVALID_SIGNUP_CODE를 던진다", async () => {
+    // Setup
+    mockedRepository.findSignupVerificationCode.mockResolvedValue(null);
+
+    // Exercise
+    const result = authService.verifySignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.INVALID_SIGNUP_CODE,
+    });
+  });
+
+  test("유효시간이 지났으면 번호를 비교하지 않고 SIGNUP_CODE_EXPIRED를 던진다", async () => {
+    // Setup
+    mockedRepository.findSignupVerificationCode.mockResolvedValue(
+      makeSignupCode({ expiresAt: new Date(Date.now() - 1000) })
+    );
+
+    // Exercise
+    const result = authService.verifySignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.SIGNUP_CODE_EXPIRED,
+    });
+    expect(mockedHashUtil.compareResetCode).not.toHaveBeenCalled();
+  });
+
+  test("이미 5번 틀린 인증번호면 맞는 번호를 넣어도 SIGNUP_CODE_ATTEMPTS_EXCEEDED를 던진다", async () => {
+    // Setup
+    mockedRepository.findSignupVerificationCode.mockResolvedValue(
+      makeSignupCode({ failedAttempts: 5 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+
+    // Exercise
+    const result = authService.verifySignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 400,
+      code: ERROR_CODES.SIGNUP_CODE_ATTEMPTS_EXCEEDED,
+    });
+    expect(mockedRepository.markSignupCodeVerified).not.toHaveBeenCalled();
+  });
+
+  test("틀렸지만 기회가 남아 있으면(증가 후 1~4) 틀린 횟수를 올리고 INVALID_SIGNUP_CODE를 던진다", async () => {
+    // Setup
+    mockedRepository.findSignupVerificationCode.mockResolvedValue(
+      makeSignupCode({ failedAttempts: 3 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementSignupCodeFailedAttempts.mockResolvedValue(4);
+
+    // Exercise
+    const result = authService.verifySignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ code: ERROR_CODES.INVALID_SIGNUP_CODE });
+    expect(mockedRepository.incrementSignupCodeFailedAttempts).toHaveBeenCalledWith(9, 5);
+    expect(mockedRepository.markSignupCodeVerified).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["이번이 5번째로 틀린 것이면(증가 후 5)", 5],
+    ["동시 요청이 먼저 상한을 채워 횟수를 올리지 못했으면(null)", null],
+  ])("%s SIGNUP_CODE_ATTEMPTS_EXCEEDED를 던진다", async (_label, failedAttempts) => {
+    // Setup
+    mockedRepository.findSignupVerificationCode.mockResolvedValue(
+      makeSignupCode({ failedAttempts: 4 })
+    );
+    mockedHashUtil.compareResetCode.mockReturnValue(false);
+    mockedRepository.incrementSignupCodeFailedAttempts.mockResolvedValue(failedAttempts);
+
+    // Exercise
+    const result = authService.verifySignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      code: ERROR_CODES.SIGNUP_CODE_ATTEMPTS_EXCEEDED,
+    });
+  });
+
+  test("확인하는 사이 행이 바뀌었거나 만료·상한에 걸려 기록하지 못했으면 INVALID_SIGNUP_CODE를 던진다", async () => {
+    // Setup
+    mockedRepository.findSignupVerificationCode.mockResolvedValue(makeSignupCode());
+    mockedHashUtil.compareResetCode.mockReturnValue(true);
+    mockedRepository.markSignupCodeVerified.mockResolvedValue(false);
+
+    // Exercise
+    const result = authService.verifySignupCode(dto);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ code: ERROR_CODES.INVALID_SIGNUP_CODE });
+  });
+});
+
 describe("authService.sendPasswordResetCode", () => {
   const dto = { role: "CUSTOMER" as const, email: "test@moving.com" };
 
@@ -1019,5 +1279,125 @@ describe("authService.resetPassword", () => {
       statusCode: 401,
       code: ERROR_CODES.INVALID_OR_EXPIRED_RESET_TOKEN,
     });
+  });
+});
+
+describe("authService.deleteAccount", () => {
+  const MINUTE = 60_000;
+  // 프로필을 등록했고, 프로필 수정 진입 이메일 인증을 usedAgoMs 전에 통과한 계정
+  const makeDeletableUser = (overrides = {}, usedAgoMs: number | null = MINUTE) => ({
+    id: 1,
+    role: "CUSTOMER",
+    deletedAt: null,
+    profileEditVerificationCode:
+      usedAgoMs === null ? null : { usedAt: new Date(Date.now() - usedAgoMs) },
+    customerProfile: { userId: 1 },
+    moverProfile: { userId: 1 },
+    ...overrides,
+  });
+
+  test("이메일 인증을 30분 안에 통과했으면 비밀번호 확인 없이 탈퇴한다", async () => {
+    // Setup
+    mockedRepository.findForDeleteAccount.mockResolvedValue(makeDeletableUser() as never);
+    mockedRepository.deleteAccount.mockResolvedValue("DELETED");
+
+    // Exercise
+    await authService.deleteAccount(1);
+
+    // Assertion
+    expect(mockedHashUtil.verifyPassword).not.toHaveBeenCalled();
+    expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(1, "CUSTOMER");
+  });
+
+  test("기사님은 DB에 저장된 role로 탈퇴 처리를 넘긴다", async () => {
+    // Setup
+    mockedRepository.findForDeleteAccount.mockResolvedValue(
+      makeDeletableUser({ id: 2, role: "MOVER" }) as never
+    );
+    mockedRepository.deleteAccount.mockResolvedValue("DELETED");
+
+    // Exercise
+    await authService.deleteAccount(2);
+
+    // Assertion
+    expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(2, "MOVER");
+  });
+
+  test.each([
+    ["인증 기록이 없으면", null],
+    ["인증 코드만 받고 확인하지 않았으면(usedAt 없음)", "unused"],
+    ["인증한 지 30분이 지났으면", 31 * MINUTE],
+  ] as const)("%s 403을 던지고 탈퇴하지 않는다", async (_label, usedAgo) => {
+    // Setup
+    const user =
+      usedAgo === "unused"
+        ? makeDeletableUser({ profileEditVerificationCode: { usedAt: null } })
+        : makeDeletableUser({}, usedAgo);
+    mockedRepository.findForDeleteAccount.mockResolvedValue(user as never);
+
+    // Exercise
+    const result = authService.deleteAccount(1);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({
+      statusCode: 403,
+      code: ERROR_CODES.PROFILE_EDIT_VERIFICATION_REQUIRED,
+    });
+    expect(mockedRepository.deleteAccount).not.toHaveBeenCalled();
+  });
+
+  /** 프로필 등록 전 계정은 활동 기록이 없어 잘못 탈퇴돼도 재가입으로 복구되므로 가입 취소처럼 처리한다 */
+  test.each([
+    ["고객", "CUSTOMER", { customerProfile: null }],
+    ["기사님", "MOVER", { moverProfile: null }],
+  ] as const)(
+    "프로필을 등록하지 않은 %s은 이메일 인증 기록이 없어도 탈퇴한다",
+    async (_label, role, noProfile) => {
+      // Setup
+      mockedRepository.findForDeleteAccount.mockResolvedValue(
+        makeDeletableUser({ role, ...noProfile }, null) as never
+      );
+      mockedRepository.deleteAccount.mockResolvedValue("DELETED");
+
+      // Exercise
+      await authService.deleteAccount(1);
+
+      // Assertion
+      expect(mockedRepository.deleteAccount).toHaveBeenCalledWith(1, role);
+    }
+  );
+
+  test.each([
+    ["확정된 이사가 남아", "CONFIRMED_MOVE_EXISTS", ERROR_CODES.CONFIRMED_MOVE_EXISTS],
+    [
+      "잔금 결제가 끝나지 않은 견적이 남아",
+      "UNPAID_PAYMENT_EXISTS",
+      ERROR_CODES.UNPAID_PAYMENT_EXISTS,
+    ],
+  ] as const)("%s 탈퇴하지 못하면 409를 던진다", async (_label, blocked, code) => {
+    // Setup
+    mockedRepository.findForDeleteAccount.mockResolvedValue(makeDeletableUser() as never);
+    mockedRepository.deleteAccount.mockResolvedValue(blocked);
+
+    // Exercise
+    const result = authService.deleteAccount(1);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ statusCode: 409, code });
+  });
+
+  test.each([
+    ["존재하지 않는 계정", null],
+    ["이미 탈퇴한 계정", makeDeletableUser({ deletedAt: new Date() })],
+  ])("%s이면 404를 던지고 탈퇴하지 않는다", async (_label, user) => {
+    // Setup
+    mockedRepository.findForDeleteAccount.mockResolvedValue(user as never);
+
+    // Exercise
+    const result = authService.deleteAccount(1);
+
+    // Assertion
+    await expect(result).rejects.toMatchObject({ statusCode: 404 });
+    expect(mockedRepository.deleteAccount).not.toHaveBeenCalled();
   });
 });

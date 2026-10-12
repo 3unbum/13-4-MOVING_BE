@@ -5,10 +5,13 @@ import { verifyTurnstile } from "../../common/middlewares/turnstile";
 import {
   loginRateLimiter,
   resetCodeRateLimiters,
-  resetCodeDailyMailLimiter,
+  signupCodeRateLimiters,
+  dailyMailLimiter,
 } from "../../common/middlewares/rateLimit";
 import {
   signupSchema,
+  sendSignupCodeSchema,
+  verifySignupCodeSchema,
   loginSchema,
   checkEmailSchema,
   findEmailSchema,
@@ -29,7 +32,10 @@ const router = Router();
  *   post:
  *     tags: [Auth]
  *     summary: 회원가입
- *     description: 이메일/비밀번호 기반 회원가입. 성공 시 accessToken/refreshToken을 httpOnly 쿠키로 내려줌.
+ *     description: |
+ *       이메일/비밀번호 기반 회원가입. 성공 시 accessToken/refreshToken을 httpOnly 쿠키로 내려줌.
+ *       같은 (email, role)로 POST /auth/signup/verify 인증을 마친 뒤 30분 안에만 가입할 수 있습니다.
+ *       가입하면 인증 기록은 지워져, 같은 인증으로 다시 가입할 수 없습니다.
  *     security: []
  *     requestBody:
  *       required: true
@@ -52,10 +58,108 @@ const router = Router();
  *         description: 회원가입 성공 — user 정보와 hasProfile(false) 반환
  *       400:
  *         description: 유효성 검사 실패
+ *       403:
+ *         description: 이메일 인증 이력이 없거나 인증 후 30분이 지남 (EMAIL_NOT_VERIFIED) → 인증번호를 다시 받아야 함
  *       409:
  *         description: 이미 가입된 이메일 (EMAIL_ALREADY_EXISTS)
  */
 router.post("/signup", validate(signupSchema), authController.signup);
+
+/**
+ * @swagger
+ * /auth/signup/code:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 회원가입 이메일 인증번호 발송
+ *     description: |
+ *       (role, email)로 6자리 인증번호를 메일로 보냅니다(유효 5분).
+ *       재발송하면 이전 인증번호와 인증 기록은 무효가 됩니다.
+ *       비밀번호 재설정과 달리 가입 여부를 숨기지 않으며, 메일 발송이 끝난 뒤 응답합니다.
+ *       Turnstile 봇 검증이 필요합니다(로그인과 같은 turnstileToken).
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email, turnstileToken]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email }
+ *               turnstileToken:
+ *                 type: string
+ *                 description: Turnstile 위젯 토큰 (1회용). TURNSTILE_SECRET_KEY가 없는 로컬·CI에서는 생략 가능
+ *     responses:
+ *       204:
+ *         description: 인증번호 발송 완료
+ *       400:
+ *         description: 유효성 검사 실패 (VALIDATION_ERROR) / 봇 검증 실패 (BOT_CHECK_FAILED)
+ *       409:
+ *         description: 같은 role로 이미 가입된 이메일 (EMAIL_ALREADY_EXISTS)
+ *       429:
+ *         description: |
+ *           요청 횟수 초과 (TOO_MANY_REQUESTS)
+ *           - 같은 계정(role + 이메일): 1분 1회 / 1시간 5회 / 하루 10회 (비밀번호 재설정과 따로 셈)
+ *           - 서비스 전체: 하루 400통 (비밀번호 재설정과 합산, 실제로 발송한 메일만 셈)
+ *           retryAfterSeconds로 재발송 버튼 카운트다운을 표시할 수 있습니다.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: object
+ *                   properties:
+ *                     code: { type: string, example: TOO_MANY_REQUESTS }
+ *                     message: { type: string }
+ *                     retryAfterSeconds: { type: integer }
+ *       500:
+ *         description: 메일 발송 실패 (INTERNAL_ERROR) — 잠시 후 다시 요청
+ */
+// 봇 검증을 rate limit보다 앞에 둡니다 — 가입되지 않은 아무 주소로나 보낼 수 있어,
+// 봇이 주소를 바꿔 가며 서비스 전체 일일 상한을 소진하면 재설정·가입 메일이 모두 막힙니다
+router.post(
+  "/signup/code",
+  validate(sendSignupCodeSchema),
+  verifyTurnstile,
+  ...signupCodeRateLimiters,
+  dailyMailLimiter,
+  authController.sendSignupCode
+);
+
+/**
+ * @swagger
+ * /auth/signup/verify:
+ *   post:
+ *     tags: [Auth]
+ *     summary: 회원가입 이메일 인증번호 확인
+ *     description: |
+ *       메일로 받은 6자리 인증번호가 맞으면 인증을 기록합니다. 이후 30분 안에 POST /auth/signup으로 가입을 마쳐야 합니다.
+ *       인증번호 하나에 5번까지 틀릴 수 있고, 5번째로 틀리면 그 인증번호는 무효가 되어 다시 받아야 합니다.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role, email, code]
+ *             properties:
+ *               role: { type: string, enum: [CUSTOMER, MOVER] }
+ *               email: { type: string, format: email, description: "인증번호를 요청할 때 입력한 이메일" }
+ *               code: { type: string, pattern: "^\\d{6}$", example: "482913" }
+ *     responses:
+ *       204:
+ *         description: 인증 성공
+ *       400:
+ *         description: |
+ *           - VALIDATION_ERROR: 요청 형식 오류
+ *           - INVALID_SIGNUP_CODE: 인증번호 불일치 (발송 이력 없음·재발송으로 무효가 된 경우 포함)
+ *           - SIGNUP_CODE_EXPIRED: 발송 후 5분 경과 → 다시 받아야 함
+ *           - SIGNUP_CODE_ATTEMPTS_EXCEEDED: 5번 틀려 무효 → 다시 받아야 함
+ */
+router.post("/signup/verify", validate(verifySignupCodeSchema), authController.verifySignupCode);
 
 /**
  * @swagger
@@ -259,7 +363,7 @@ router.post("/find-email", validate(findEmailSchema), authController.findEmail);
  *         description: |
  *           요청 횟수 초과 (TOO_MANY_REQUESTS). 가입 여부와 무관하게 모든 요청을 셉니다.
  *           - 같은 계정(role + 이메일): 1분 1회 / 1시간 5회 / 하루 10회
- *           - 서비스 전체: 하루 400통 (실제로 발송한 메일만 셈)
+ *           - 서비스 전체: 하루 400통 (회원가입 인증과 합산, 실제로 발송한 메일만 셈)
  *           retryAfterSeconds로 재발송 버튼 카운트다운을 표시할 수 있습니다.
  *         content:
  *           application/json:
@@ -277,7 +381,7 @@ router.post(
   "/password-reset/code",
   validate(sendResetCodeSchema),
   ...resetCodeRateLimiters,
-  resetCodeDailyMailLimiter,
+  dailyMailLimiter,
   authController.sendPasswordResetCode
 );
 
@@ -385,6 +489,8 @@ router.post("/password-reset", validate(resetPasswordSchema), authController.res
  *                     email: customer1@test.com
  *                     phoneNumber: "01012345678"
  *                     hasProfile: true
+ *                     hasPassword: true
+ *                     isProfileEditVerified: false
  *                     image: null
  *                     region: SEOUL
  *                     services: [HOME, OFFICE]
@@ -398,6 +504,8 @@ router.post("/password-reset", validate(resetPasswordSchema), authController.res
  *                     email: mover1@test.com
  *                     phoneNumber: "01087654321"
  *                     hasProfile: true
+ *                     hasPassword: true
+ *                     isProfileEditVerified: false
  *                     image: null
  *                     nickName: 믿음이사
  *                     career: 7
@@ -412,6 +520,44 @@ router.post("/password-reset", validate(resetPasswordSchema), authController.res
  *         description: 토큰의 유저가 더 이상 존재하지 않음 (NOT_FOUND)
  */
 router.get("/me", requireAuth, authController.me);
+
+/**
+ * @swagger
+ * /auth/me:
+ *   delete:
+ *     tags: [Auth]
+ *     summary: 회원 탈퇴
+ *     description: |
+ *       계정 행은 남기고 개인정보(이메일·전화번호·비밀번호·소셜 연결)를 지웁니다.
+ *       잔금까지 결제한 완료 견적(결제 내역 포함)은 상대방 기록으로 남습니다.
+ *       - 고객: 이름은 그대로 남고, 작성한 리뷰도 기사님 평점과 함께 남습니다.
+ *       - 기사님: 이름이 "별명 (탈퇴)"로 바뀌어 고객의 지난 견적·결제 내역에 표시되고, 받은 리뷰는 지워집니다.
+ *       탈퇴한 사람과 관련된 상대방의 지난 알림도 함께 지워집니다.
+ *       같은 이메일·소셜 계정으로 바로 다시 가입할 수 있습니다.
+ *
+ *       - 프로필 수정 진입 이메일 인증(`POST /profiles/email-verification/verify`)을 30분 이내에 통과했어야 합니다.
+ *         다시 인증을 요구하지 않고, 프로필 수정 페이지에 들어올 때 한 인증 기록만 확인합니다.
+ *         프로필을 아직 등록하지 않은 계정은 인증 없이 탈퇴합니다(가입 취소 — 프로필 등록 페이지에서 호출).
+ *       - 확정된 이사(고객: 기사님 확정 후 이사 전 요청, 기사님: 확정된 견적)가 있으면 탈퇴할 수 없습니다.
+ *         이사일 다음 날 완료 처리되면 탈퇴할 수 있습니다.
+ *       - 이사가 끝났지만 잔금 결제가 끝나지 않은 견적이 있으면 탈퇴할 수 없습니다.
+ *       - 성공 시 인증 쿠키를 지웁니다.
+ *     responses:
+ *       204:
+ *         description: 탈퇴 완료 — 인증 쿠키 clear
+ *       401:
+ *         description: accessToken이 없거나 만료·위조됨(ACCESS_TOKEN_INVALID/ACCESS_TOKEN_EXPIRED)
+ *       403:
+ *         description: 프로필을 등록한 계정인데 이메일 인증을 하지 않았거나 30분이 지남 (PROFILE_EDIT_VERIFICATION_REQUIRED) — 다시 인증 후 요청
+ *       404:
+ *         description: 이미 탈퇴했거나 존재하지 않는 계정 (NOT_FOUND)
+ *       409:
+ *         description: |
+ *           확정된 이사가 있음 (CONFIRMED_MOVE_EXISTS)
+ *           / 잔금 결제가 끝나지 않은 견적이 있음 (UNPAID_PAYMENT_EXISTS)
+ *           / 동시 요청 충돌 (CONCURRENT_REQUEST_CONFLICT)
+ */
+router.delete("/me", requireAuth, authController.deleteAccount);
 
 /**
  * @swagger

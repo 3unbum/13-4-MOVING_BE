@@ -6,17 +6,17 @@ import { getExpireBaseDate } from "@/jobs/expireRequests.util";
  * 이사일 경과 처리 — 매일 자정.
  *
  * ⚠️ MVP 필수. 이 배치가 활성 견적 요청을 해제하는 유일한 경로입니다.
- * 없으면 유저가 두 번째 견적 요청을 영원히 할 수 없고,
- * "작성 가능한 리뷰"도 생성되지 않습니다.
+ * 없으면 유저가 두 번째 견적 요청을 영원히 할 수 없습니다.
  *
  * 처리 내용:
  *   1. moving_date가 지난 quotation_request 조회
  *   2. 확정 견적 있음 → COMPLETED / 없음 → EXPIRED
  *   3. 해당 estimate → COMPLETED
- *   4. 확정 견적에 대해 review를 PENDING으로 생성
+ *
+ * 리뷰(PENDING)는 여기서 만들지 않습니다 — 고객이 잔금을 결제하면 estimate.repository.pay가 만듭니다.
  *
  * confirmed_count는 견적 확정 시점에 이미 증가하므로 여기서 건드리지 않습니다.
- * 여러 번 실행해도 안전합니다(멱등) - 상태 조건부 갱신 + review는 estimate_id 유니크.
+ * 여러 번 실행해도 안전합니다(멱등) - 상태 조건부 갱신.
  */
 export async function expireRequests(): Promise<void> {
   const today = getExpireBaseDate();
@@ -43,7 +43,14 @@ export async function expireRequests(): Promise<void> {
         // 밖에서 읽은 값을 쓰면 낡은 !confirmed로 EXPIRED 처리돼
         // 견적이 COMPLETED가 되지 않고 review도 생성되지 않습니다.
         const confirmed = await tx.estimate.findFirst({
-          where: { quotationRequestId: target.id, estimateStatus: "CONFIRMED" },
+          // 선수금이 설정됐는데 못 낸 확정은 완료로 보지 않는다 — 선수금 기한 배치(expireDeposits)가
+          // 확정을 취소하고, 요청은 PENDING으로 돌아와 다음 실행에서 EXPIRED가 된다.
+          // 선수금이 없는 옛 확정(depositAmount NULL)은 그대로 완료 처리한다.
+          where: {
+            quotationRequestId: target.id,
+            estimateStatus: "CONFIRMED",
+            OR: [{ depositAmount: null }, { depositPaidAt: { not: null } }],
+          },
           select: { id: true },
         });
 
@@ -75,18 +82,6 @@ export async function expireRequests(): Promise<void> {
         await tx.estimate.updateMany({
           where: { id: confirmed.id, estimateStatus: "CONFIRMED" },
           data: { estimateStatus: "COMPLETED" },
-        });
-
-        // 리뷰는 이사 완료 시점에 PENDING으로 미리 만들어 둡니다.
-        // 재실행 시 중복 생성되지 않도록 estimate_id 유니크를 이용합니다.
-        await tx.review.upsert({
-          where: { estimateId: confirmed.id },
-          create: {
-            estimateId: confirmed.id,
-            customerId: target.userId,
-            status: "PENDING",
-          },
-          update: {},
         });
 
         completed += 1;

@@ -11,15 +11,15 @@ const COLORS = {
 
 const FONT_FAMILY = "'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', '맑은 고딕', sans-serif";
 
-interface ResetCodeEmailProps {
+interface ProfileEditCodeEmailProps {
   code: string;
   ttlMinutes: number;
 }
 
-export const ResetCodeEmail = ({ code, ttlMinutes }: ResetCodeEmailProps) => (
+export const ProfileEditCodeEmail = ({ code, ttlMinutes }: ProfileEditCodeEmailProps) => (
   <Html lang="ko">
     <Head />
-    <Preview>{`무빙 비밀번호 재설정 인증번호는 ${code}입니다`}</Preview>
+    <Preview>{`무빙 프로필 수정 본인 확인 인증번호는 ${code}입니다`}</Preview>
     <Body style={{ backgroundColor: COLORS.background, fontFamily: FONT_FAMILY, margin: 0 }}>
       <Container
         style={{
@@ -37,10 +37,10 @@ export const ResetCodeEmail = ({ code, ttlMinutes }: ResetCodeEmailProps) => (
         <Text
           style={{ color: COLORS.text, fontSize: "20px", fontWeight: 700, margin: "32px 0 8px" }}
         >
-          비밀번호 재설정 인증번호
+          프로필 수정 본인 확인 인증번호
         </Text>
         <Text style={{ color: COLORS.subText, fontSize: "15px", lineHeight: "24px", margin: 0 }}>
-          안녕하세요, 무빙입니다. 아래 인증번호를 입력해 비밀번호 재설정을 진행해 주세요.
+          안녕하세요, 무빙입니다. 아래 인증번호를 입력해 프로필 수정을 계속 진행해 주세요.
         </Text>
 
         <Section
@@ -71,7 +71,7 @@ export const ResetCodeEmail = ({ code, ttlMinutes }: ResetCodeEmailProps) => (
         <Text
           style={{ color: COLORS.subText, fontSize: "14px", lineHeight: "22px", margin: "4px 0 0" }}
         >
-          본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.
+          본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 프로필은 변경되지 않습니다.
         </Text>
 
         <Hr style={{ borderColor: COLORS.line, margin: "32px 0 16px" }} />

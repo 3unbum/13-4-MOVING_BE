@@ -37,7 +37,19 @@ describe("notificationRepository.countUnread", () => {
             quotationRequestId: { not: null },
           },
           {
-            type: { in: ["NEW_ESTIMATE", "ESTIMATE_CONFIRMED"] },
+            type: {
+              in: [
+                "NEW_ESTIMATE",
+                "ESTIMATE_CONFIRMED",
+                "ESTIMATE_REJECTED",
+                "PAYMENT_REQUEST",
+                "PAYMENT_COMPLETED",
+                "DEPOSIT_PAID",
+                "DEPOSIT_EXPIRED",
+                "EXTRA_CHARGE_PROPOSED",
+                "EXTRA_CHARGE_RESPONDED",
+              ],
+            },
             estimateId: { not: null },
           },
           { type: "NEW_CHAT_MESSAGE", chatRoomId: { not: null } },

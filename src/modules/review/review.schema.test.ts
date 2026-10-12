@@ -1,4 +1,8 @@
-import { confirmReviewSchema, reviewListQuerySchema } from "./review.schema";
+import {
+  confirmReviewSchema,
+  deleteReviewImageSchema,
+  reviewListQuerySchema,
+} from "./review.schema";
 
 describe("reviewListQuerySchema", () => {
   it("빈 쿼리를 통과시킨다", () => {
@@ -27,5 +31,17 @@ describe("confirmReviewSchema", () => {
 
   it("코멘트가 10자 미만이면 실패한다", () => {
     expect(confirmReviewSchema.safeParse({ rating: 5, comment: "좋아요" }).success).toBe(false);
+  });
+});
+
+describe("deleteReviewImageSchema", () => {
+  it("imageUrl이 있으면 통과시킨다", () => {
+    expect(
+      deleteReviewImageSchema.safeParse({ imageUrl: "https://cdn.example/1.jpg" }).success
+    ).toBe(true);
+  });
+
+  it("imageUrl이 비어 있으면 실패한다", () => {
+    expect(deleteReviewImageSchema.safeParse({ imageUrl: "  " }).success).toBe(false);
   });
 });
