@@ -505,6 +505,41 @@ describe("moverAiService", () => {
     expect(gemini).not.toHaveBeenCalled();
   });
 
+  it("지역과 유형이 있으면 추천·목록을 말로 고를 수 있다", async () => {
+    repository.findOwnedSession.mockResolvedValue(
+      ownedSession({ region: "SEOUL", service: "HOME" }) as never
+    );
+    movers.listRankCandidates.mockResolvedValue([
+      { userId: 3, nickName: "낮음", avgRating: 5, reviewCount: 1, career: 1, confirmedCount: 1 },
+      {
+        userId: 4,
+        nickName: "높음",
+        avgRating: 4.8,
+        reviewCount: 40,
+        career: 12,
+        confirmedCount: 30,
+      },
+    ]);
+    movers.listByIds.mockResolvedValue([{ id: 4, nickName: "높음" }] as never);
+
+    const recommended = await moverAiService.postMessage(1, "sess-1", {
+      message: "추천해줘",
+      clientAction: null,
+    });
+
+    expect(recommended.assistantMessage.ui?.nextAction).toBe("SHOW_RECOMMENDATION");
+    expect(recommended.assistantMessage.ui?.movers).toEqual([{ id: 4, nickName: "높음" }]);
+    expect(gemini).not.toHaveBeenCalled();
+
+    const browsed = await moverAiService.postMessage(1, "sess-1", {
+      message: "목록으로 볼게요",
+      clientAction: null,
+    });
+
+    expect(browsed.assistantMessage.ui?.nextAction).toBe("ASK_SORT");
+    expect(gemini).not.toHaveBeenCalled();
+  });
+
   it("조건에 맞는 기사님이 한 명이면 선택 없이 리뷰 요약과 함께 보여준다", async () => {
     movers.listRankCandidates.mockResolvedValue([
       { userId: 9, nickName: "혼자", avgRating: 4.2, reviewCount: 2, career: 3, confirmedCount: 1 },

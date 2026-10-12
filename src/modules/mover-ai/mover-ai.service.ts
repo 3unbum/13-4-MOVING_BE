@@ -49,6 +49,14 @@ function inferExplicitSort(message: string): MoverAiSort | null {
   return null;
 }
 
+/** 목록/추천 질문에 대한 말만 읽습니다. "추천"만 있으면 추천 이유 같은 말까지 잡힙니다. */
+function inferExplicitMode(message: string): MoverAiListMode | null {
+  const compact = message.replace(/\s/g, "");
+  if (/추천받|추천해|한명추천/.test(compact)) return "recommend";
+  if (/목록|직접고르|직접보/.test(compact)) return "browse";
+  return null;
+}
+
 const HISTORY_LIMIT = 12;
 /** 찜하기가 가격 안내·찜 완료 말 뒤의 추천 카드를 찾도록 최근 어시스턴트만 훑습니다 */
 const RECENT_ASSISTANT_SCAN = 20;
@@ -652,6 +660,7 @@ export const moverAiService = {
     const regionResult = resolveRegionFromMessage(dto.message);
     const explicitService = inferExplicitService(dto.message);
     const explicitSort = inferExplicitSort(dto.message);
+    const explicitMode = inferExplicitMode(dto.message);
     const resetIntent = inferFilterResetIntent(dto.message);
 
     // CLARIFY_REGION 직후 — 칩 대신 말로 고른 경우 후보와 매칭
@@ -718,6 +727,11 @@ export const moverAiService = {
         sort: explicitSort ?? filters.sort,
       };
       return respondBySlots(sessionId, nextFilters, carryListMode(latestAssistant, nextFilters));
+    }
+
+    if (explicitMode && filters.region && filters.service) {
+      if (explicitMode === "recommend") return respondShowRecommendation(sessionId, filters);
+      return respondBySlots(sessionId, filters, "browse");
     }
 
     let gemini;
