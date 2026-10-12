@@ -1,5 +1,6 @@
 import { prisma } from "@/config/prisma";
 import type { Prisma } from "../../../generated/prisma/client.ts";
+import type { RegionType, ServiceType } from "../../../generated/prisma/enums.ts";
 import type { MoverReviewSort } from "./mover.schema";
 import type { FindMoverListParams, MoverListCursor, MoverListSort } from "./mover.type";
 
@@ -117,6 +118,35 @@ export const moverRepository = {
     return prisma.moverProfile.findMany({
       where: { userId: { in: userIds }, user: { role: "MOVER" } },
       include: listInclude,
+    });
+  },
+
+  /** 리뷰가 1개 이상인 기사님의 평점 평균. 추천 보정 평점의 기준값입니다. */
+  findReviewedAvgRating() {
+    return prisma.moverProfile.aggregate({
+      where: { reviewCount: { gt: 0 } },
+      _avg: { avgRating: true },
+    });
+  },
+
+  /** 지역·유형이 맞는 기사님의 추천 점수 재료만 가져옵니다 */
+  findRankCandidates(region: RegionType, service: ServiceType) {
+    return prisma.moverProfile.findMany({
+      where: {
+        user: {
+          role: "MOVER",
+          moverRegions: { some: { region } },
+          moverServices: { some: { service } },
+        },
+      },
+      select: {
+        userId: true,
+        nickName: true,
+        avgRating: true,
+        reviewCount: true,
+        career: true,
+        confirmedCount: true,
+      },
     });
   },
 

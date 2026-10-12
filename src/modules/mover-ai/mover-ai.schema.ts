@@ -55,6 +55,10 @@ export const clientActionSchema = z.discriminatedUnion("type", [
     type: z.literal("FAVORITE_ALL"),
     value: z.null().optional(),
   }),
+  z.object({
+    type: z.literal("SELECT_MODE"),
+    value: z.enum(["browse", "recommend"]),
+  }),
 ]);
 
 export const postMessageSchema = z
