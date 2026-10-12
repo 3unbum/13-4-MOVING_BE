@@ -41,7 +41,7 @@ router.use(requireAuth, requireRole("CUSTOMER"));
  *         label: { type: string, example: 가정이사 }
  *         action:
  *           type: string
- *           enum: [SELECT_SERVICE, SELECT_SORT, SELECT_REGION, SHOW_MORE, CHANGE_FILTERS, FAVORITE_ALL]
+ *           enum: [SELECT_SERVICE, SELECT_SORT, SELECT_REGION, SHOW_MORE, CHANGE_FILTERS, FAVORITE_ALL, SELECT_MODE]
  *         value: { type: string, nullable: true, example: HOME }
  *     MoverAiMoverCard:
  *       type: object
@@ -65,10 +65,11 @@ router.use(requireAuth, requireRole("CUSTOMER"));
  *       properties:
  *         nextAction:
  *           type: string
- *           enum: [ASK_REGION, ASK_SERVICE, ASK_SORT, SHOW_MOVERS, CLARIFY_UNSUPPORTED, CLARIFY_REGION]
+ *           enum: [ASK_REGION, ASK_SERVICE, ASK_MODE, ASK_SORT, SHOW_MOVERS, SHOW_RECOMMENDATION, CLARIFY_UNSUPPORTED, CLARIFY_REGION]
  *           description: |
  *             다음에 받을 입력. 칩은 이 값으로 서버가 만듭니다.
- *             ASK_REGION은 칩이 없고, CLARIFY_REGION은 겹치는 지명 후보 칩입니다.
+ *             ASK_MODE는 목록 보기와 한 명 추천 중 고르는 단계입니다.
+ *             SHOW_RECOMMENDATION은 그 조건에서 고른 기사님 한 명입니다.
  *         chips:
  *           type: array
  *           nullable: true
@@ -235,6 +236,11 @@ router.get(
  *                     properties:
  *                       type: { type: string, enum: [FAVORITE_ALL] }
  *                       value: { type: string, nullable: true }
+ *                   - type: object
+ *                     required: [type, value]
+ *                     properties:
+ *                       type: { type: string, enum: [SELECT_MODE] }
+ *                       value: { type: string, enum: [browse, recommend] }
  *           examples:
  *             freeText:
  *               summary: 자유 입력

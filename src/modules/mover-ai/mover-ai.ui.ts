@@ -1,6 +1,7 @@
 import type {
   MoverAiChip,
   MoverAiFilters,
+  MoverAiListMode,
   MoverAiNextAction,
   MoverAiRegionClarify,
   MoverAiSlotAction,
@@ -21,6 +22,22 @@ const SORT_CHIPS: MoverAiChip[] = [
   { id: "sort_confirmed", label: "확정 많은 순", action: "SELECT_SORT", value: "confirmed" },
 ];
 
+const RECOMMEND_CHIP: MoverAiChip = {
+  id: "mode_recommend",
+  label: "기사님 한 명 추천받기",
+  action: "SELECT_MODE",
+  value: "recommend",
+};
+
+const BROWSE_CHIP: MoverAiChip = {
+  id: "mode_browse",
+  label: "목록에서 직접 고르기",
+  action: "SELECT_MODE",
+  value: "browse",
+};
+
+const MODE_CHIPS: MoverAiChip[] = [RECOMMEND_CHIP, BROWSE_CHIP];
+
 const RESET_CHIP: MoverAiChip = {
   id: "reset",
   label: "조건 바꾸기",
@@ -31,6 +48,7 @@ const RESET_CHIP: MoverAiChip = {
 /** 슬롯 단계별 칩. 가격·일정 안내(CLARIFY) 뒤에도 같은 칩을 보여줘야 서비스 선택 흐름이 끊기지 않습니다. */
 function chipsForSlotAction(slotAction: MoverAiSlotAction): MoverAiChip[] | null {
   if (slotAction === "ASK_SERVICE") return SERVICE_CHIPS;
+  if (slotAction === "ASK_MODE") return MODE_CHIPS;
   if (slotAction === "ASK_SORT") return SORT_CHIPS;
   if (slotAction === "SHOW_MOVERS") return [RESET_CHIP];
   return null;
@@ -55,6 +73,9 @@ export function buildUi(params: {
   movers?: MoverListItemResponse[] | null;
   listMeta?: { nextCursor: string | null; hasNext: boolean } | null;
   regionClarify?: MoverAiRegionClarify | null;
+  candidateCount?: number | null;
+  /** 가격 안내 뒤에도 정렬 칩을 유지하려면 목록/추천 선택이 필요합니다 */
+  listMode?: MoverAiListMode | null;
 }): MoverAiUi {
   const {
     nextAction,
@@ -62,11 +83,22 @@ export function buildUi(params: {
     movers = null,
     listMeta = null,
     regionClarify = null,
+    candidateCount = null,
+    listMode = null,
   } = params;
 
   // ASK_REGION(첫 인사·조건 바꾸기 직후)은 칩 없이 발화만 받습니다. 유형/정렬 칩은 이후 단계에서만 노출합니다.
   if (nextAction === "ASK_SERVICE" || nextAction === "ASK_SORT") {
     return { nextAction, chips: chipsForSlotAction(nextAction), movers: null, listMeta: null };
+  }
+
+  if (nextAction === "ASK_MODE") {
+    return {
+      nextAction,
+      chips: candidateCount === 0 ? [RESET_CHIP] : MODE_CHIPS,
+      movers: null,
+      listMeta: null,
+    };
   }
 
   if (nextAction === "CLARIFY_REGION") {
@@ -79,12 +111,13 @@ export function buildUi(params: {
   }
 
   if (nextAction === "CLARIFY_UNSUPPORTED") {
-    const chips = filters ? chipsForSlotAction(resolveSlotAction(filters)) : null;
+    const chips = filters ? chipsForSlotAction(resolveSlotAction(filters, listMode)) : null;
     return { nextAction, chips, movers: null, listMeta: null };
   }
 
   if (nextAction === "SHOW_MOVERS") {
     const chips: MoverAiChip[] = [];
+    if (movers && movers.length > 0) chips.push(RECOMMEND_CHIP);
     if (listMeta?.hasNext) {
       chips.push({ id: "more", label: "다른 기사님 더 보기", action: "SHOW_MORE", value: null });
     }
@@ -106,14 +139,35 @@ export function buildUi(params: {
     };
   }
 
+  if (nextAction === "SHOW_RECOMMENDATION") {
+    const chips: MoverAiChip[] = [];
+    if ((candidateCount ?? 0) > 1) chips.push(BROWSE_CHIP);
+    if (movers && movers.length > 0) {
+      chips.push({
+        id: "fav",
+        label: "이 기사님 찜하기",
+        action: "FAVORITE_ALL",
+        value: null,
+      });
+    }
+    chips.push(RESET_CHIP);
+    return { nextAction, chips, movers, listMeta: null };
+  }
+
   return { nextAction, chips: null, movers: null, listMeta: null };
 }
 
-/** 슬롯 채움 상태만으로 다음 단계를 계산합니다. */
-export function resolveSlotAction(filters: MoverAiFilters): MoverAiSlotAction {
+/**
+ * 슬롯과 목록/추천 선택으로 다음 단계를 계산합니다.
+ * 정렬이 비어 있고 아직 길을 고르지 않았으면 ASK_MODE입니다.
+ */
+export function resolveSlotAction(
+  filters: MoverAiFilters,
+  listMode: MoverAiListMode | null = null
+): MoverAiSlotAction {
   if (!filters.region) return "ASK_REGION";
   if (!filters.service) return "ASK_SERVICE";
-  if (!filters.sort) return "ASK_SORT";
+  if (!filters.sort) return listMode === "browse" ? "ASK_SORT" : "ASK_MODE";
   return "SHOW_MOVERS";
 }
 
@@ -123,7 +177,8 @@ export function resolveSlotAction(filters: MoverAiFilters): MoverAiSlotAction {
  */
 export function resolveNextAction(
   filters: MoverAiFilters,
-  suggested: MoverAiNextAction
+  suggested: MoverAiNextAction,
+  listMode: MoverAiListMode | null = null
 ): MoverAiNextAction {
   if (suggested === "CLARIFY_UNSUPPORTED") {
     return "CLARIFY_UNSUPPORTED";
@@ -131,7 +186,10 @@ export function resolveNextAction(
   if (suggested === "CLARIFY_REGION") {
     return "ASK_REGION";
   }
-  return resolveSlotAction(filters);
+  if (listMode === "recommend" && filters.region && filters.service && !filters.sort) {
+    return "SHOW_RECOMMENDATION";
+  }
+  return resolveSlotAction(filters, listMode);
 }
 
 export const WELCOME_MESSAGE =

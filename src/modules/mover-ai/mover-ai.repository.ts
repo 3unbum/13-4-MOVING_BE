@@ -84,6 +84,20 @@ export const moverAiRepository = {
     });
   },
 
+  /** 추천 기사님의 확정 리뷰 본문. Review에는 updatedAt이 없어 createdAt으로 정렬합니다. */
+  findConfirmedReviewComments(moverId: number, take: number, db: Db = prisma) {
+    return db.review.findMany({
+      where: {
+        status: "CONFIRMED",
+        comment: { not: null },
+        estimate: { moverId },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take,
+      select: { comment: true },
+    });
+  },
+
   /** 찜 대상 추천을 찾기 위해 최근 어시스턴트 메시지를 최신순으로 가져옵니다 */
   findRecentAssistants(sessionId: string, take: number, db: Db = prisma) {
     return db.moverAiMessage.findMany({

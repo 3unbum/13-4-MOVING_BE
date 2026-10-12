@@ -40,15 +40,15 @@ const SYSTEM_PROMPT = `당신은 이사 매칭 서비스 "무빙"의 기사님 �
 
 ## nextAction
 - ASK_REGION / ASK_SERVICE / ASK_SORT / SHOW_MOVERS — 빈 슬롯 기준
-- CLARIFY_UNSUPPORTED: 가격·일정. 슬롯은 유지하고 reply로 그 조건은 아직 찾을 수 없다고 짧게 안내.
+- CLARIFY_UNSUPPORTED: 가격·일정·검색과 무관한 말. 슬롯은 유지합니다.
 - CLARIFY_REGION: 쓰지 마세요. 중의·불명은 ASK_REGION으로.
 
 ## 규칙
 1. 이번에 언급된 슬롯만 갱신. 나머지는 현재 슬롯 유지.
 2. reply는 2문장 이내 한국어. UI 칩 문구 금지.
 3. reply와 nextAction 일치. service 비면 정렬 묻지 말 것.
-4. 가격·일정 → nextAction=CLARIFY_UNSUPPORTED. filters는 현재 슬롯 유지.
-5. 오프토픽: filters 유지, ASK_* 로 다음 슬롯만 되묻기.
+4. 가격·일정·검색과 무관한 말 → nextAction=CLARIFY_UNSUPPORTED. filters는 현재 슬롯 유지.
+5. 같은 조건으로 다시 보여달라는 말 → 슬롯 유지, nextAction=SHOW_MOVERS.
 6. JSON만 출력.`;
 
 /** Gemini JSON Schema (structured output) */
@@ -189,4 +189,29 @@ ${params.userMessage}`;
 
   const { rawText } = await generateWithRetryAndFallback(ai, userPrompt);
   return parseAndValidate(rawText);
+}
+
+const REVIEW_SUMMARY_PROMPT = `이사 기사님의 확정 리뷰만 보고 두 문장 이내 한국어로 요약하세요.
+주어진 문장에 없는 평점, 사건, 이름은 지어내지 마세요. 요약문만 출력하세요.`;
+
+/** 확정 리뷰 본문만 받아 짧은 요약을 만듭니다. 실패하면 null을 반환해 추천 사유만 남깁니다. */
+export async function summarizeReviewComments(comments: string[]): Promise<string | null> {
+  if (!env.GEMINI_API_KEY || comments.length === 0) return null;
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: env.GEMINI_MODEL,
+      contents: comments.map((comment, index) => `${index + 1}. ${comment}`).join("\n"),
+      config: {
+        systemInstruction: REVIEW_SUMMARY_PROMPT,
+        temperature: 0.2,
+        abortSignal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      },
+    });
+    const text = response.text?.trim();
+    return text ? text.slice(0, 500) : null;
+  } catch {
+    return null;
+  }
 }
