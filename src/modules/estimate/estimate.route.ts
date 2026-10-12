@@ -150,7 +150,9 @@ router
    *   post:
    *     tags: [Estimates]
    *     summary: 요청 반려 (#32)
-   *     description: 지정견적 요청을 받은 mover만 반려 가능.
+   *     description: |
+   *       지정견적 요청을 받은 mover만 반려 가능.
+   *       처음 반려되면 요청 고객에게 ESTIMATE_REJECTED 알림이 갑니다. 이미 반려된 건을 다시 저장하면 알림은 만들지 않습니다.
    *     parameters:
    *       - in: path
    *         name: id
