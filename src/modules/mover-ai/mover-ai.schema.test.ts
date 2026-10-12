@@ -192,8 +192,25 @@ describe("resolveNextAction", () => {
       "ASK_REGION"
     );
     expect(resolveNextAction({ region: "SEOUL", service: "SMALL", sort: null }, "ASK_SORT")).toBe(
-      "ASK_SORT"
+      "ASK_MODE"
     );
+    expect(
+      resolveNextAction({ region: "SEOUL", service: "SMALL", sort: null }, "ASK_SORT", "browse")
+    ).toBe("ASK_SORT");
+  });
+
+  it("정렬을 고르는 중 가격 안내에는 정렬 칩을 유지한다", () => {
+    const ui = buildUi({
+      nextAction: "CLARIFY_UNSUPPORTED",
+      filters: { region: "SEOUL", service: "HOME", sort: null },
+      listMode: "browse",
+    });
+    expect(ui.chips?.map((chip) => chip.label)).toEqual([
+      "평점 높은 순",
+      "리뷰 많은 순",
+      "경력 많은 순",
+      "확정 많은 순",
+    ]);
   });
 
   it("세 슬롯이 채워지면 SHOW_MOVERS", () => {
