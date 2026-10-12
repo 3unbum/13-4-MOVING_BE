@@ -1,5 +1,7 @@
 import bcrypt from "bcrypt";
 import { prisma } from "../src/config/prisma";
+// 선수금 금액 규칙(견적의 10%, 10원 단위 내림)을 시드에 복제하지 않습니다.
+import { calcDepositAmount } from "../src/modules/estimate/estimate.payment";
 
 /**
  * 개발용 시드 데이터.
@@ -19,6 +21,16 @@ import { prisma } from "../src/config/prisma";
  *                     과거 이사 이력 고객 12명(reviewer01~12@moving.test)
  *   견적 요청       — 요청 있는 일반 유저 17명 각 1건 + 고정 계정 2건 = 19건
  *                     + 기사님 리뷰용 과거 완료 이력 다수
+ *
+ * ── 시연 시나리오 ────────────────────────────────────────────
+ *   customer@      ① 견적 대기 1건   ② 이사 완료 + 잔금 결제 대기 1건
+ *                  ②는 선수금을 이미 납부했고 추가 금액 1건이 요청 중입니다.
+ *                  승인 → 잔금 결제 → 리뷰 작성까지 이어서 보여줄 수 있습니다.
+ *   mover2@        ②의 담당 기사님. 리뷰 사진도 이 기사님에게 몰려 있습니다.
+ *
+ *   신규 가입은 시연 때 직접 만듭니다(회원가입 → 이메일 인증 → 견적 요청 → 확정 →
+ *   선수금 결제). 이사일을 넉넉히 뒤로 잡아야 선수금 기한이 남습니다 —
+ *   기한은 min(확정 + 48시간, 이사일 0시 KST)입니다.
  *
  * ── 일반 유저 20명의 상태 분포 ───────────────────────────────
  *   user01~03  요청 없음        빈 화면 / "견적 요청하러 가기" CTA
@@ -230,10 +242,17 @@ async function main() {
     ],
   });
 
-  // ── 시나리오 2: 이사 완료 + 리뷰 작성 대기 ─────────────────
+  // ── 시나리오 2: 이사 완료 + 잔금 결제 대기 + 리뷰 작성 대기 ─
+  //
+  // 시연에서 "잔금 결제 → 리뷰 작성"을 이어서 보여주는 계정입니다.
+  //
+  // 🔴 소유자가 `newbie@`가 아니라 `customer@`입니다. 결제 API는 전부
+  //    `requireProfile` 미들웨어를 거치는데(estimate.route.ts), `newbie@`는 프로필
+  //    미등록 계정이라 **결제 화면에 들어가지도 못합니다**. 프로필 강제 테스트용으로
+  //    일부러 비워 둔 계정이라 프로필을 채울 수도 없습니다.
   const completedRequest = await prisma.quotationRequest.create({
     data: {
-      userId: newbie.id,
+      userId: customer.id,
       category: "SMALL",
       movingDate: daysFromToday(-7),
       quotationStatus: "COMPLETED",
@@ -248,13 +267,38 @@ async function main() {
     },
   });
 
+  // 선수금은 확정 시점에 정해집니다 — 금액 규칙을 시드에 박아 두면 비율이 바뀔 때
+  // 어긋나므로 실제 계산 함수를 그대로 씁니다.
+  const completedPrice = 430_000;
   const completedEstimate = await prisma.estimate.create({
     data: {
       quotationRequestId: completedRequest.id,
       moverId: mover2.id,
-      price: 430_000,
+      price: completedPrice,
       comment: "원룸 이사 기준입니다.",
       estimateStatus: "COMPLETED",
+      // 선수금은 이미 납부한 상태 — `toPaymentStage`가 BALANCE_DUE로 판정합니다.
+      // (COMPLETED + paymentStatus UNPAID + depositPaidAt 있음)
+      depositAmount: calcDepositAmount(completedPrice),
+      depositDueAt: daysFromToday(-9),
+      depositPaidAt: daysFromToday(-9),
+      // 토스 결제 키는 유니크 컬럼입니다. 실제 키 형식(`tviva...`)과 섞이지 않게
+      // 시드임이 드러나는 접두사를 씁니다.
+      depositPaymentKey: "seed_deposit_customer_scenario2",
+      // 기사님이 이사 완료 후 결제를 요청한 상태 — 고객 화면에 결제 요청 알림이 뜹니다
+      paymentRequestedAt: daysFromToday(-6),
+      paymentStatus: "UNPAID",
+      // 추가 금액 1건을 요청 중으로 둡니다. 고객은 승인·거절을 먼저 처리해야
+      // 잔금을 결제할 수 있어, 시연에서 승인 → 잔금 합산까지 이어서 보여줄 수 있습니다.
+      extraCharges: {
+        create: [
+          {
+            amount: 50_000,
+            reason: "엘리베이터가 없어 3층까지 계단으로 운반했습니다.",
+            status: "PROPOSED",
+          },
+        ],
+      },
     },
   });
 
@@ -262,7 +306,7 @@ async function main() {
   await prisma.review.create({
     data: {
       estimateId: completedEstimate.id,
-      customerId: newbie.id,
+      customerId: customer.id,
       status: "PENDING",
     },
   });
@@ -296,6 +340,10 @@ async function main() {
   }
   console.log(`  비밀번호는 전부 ${PASSWORD}`);
   console.log("  고정   customer@moving.test / newbie@moving.test(프로필 미등록) / mover1~3@");
+  console.log(
+    "  시연   customer@ — 견적 대기 1건 + 잔금 결제 대기 1건(선수금 납부·추가금 요청 중)"
+  );
+  console.log("  리뷰사진 mover2@ 상세에 몰려 있습니다 (3장·3장·2장·1장)");
   console.log("  대량   user01~20@moving.test / mover01~40@moving.test");
   console.log("  리뷰용 reviewer01~12@moving.test (과거 이사 이력 보유)");
   console.log("  채팅   user13@moving.test ↔ 확정된 기사님 (대화 5건, 고객 안 읽음 2건)");
@@ -445,6 +493,56 @@ const LOW_RATING_COMMENTS = [
   "짐 몇 개에 흠집이 생겼는데 안내를 못 받았습니다.",
   "포장이 생각보다 꼼꼼하지 않아 아쉬웠습니다.",
 ];
+
+/**
+ * 리뷰 첨부 사진 — Unsplash 무료 이미지(Unsplash License, 출처 표기 의무 없음).
+ *
+ * S3에 올리지 않고 외부 URL을 그대로 씁니다. 시드는 개발·시연용이라
+ * 버킷에 파일을 쌓을 이유가 없고, 팀원이 각자 시드를 돌려도 바로 보입니다.
+ * (실제 업로드 경로는 `review.service.ts`의 `uploadReviewImage`입니다.)
+ *
+ * ⚠️ 쿼리 파라미터를 떼면 4000px 원본이 내려옵니다. 리뷰 카드·뷰어에는 과분하고
+ *    시연 중 로딩이 눈에 띄게 늘어지므로 `w`·`q`를 반드시 붙여 둡니다.
+ *
+ * ⚠️ `plus.unsplash.com`은 유료(Unsplash+)입니다. 전부 `images.unsplash.com`만 씁니다.
+ */
+const REVIEW_IMAGE_IDS = [
+  "photo-1730154838368-c37b1fdebcf6", // 박스 쌓인 방 + 화분
+  "photo-1714647211902-bb711d643a17", // 거실에서 박스 옮기는 사람
+  "photo-1600725935160-f67ee4f6084a", // 포장된 이삿짐 박스들
+  "photo-1663625318264-695d2d04f11a", // 창가 박스 더미
+  "photo-1698917414969-feade59e3343", // 트럭 하역 작업
+  "photo-1694715669993-ea0022b470f7", // 핸드카로 박스 운반
+  "photo-1783473007464-1dbf2ff30dec", // 이사 트럭 + 작업자
+  "photo-1707407087163-7ab35bca9ffc", // 트럭 내부 적재
+  "photo-1714647211923-a3881cd1300f", // 새집에서 액자 거는 부부
+] as const;
+
+const REVIEW_IMAGE_URLS = REVIEW_IMAGE_IDS.map(
+  (id) => `https://images.unsplash.com/${id}?w=800&q=80&auto=format&fit=crop`
+);
+
+/** 리뷰당 사진 상한. `review.constants.ts`의 `MAX_REVIEW_IMAGES`와 같은 값입니다. */
+const MAX_REVIEW_IMAGES = 3;
+
+/**
+ * 리뷰 한 건에 붙일 사진을 고릅니다.
+ *
+ * 고유 URL이 9개뿐이라 여러 리뷰가 같은 사진을 공유합니다. `offset`을 리뷰마다
+ * 다르게 주어 **한 화면(페이지당 5건)에 같은 사진이 겹치지 않도록** 돌려 씁니다.
+ */
+function pickReviewImages(offset: number, count: number): string[] {
+  const safeCount = Math.min(count, MAX_REVIEW_IMAGES);
+  return Array.from(
+    { length: safeCount },
+    (_, i) => REVIEW_IMAGE_URLS[(offset + i) % REVIEW_IMAGE_URLS.length]!
+  );
+}
+
+/** `review.create`의 `images.create`에 넣을 형태로 바꿉니다. */
+function toImageRows(urls: string[]) {
+  return urls.map((imageUrl, sortOrder) => ({ imageUrl, sortOrder }));
+}
 const MOVER_TITLES = [
   "안전제일 이사",
   "친절한 반장",
@@ -651,7 +749,8 @@ async function seedBulk(password: string, fixedMoverIds: number[]) {
   }
 
   console.log(`  대량 시드 완료 — 기사님 ${allMoverIds.length}명`);
-  await seedReviewHistory(password, allMoverIds);
+  // 시연 기사님(mover2@)에게 사진을 몰아줍니다 — fixedMoverIds는 [mover1, mover2, mover3] 순
+  await seedReviewHistory(password, allMoverIds, fixedMoverIds[1]);
   await syncAggregates();
 }
 
@@ -668,7 +767,12 @@ async function seedBulk(password: string, fixedMoverIds: number[]) {
  *
  * 상위 기사님에게 리뷰를 몰아주어 정렬·페이지네이션을 볼 수 있게 합니다.
  */
-async function seedReviewHistory(password: string, allMoverIds: number[]) {
+async function seedReviewHistory(
+  password: string,
+  allMoverIds: number[],
+  /** 시연용 기사님. 리뷰 사진을 몰아주어 사진 뷰어·갤러리를 바로 보여줄 수 있게 합니다 */
+  demoMoverId?: number
+) {
   console.log("  과거 이사 이력 생성 중...");
   const reviewers = [];
   for (let i = 1; i <= 12; i++) {
@@ -691,6 +795,10 @@ async function seedReviewHistory(password: string, allMoverIds: number[]) {
 
   // 앞쪽 기사님일수록 이력이 많습니다 — 목록 정렬과 "더 보기"를 확인하려면
   // 한 명은 리뷰가 페이지 크기를 넘어야 합니다.
+  // 사진을 돌려 쓰는 커서. 기사님이 바뀌어도 이어지므로 같은 사진이 늘 같은 순서로
+  // 나오지는 않습니다.
+  let photoOffset = 0;
+
   for (const [index, moverId] of allMoverIds.entries()) {
     const count = index === 0 ? 24 : index < 5 ? pickInt(8, 16) : index < 15 ? pickInt(2, 7) : 0;
 
@@ -729,12 +837,35 @@ async function seedReviewHistory(password: string, allMoverIds: number[]) {
         },
       });
 
+      // 시연 기사님은 앞쪽 4건에 사진을 확정으로 넣습니다. 3장·2장·1장을 모두 만들어
+      // 상한(3장)과 뷰어 좌우 넘기기를 한 페이지(5건)에서 전부 보여줄 수 있게 합니다.
+      //
+      // 🔴 사진은 CONFIRMED 리뷰에만 붙입니다 — 갤러리 API가
+      //    (`findConfirmedReviewImagesByMoverId`) 확정분만 세므로, 미작성 리뷰에 사진이
+      //    달려 있으면 집계와 화면이 어긋납니다. 그래서 작성 여부부터 확정으로 둡니다.
+      const isDemoMover = moverId === demoMoverId;
+      const demoCount = isDemoMover ? [3, 3, 2, 1][n] : undefined;
+
       // 10건 중 8건만 실제로 작성합니다. 나머지는 PENDING으로 남아
       // 완료됐지만 리뷰가 없는 경우도 화면에서 볼 수 있습니다.
-      const written = rand() < 0.8;
+      const written = demoCount !== undefined || rand() < 0.8;
       // 6건 중 1건꼴로 낮은 별점을 섞습니다 — 전부 3점 이상이면 별점 분포 차트가
       // 위쪽만 차서 필터·정렬을 확인하기 어렵습니다.
       const isLow = written && rand() < 0.15;
+
+      // 나머지 기사님은 작성 완료 리뷰 10건 중 4건꼴로 사진을 붙입니다.
+      //
+      // 🔴 첫 번째 기사님(리뷰 24건)만 비율을 낮춥니다. FE의 `getReviewImageGallery`가
+      //    페이지당 5장씩 **순차로** 긁어모으는데(mover-service.ts), 사진이 많으면
+      //    상세를 열 때마다 API를 열 번 넘게 줄줄이 호출해 시연 중 로딩이 늘어집니다.
+      const photoRate = index === 0 ? 0.15 : 0.4;
+      const hasPhotos = written && (demoCount !== undefined || rand() < photoRate);
+      const images = hasPhotos
+        ? pickReviewImages(photoOffset, demoCount ?? pickInt(1, MAX_REVIEW_IMAGES))
+        : [];
+      // 다음 리뷰는 다른 사진에서 시작해, 한 페이지(5건) 안에서 같은 사진이 겹치지 않게 합니다
+      if (hasPhotos) photoOffset += images.length;
+
       await prisma.review.create({
         data: {
           estimateId: estimate.id,
@@ -742,6 +873,7 @@ async function seedReviewHistory(password: string, allMoverIds: number[]) {
           status: written ? "CONFIRMED" : "PENDING",
           rating: written ? (isLow ? pickInt(1, 2) : pickInt(3, 5)) : null,
           comment: written ? pick(isLow ? LOW_RATING_COMMENTS : REVIEW_COMMENTS) : null,
+          ...(images.length > 0 ? { images: { create: toImageRows(images) } } : {}),
         },
       });
     }
