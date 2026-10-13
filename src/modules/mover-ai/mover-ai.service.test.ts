@@ -1,4 +1,4 @@
-import { callMoverAiGemini, summarizeReviewComments } from "./mover-ai.gemini";
+import { callMoverAiGemini, summarizeReviewComments, translateToKorean } from "./mover-ai.gemini";
 import { moverAiRepository } from "./mover-ai.repository";
 import { moverAiService } from "./mover-ai.service";
 import { favoriteService } from "../favorite/favorite.service";
@@ -21,6 +21,8 @@ jest.mock("./mover-ai.repository", () => ({
 jest.mock("./mover-ai.gemini", () => ({
   callMoverAiGemini: jest.fn(),
   summarizeReviewComments: jest.fn(),
+  translateToKorean: jest.fn(),
+  translatePlaceLabels: jest.fn(),
 }));
 
 jest.mock("../mover/mover.service", () => ({
@@ -41,6 +43,7 @@ jest.mock("../favorite/favorite.service", () => ({
 const repository = jest.mocked(moverAiRepository);
 const gemini = jest.mocked(callMoverAiGemini);
 const summarize = jest.mocked(summarizeReviewComments);
+const translate = jest.mocked(translateToKorean);
 const movers = jest.mocked(moverService);
 const favorites = jest.mocked(favoriteService);
 
@@ -142,6 +145,29 @@ describe("moverAiService", () => {
       nextCursor: "cursor-1",
       hasNext: true,
     });
+    expect(translate).not.toHaveBeenCalled();
+  });
+
+  it("다른 언어 문장은 한국어로 바꾼 뒤 지역 규칙을 탄다", async () => {
+    translate.mockResolvedValue("서울로 가정이사");
+
+    const result = await moverAiService.postMessage(1, "sess-1", {
+      message: "home move to Seoul",
+      clientAction: null,
+      locale: "en",
+    });
+
+    expect(gemini).not.toHaveBeenCalled();
+    expect(translate).toHaveBeenCalledWith("home move to Seoul");
+    expect(repository.createMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ role: "USER", content: "home move to Seoul" })
+    );
+    expect(repository.updateSessionSlots).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ region: "SEOUL", service: "HOME" })
+    );
+    expect(result.assistantMessage.ui?.speech?.template).toBe("noMover");
   });
 
   it("지역만 바꾸겠다고 하면 그 칸만 비운다", async () => {
