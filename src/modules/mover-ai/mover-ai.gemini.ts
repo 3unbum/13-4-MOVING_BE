@@ -293,11 +293,12 @@ export async function translateToKorean(message: string): Promise<string | null>
   }
 }
 
-function parseLabelArray(raw: string, length: number): string[] | null {
+/** Gemini가 코드 펜스로 감싼 JSON도 읽을 수 있게 합니다. ```json 과 ``` 둘 다 제거합니다. */
+export function parseLabelArray(raw: string, length: number): string[] | null {
   const trimmed = raw
     .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/```$/, "");
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "");
   try {
     const parsed: unknown = JSON.parse(trimmed);
     if (!Array.isArray(parsed) || parsed.length !== length) return null;
@@ -324,6 +325,7 @@ export async function translatePlaceLabels(
         systemInstruction: `Translate each Korean place name into ${LOCALE_NAME[locale]}.
 Return a JSON array of strings with the same length and order.
 Do not choose a province or add explanations.`,
+        responseMimeType: "application/json",
         temperature: 0,
         abortSignal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       },
