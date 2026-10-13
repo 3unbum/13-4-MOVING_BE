@@ -12,6 +12,9 @@ GET {{baseUrl}}/movers/2
 ### 기사님 리뷰 목록 조회
 GET {{baseUrl}}/movers/2/reviews?page=1&limit=5
 
+### 기사님 리뷰 사진 모음 (확정 리뷰, 최신 리뷰 다음 사진 순서)
+GET {{baseUrl}}/movers/2/reviews/images?page=1&limit=5
+
 ### 기사님 별점 분포 조회
 GET {{baseUrl}}/movers/2/reviews/distribution
 

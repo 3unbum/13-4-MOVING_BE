@@ -2,7 +2,7 @@ import { AppError } from "@/common/errors/AppError";
 import { ERROR_CODES } from "@/common/errors/errorCodes";
 import { favoriteService } from "@/modules/favorite/favorite.service";
 import { moverRepository, type MoverListProfile } from "./mover.repository";
-import type { MoverListQuery, MoverReviewsQuery } from "./mover.schema";
+import type { MoverListQuery, MoverReviewImagesQuery, MoverReviewsQuery } from "./mover.schema";
 import { moverListCursorSchema } from "./mover.schema";
 import {
   parseRegionLabel,
@@ -14,10 +14,14 @@ import {
   type MoverListCursor,
   type MoverListItemResponse,
   type MoverListResponse,
+  type MoverListSort,
   type MoverRatingDistributionResponse,
+  type MoverReviewImageItemResponse,
+  type MoverReviewImagesResponse,
   type MoverReviewItemResponse,
   type MoverReviewsResponse,
 } from "./mover.type";
+import type { RegionType, ServiceType } from "../../../generated/prisma/enums.ts";
 
 /** 커서 인코딩 */
 function encodeCursor(profile: MoverListProfile): string {
@@ -88,14 +92,33 @@ function mapToMoverDetailDTO(
 
 export const moverService = {
   async list(query: MoverListQuery): Promise<MoverListResponse> {
-    const limit = query.limit ?? 10;
-    const decodedCursor = query.cursor ? decodeCursor(query.cursor) : undefined;
-
-    const profiles = await moverRepository.findList({
+    return this.listByFilters({
       keyword: query.keyword,
       region: query.region ? (parseRegionLabel(query.region) ?? undefined) : undefined,
       service: query.service ? (parseServiceLabel(query.service) ?? undefined) : undefined,
       sort: query.sort ?? "review",
+      cursor: query.cursor,
+      limit: query.limit ?? 10,
+    });
+  },
+
+  /** AI 찾기 등 — enum 슬롯으로 목록 조회 (한글 라벨 변환 없음) */
+  async listByFilters(params: {
+    keyword?: string;
+    region?: RegionType;
+    service?: ServiceType;
+    sort: MoverListSort;
+    cursor?: string;
+    limit: number;
+  }): Promise<MoverListResponse> {
+    const limit = params.limit;
+    const decodedCursor = params.cursor ? decodeCursor(params.cursor) : undefined;
+
+    const profiles = await moverRepository.findList({
+      keyword: params.keyword,
+      region: params.region,
+      service: params.service,
+      sort: params.sort,
       cursor: decodedCursor,
       limit,
     });
@@ -109,6 +132,38 @@ export const moverService = {
       nextCursor: hasNext && lastProfile ? encodeCursor(lastProfile) : null,
       hasNext,
     };
+  },
+
+  /** 리뷰가 있는 기사님 전체의 평균 평점. 리뷰가 없으면 null입니다. */
+  async getReviewedRatingMean(): Promise<number | null> {
+    const row = await moverRepository.findReviewedAvgRating();
+    return row._avg.avgRating == null ? null : Number(row._avg.avgRating);
+  },
+
+  /** 지역·유형이 맞는 기사님의 평점·경력·확정만 반환합니다. AI 추천 점수용입니다. */
+  async listRankCandidates(region: RegionType, service: ServiceType) {
+    const rows = await moverRepository.findRankCandidates(region, service);
+    return rows.map((row) => ({
+      userId: row.userId,
+      nickName: row.nickName,
+      avgRating: Number(row.avgRating),
+      reviewCount: row.reviewCount,
+      career: row.career,
+      confirmedCount: row.confirmedCount,
+    }));
+  },
+
+  /** 기사님 id 목록 순서를 유지해 목록 카드로 반환합니다 (탈퇴 등으로 없는 id는 제외) */
+  async listByIds(moverIds: number[]): Promise<MoverListItemResponse[]> {
+    if (moverIds.length === 0) return [];
+
+    const profiles = await moverRepository.findListByUserIds(moverIds);
+    const byUserId = new Map(profiles.map((profile) => [profile.userId, profile]));
+
+    return moverIds
+      .map((id) => byUserId.get(id))
+      .filter((profile): profile is MoverListProfile => profile !== undefined)
+      .map(mapToMoverListItem);
   },
 
   async getById(moverId: number, viewer?: MoverDetailViewer): Promise<MoverDetailResponse> {
@@ -140,10 +195,12 @@ export const moverService = {
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 5;
+    const sort = query.sort ?? "latest";
     const [rows, totalCount] = await moverRepository.findConfirmedReviewsByMoverId(
       moverId,
       page,
-      limit
+      limit,
+      sort
     );
 
     const data: MoverReviewItemResponse[] = rows.map((row) => ({
@@ -152,6 +209,7 @@ export const moverService = {
       comment: row.comment ?? "",
       createdAt: row.createdAt.toISOString(),
       customerName: row.customer.name,
+      imageUrls: row.images.map((image) => image.imageUrl),
     }));
 
     return {
@@ -187,6 +245,36 @@ export const moverService = {
     }
 
     return { ...distribution, totalCount };
+  },
+
+  async listReviewImages(
+    moverId: number,
+    query: MoverReviewImagesQuery
+  ): Promise<MoverReviewImagesResponse> {
+    const exists = await moverRepository.existsMover(moverId);
+    if (!exists) {
+      throw AppError.notFound("기사님을 찾을 수 없습니다");
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 5;
+    const [rows, totalCount] = await moverRepository.findConfirmedReviewImagesByMoverId(
+      moverId,
+      page,
+      limit
+    );
+
+    const data: MoverReviewImageItemResponse[] = rows.map((row) => ({
+      reviewId: row.reviewId,
+      imageUrl: row.imageUrl,
+    }));
+
+    return {
+      data,
+      page,
+      totalPages: totalCount === 0 ? 0 : Math.ceil(totalCount / limit),
+      totalCount,
+    };
   },
 
   createFavorite(userId: number, moverId: number) {

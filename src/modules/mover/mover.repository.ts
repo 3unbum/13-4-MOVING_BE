@@ -1,5 +1,7 @@
 import { prisma } from "@/config/prisma";
 import type { Prisma } from "../../../generated/prisma/client.ts";
+import type { RegionType, ServiceType } from "../../../generated/prisma/enums.ts";
+import type { MoverReviewSort } from "./mover.schema";
 import type { FindMoverListParams, MoverListCursor, MoverListSort } from "./mover.type";
 
 const moverDetailInclude = {
@@ -16,6 +18,21 @@ const listInclude = {
     },
   },
 };
+
+/** 페이지를 나눠도 순서가 흔들리지 않도록, 같은 정렬 값은 id로 한 번 더 가릅니다. */
+function buildReviewOrderBy(sort: MoverReviewSort): Prisma.ReviewOrderByWithRelationInput[] {
+  switch (sort) {
+    case "oldest":
+      return [{ createdAt: "asc" }, { id: "asc" }];
+    case "ratingDesc":
+      // 목록은 null 평점을 0으로 보여 줍니다. DESC의 기본 nulls first와 어긋나지 않게 뒤로 둡니다.
+      return [{ rating: { sort: "desc", nulls: "last" } }, { id: "desc" }];
+    case "ratingAsc":
+      return [{ rating: { sort: "asc", nulls: "first" } }, { id: "asc" }];
+    case "latest":
+      return [{ createdAt: "desc" }, { id: "desc" }];
+  }
+}
 
 function buildOrderBy(sort: MoverListSort): Prisma.MoverProfileOrderByWithRelationInput[] {
   switch (sort) {
@@ -97,6 +114,42 @@ export const moverRepository = {
     });
   },
 
+  findListByUserIds(userIds: number[]) {
+    return prisma.moverProfile.findMany({
+      where: { userId: { in: userIds }, user: { role: "MOVER" } },
+      include: listInclude,
+    });
+  },
+
+  /** 리뷰가 1개 이상인 기사님의 평점 평균. 추천 보정 평점의 기준값입니다. */
+  findReviewedAvgRating() {
+    return prisma.moverProfile.aggregate({
+      where: { reviewCount: { gt: 0 } },
+      _avg: { avgRating: true },
+    });
+  },
+
+  /** 지역·유형이 맞는 기사님의 추천 점수 재료만 가져옵니다 */
+  findRankCandidates(region: RegionType, service: ServiceType) {
+    return prisma.moverProfile.findMany({
+      where: {
+        user: {
+          role: "MOVER",
+          moverRegions: { some: { region } },
+          moverServices: { some: { service } },
+        },
+      },
+      select: {
+        userId: true,
+        nickName: true,
+        avgRating: true,
+        reviewCount: true,
+        career: true,
+        confirmedCount: true,
+      },
+    });
+  },
+
   async existsFavorite(userId: number, moverId: number) {
     const row = await prisma.favorite.findUnique({
       where: { userId_moverId: { userId, moverId } },
@@ -127,7 +180,12 @@ export const moverRepository = {
     return row !== null;
   },
 
-  findConfirmedReviewsByMoverId(moverId: number, page: number, limit: number) {
+  findConfirmedReviewsByMoverId(
+    moverId: number,
+    page: number,
+    limit: number,
+    sort: MoverReviewSort
+  ) {
     const where = {
       status: "CONFIRMED" as const,
       estimate: { moverId },
@@ -136,7 +194,7 @@ export const moverRepository = {
     return prisma.$transaction([
       prisma.review.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: buildReviewOrderBy(sort),
         skip: (page - 1) * limit,
         take: limit,
         select: {
@@ -145,9 +203,37 @@ export const moverRepository = {
           comment: true,
           createdAt: true,
           customer: { select: { name: true } },
+          images: {
+            orderBy: { sortOrder: "asc" },
+            select: { imageUrl: true },
+          },
         },
       }),
       prisma.review.count({ where }),
+    ]);
+  },
+
+  findConfirmedReviewImagesByMoverId(moverId: number, page: number, limit: number) {
+    const where = {
+      review: {
+        status: "CONFIRMED" as const,
+        estimate: { moverId },
+      },
+    };
+
+    return prisma.$transaction([
+      prisma.reviewImage.findMany({
+        where,
+        orderBy: [
+          { review: { createdAt: "desc" } },
+          { review: { id: "desc" } },
+          { sortOrder: "asc" },
+        ],
+        skip: (page - 1) * limit,
+        take: limit,
+        select: { reviewId: true, imageUrl: true },
+      }),
+      prisma.reviewImage.count({ where }),
     ]);
   },
 

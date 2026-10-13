@@ -1,7 +1,12 @@
 import type { RequestHandler } from "express";
 import { AppError } from "../../common/errors/AppError";
 import { reviewService } from "./review.service";
-import type { ConfirmReviewDto, ReviewIdParam, ReviewListQuery } from "./review.schema";
+import type {
+  ConfirmReviewDto,
+  DeleteReviewImageDto,
+  ReviewIdParam,
+  ReviewListQuery,
+} from "./review.schema";
 
 function getUserId(req: { user?: { id: number } }) {
   if (!req.user) {
@@ -42,6 +47,27 @@ export const reviewController = {
         req.query as unknown as ReviewListQuery
       );
       res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  addImage: (async (req, res, next) => {
+    try {
+      const { id } = req.params as unknown as ReviewIdParam;
+      const result = await reviewService.addImage(getUserId(req), id, req.file?.buffer);
+      res.status(201).json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+
+  removeImage: (async (req, res, next) => {
+    try {
+      const { id } = req.params as unknown as ReviewIdParam;
+      const { imageUrl } = req.body as DeleteReviewImageDto;
+      await reviewService.removeImage(getUserId(req), id, imageUrl);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

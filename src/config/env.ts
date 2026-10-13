@@ -76,6 +76,40 @@ export const env = {
    * 필수로 두면 DSN을 모르는 팀원의 서버 기동까지 막히므로 optional입니다.
    */
   SENTRY_DSN: optional("SENTRY_DSN", ""),
+
+  /**
+   * Cloudflare Turnstile 시크릿 키. 비어 있으면 봇 검증을 건너뜁니다.
+   *
+   * 로컬 개발·CI에서는 값이 없어도 로그인이 되도록 optional입니다.
+   * ⚠️ 배포 환경에서 이 값이 비면 봇 검증이 조용히 꺼지니 Secrets의 `ENV`에 반드시 넣으세요.
+   */
+  TURNSTILE_SECRET_KEY: optional("TURNSTILE_SECRET_KEY", ""),
+
+  /**
+   * 토스페이먼츠 시크릿 키(`test_sk_...` / `test_gsk_...`). 비어 있으면 승인 API 호출을 건너뛰고
+   * 견적을 바로 결제 완료 처리합니다 (로컬·CI).
+   *
+   * 테스트 키로는 실제 청구가 일어나지 않습니다. 시크릿 키는 서버에서만 쓰고 FE에 내려주지 마세요.
+   * ⚠️ 배포 환경에서 이 값이 비면 토스 승인 없이 결제가 처리되니 Secrets의 `ENV`에 반드시 넣으세요.
+   */
+  TOSS_SECRET_KEY: optional("TOSS_SECRET_KEY", ""),
+
+  /**
+   * Gemini API 키 (기사님 AI 찾기). 비어 있으면 서버는 기동되지만 mover-ai 호출 시점에 실패합니다.
+   *
+   * OAuth/Sentry와 같이 필수로 두면 키 없는 팀원의 기동까지 막히므로 optional입니다.
+   * FE에는 절대 넣지 마세요.
+   */
+  GEMINI_API_KEY: optional("GEMINI_API_KEY", ""),
+
+  /** Gemini 모델 ID. 404/deprecated면 AI Studio 안내 모델로 env만 교체합니다. */
+  GEMINI_MODEL: optional("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+
+  /**
+   * Gemini 폴백 모델. primary가 503/과부하로 실패하면 이 모델로 재시도합니다.
+   * primary와 같으면 중복 호출하지 않습니다.
+   */
+  GEMINI_FALLBACK_MODEL: optional("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite"),
 } as const;
 
 export const isProduction = env.NODE_ENV === "production";

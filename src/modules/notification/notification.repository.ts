@@ -36,6 +36,13 @@ const notificationDetailInclude = {
   estimate: {
     select: {
       price: true,
+      // 선수금 알림 문구에 쓰는 금액
+      depositAmount: true,
+      // 추가 금액 알림 문구에 쓰는 금액과 고객의 응답 결과
+      extraCharges: {
+        select: { amount: true, status: true, respondedAt: true },
+        orderBy: { id: "asc" },
+      },
       mover: {
         select: {
           name: true,
@@ -64,12 +71,26 @@ const notificationDetailInclude = {
       user: { select: { name: true } },
     },
   },
+  // 채팅 알림 — 받는 사람 기준으로 상대 이름을 고르려고 양쪽 참가자를 읽습니다
+  chatRoom: {
+    select: {
+      customerId: true,
+      customer: { select: { name: true } },
+      mover: { select: { name: true, moverProfile: { select: { nickName: true } } } },
+    },
+  },
 } as const;
 
+/**
+ * 최신순 = createdAt 내림차순, 같으면 id 내림차순.
+ * 채팅 알림은 방당 한 행을 재사용하며 새 메시지가 오면 createdAt을 올리므로(chat.repository.createMessage)
+ * id만으로 정렬하면 처음 만든 자리에 묻힙니다. 커서는 id 하나로 충분합니다 —
+ * Prisma가 커서 행의 정렬 값(createdAt, id)을 기준으로 다음 위치를 잡습니다.
+ */
 function listArgs(cursor?: number, take = DEFAULT_TAKE) {
   return {
     take,
-    orderBy: { id: "desc" as const },
+    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
     ...(cursor && { skip: 1, cursor: { id: cursor } }),
   };
 }
@@ -119,8 +140,24 @@ export const notificationRepository = {
             quotationRequestId: { not: null },
           },
           {
-            type: { in: ["NEW_ESTIMATE", "ESTIMATE_CONFIRMED"] },
+            type: {
+              in: [
+                "NEW_ESTIMATE",
+                "ESTIMATE_CONFIRMED",
+                "ESTIMATE_REJECTED",
+                "PAYMENT_REQUEST",
+                "PAYMENT_COMPLETED",
+                "DEPOSIT_PAID",
+                "DEPOSIT_EXPIRED",
+                "EXTRA_CHARGE_PROPOSED",
+                "EXTRA_CHARGE_RESPONDED",
+              ],
+            },
             estimateId: { not: null },
+          },
+          {
+            type: "NEW_CHAT_MESSAGE",
+            chatRoomId: { not: null },
           },
         ],
       },

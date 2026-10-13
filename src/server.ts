@@ -6,6 +6,7 @@ import "./instrument";
 import app from "./app";
 import { env } from "./config/env";
 import { scheduleExpireRequests } from "./jobs/expireRequests.job";
+import { scheduleExpireDeposits } from "./jobs/expireDeposits.job";
 import { scheduleMovingDayNotify } from "./jobs/movingDayNotify.job";
 import { scheduleMoverCareerIncrement } from "./jobs/moverCareerIncrement.job";
 
@@ -15,6 +16,7 @@ app.listen(env.PORT, () => {
     console.log(`swagger-jsdoc - http://localhost:${env.PORT}/api-docs`);
   }
   scheduleExpireRequests();
+  scheduleExpireDeposits();
   scheduleMovingDayNotify();
   scheduleMoverCareerIncrement();
 });

@@ -15,6 +15,7 @@ export interface WritableReviewItem {
   id: number;
   mover: ReviewMoverSummary;
   moving: ReviewMovingInfo;
+  imageUrls: string[];
 }
 
 export interface WrittenReviewItem {
@@ -24,6 +25,8 @@ export interface WrittenReviewItem {
   mover: ReviewMoverSummary;
   moving: ReviewMovingInfo;
   createdAt: Date;
+  editedAt: Date | null;
+  imageUrls: string[];
 }
 
 export interface ReceivedReviewItem {
@@ -31,6 +34,11 @@ export interface ReceivedReviewItem {
   rating: number;
   comment: string;
   createdAt: Date;
+  imageUrls: string[];
+}
+
+export interface ReviewImageUploadResult {
+  imageUrl: string;
 }
 
 export interface ReviewListResult<T> {

@@ -35,10 +35,60 @@ export interface NewEstimatePayload {
   price: number | null;
 }
 
+/** 고객 수신 — "김코드 기사님이 결제를 요청했어요" */
+export interface PaymentRequestPayload {
+  moverNickName: string;
+  category: ServiceType;
+  price: number | null;
+}
+
+/** 기사님 수신 — "김민서 고객님이 결제를 완료했어요" */
+export interface PaymentCompletedPayload {
+  customerName: string;
+  category: ServiceType;
+  price: number | null;
+}
+
+/** 기사님 수신 — "김민서 고객님이 선수금을 결제했어요. 이사가 확정되었어요" */
+export interface DepositPaidPayload {
+  customerName: string;
+  category: ServiceType;
+  /** 결제한 선수금 */
+  amount: number | null;
+}
+
+/** 고객·기사님 수신 — 선수금 기한(48시간)을 넘겨 확정이 자동 취소됐습니다 */
+export interface DepositExpiredPayload {
+  moverNickName: string;
+  customerName: string;
+  category: ServiceType;
+}
+
+/** 고객 수신 — "김코드 기사님이 추가 금액 N원을 요청했어요" */
+export interface ExtraChargeProposedPayload {
+  moverNickName: string;
+  category: ServiceType;
+  amount: number | null;
+}
+
+/** 기사님 수신 — "김민서 고객님이 추가 금액을 승인/거절했어요" */
+export interface ExtraChargeRespondedPayload {
+  customerName: string;
+  category: ServiceType;
+  amount: number | null;
+  approved: boolean;
+}
+
 /** 기사님·고객 양쪽 수신. 같은 type이라 문구 분기는 FE가 role로 판단합니다 */
 export interface EstimateConfirmedPayload {
   moverNickName: string;
   customerName: string;
+  category: ServiceType;
+}
+
+/** 고객 수신 — 지정 견적을 반려한 기사님. 반려 사유는 견적 상세에서 봅니다 */
+export interface EstimateRejectedPayload {
+  moverNickName: string;
   category: ServiceType;
 }
 
@@ -51,12 +101,23 @@ export interface MovingDayPayload {
   movingDate: Date;
 }
 
+/**
+ * 고객·기사님 수신 — "{senderName}님이 메시지를 보냈어요".
+ * 메시지 내용은 싣지 않습니다. 알림 목록은 계속 화면에 보이고 개인정보가 담길 수 있어서입니다.
+ */
+export interface ChatMessagePayload {
+  roomId: number;
+  /** 보낸 사람 — 고객이 받으면 기사님 닉네임(없으면 이름), 기사님이 받으면 고객 이름 */
+  senderName: string;
+}
+
 interface NotificationBase {
   id: number;
   isRead: boolean;
   createdAt: Date;
   estimateId: number | null;
   quotationRequestId: number | null;
+  chatRoomId: number | null;
 }
 
 /** type으로 payload가 갈리는 판별 유니온 — FE가 좁히기만 하면 됩니다 */
@@ -64,8 +125,16 @@ export type NotificationItem =
   | (NotificationBase & { type: "NEW_REQUEST"; payload: NewRequestPayload })
   | (NotificationBase & { type: "NEW_ESTIMATE"; payload: NewEstimatePayload })
   | (NotificationBase & { type: "ESTIMATE_CONFIRMED"; payload: EstimateConfirmedPayload })
+  | (NotificationBase & { type: "ESTIMATE_REJECTED"; payload: EstimateRejectedPayload })
   | (NotificationBase & { type: "MOVING_DAY_BEFORE"; payload: MovingDayPayload })
-  | (NotificationBase & { type: "MOVING_DAY"; payload: MovingDayPayload });
+  | (NotificationBase & { type: "MOVING_DAY"; payload: MovingDayPayload })
+  | (NotificationBase & { type: "NEW_CHAT_MESSAGE"; payload: ChatMessagePayload })
+  | (NotificationBase & { type: "PAYMENT_REQUEST"; payload: PaymentRequestPayload })
+  | (NotificationBase & { type: "PAYMENT_COMPLETED"; payload: PaymentCompletedPayload })
+  | (NotificationBase & { type: "DEPOSIT_PAID"; payload: DepositPaidPayload })
+  | (NotificationBase & { type: "DEPOSIT_EXPIRED"; payload: DepositExpiredPayload })
+  | (NotificationBase & { type: "EXTRA_CHARGE_PROPOSED"; payload: ExtraChargeProposedPayload })
+  | (NotificationBase & { type: "EXTRA_CHARGE_RESPONDED"; payload: ExtraChargeRespondedPayload });
 
 export interface NotificationListResult {
   items: NotificationItem[];

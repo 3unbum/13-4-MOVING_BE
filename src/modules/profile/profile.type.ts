@@ -33,6 +33,10 @@ export interface CustomerAccountResponse {
   phoneNumber: string;
   /** 프로필 등록 완료 여부 — false면 아래 프로필 필드는 비어있습니다 */
   hasProfile: boolean;
+  /** 비밀번호 보유 여부 — false면 소셜 로그인 계정 (비밀번호 변경/재확인 UI 숨김 처리용) */
+  hasPassword: boolean;
+  /** 최근 PROFILE_EDIT_VERIFIED_TTL_MINUTES분 이내에 프로필 수정 이메일 인증을 통과했는지 — true면 FE는 인증 화면을 건너뜁니다 */
+  isProfileEditVerified: boolean;
   image: string | null;
   region: string | null;
   services: string[];
@@ -45,6 +49,10 @@ export interface MoverAccountResponse {
   email: string;
   phoneNumber: string;
   hasProfile: boolean;
+  /** 비밀번호 보유 여부 — false면 소셜 로그인 계정 (비밀번호 변경/재확인 UI 숨김 처리용) */
+  hasPassword: boolean;
+  /** 최근 PROFILE_EDIT_VERIFIED_TTL_MINUTES분 이내에 프로필 수정 이메일 인증을 통과했는지 — true면 FE는 인증 화면을 건너뜁니다 */
+  isProfileEditVerified: boolean;
   image: string | null;
   nickName: string | null;
   career: number | null;
@@ -57,7 +65,8 @@ export interface MoverAccountResponse {
 
 export interface CustomerAccountUpdateInput {
   account: Partial<{ name: string; phoneNumber: string; password: string }>;
-  profile: Partial<{ image: string; region: RegionType }>;
+  /** image가 null이면 프로필 이미지를 삭제합니다 */
+  profile: Partial<{ image: string | null; region: RegionType }>;
   /** undefined면 서비스 목록은 건드리지 않습니다 */
   services?: ServiceType[];
 }
@@ -65,7 +74,8 @@ export interface CustomerAccountUpdateInput {
 export interface MoverAccountUpdateInput {
   account: Partial<{ name: string; phoneNumber: string; password: string }>;
   profile: Partial<{
-    image: string;
+    /** null이면 프로필 이미지를 삭제합니다 */
+    image: string | null;
     nickName: string;
     career: number;
     bio: string;
