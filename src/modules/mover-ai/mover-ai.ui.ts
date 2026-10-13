@@ -5,6 +5,7 @@ import type {
   MoverAiNextAction,
   MoverAiRegionClarify,
   MoverAiSlotAction,
+  MoverAiSpeech,
   MoverAiUi,
 } from "./mover-ai.type";
 import type { MoverListItemResponse } from "../mover/mover.type";
@@ -55,12 +56,13 @@ function chipsForSlotAction(slotAction: MoverAiSlotAction): MoverAiChip[] | null
 }
 
 function chipsForRegionClarify(
-  clarify: MoverAiRegionClarify | null | undefined
+  clarify: MoverAiRegionClarify | null | undefined,
+  displayLabels?: string[] | null
 ): MoverAiChip[] | null {
   if (!clarify || clarify.options.length === 0) return null;
   return clarify.options.map((option, index) => ({
     id: `region_${option.region}_${index}`,
-    label: option.label,
+    label: displayLabels?.[index] ?? option.label,
     action: "SELECT_REGION" as const,
     value: option.region,
   }));
@@ -73,9 +75,11 @@ export function buildUi(params: {
   movers?: MoverListItemResponse[] | null;
   listMeta?: { nextCursor: string | null; hasNext: boolean } | null;
   regionClarify?: MoverAiRegionClarify | null;
+  regionDisplayLabels?: string[] | null;
   candidateCount?: number | null;
   /** 가격 안내 뒤에도 정렬 칩을 유지하려면 목록/추천 선택이 필요합니다 */
   listMode?: MoverAiListMode | null;
+  speech?: MoverAiSpeech | null;
 }): MoverAiUi {
   const {
     nextAction,
@@ -83,13 +87,21 @@ export function buildUi(params: {
     movers = null,
     listMeta = null,
     regionClarify = null,
+    regionDisplayLabels = null,
     candidateCount = null,
     listMode = null,
+    speech = null,
   } = params;
 
   // ASK_REGION(첫 인사·조건 바꾸기 직후)은 칩 없이 발화만 받습니다. 유형/정렬 칩은 이후 단계에서만 노출합니다.
   if (nextAction === "ASK_SERVICE" || nextAction === "ASK_SORT") {
-    return { nextAction, chips: chipsForSlotAction(nextAction), movers: null, listMeta: null };
+    return {
+      nextAction,
+      chips: chipsForSlotAction(nextAction),
+      movers: null,
+      listMeta: null,
+      speech,
+    };
   }
 
   if (nextAction === "ASK_MODE") {
@@ -98,21 +110,23 @@ export function buildUi(params: {
       chips: candidateCount === 0 ? [RESET_CHIP] : MODE_CHIPS,
       movers: null,
       listMeta: null,
+      speech,
     };
   }
 
   if (nextAction === "CLARIFY_REGION") {
     return {
       nextAction,
-      chips: chipsForRegionClarify(regionClarify),
+      chips: chipsForRegionClarify(regionClarify, regionDisplayLabels),
       movers: null,
       listMeta: null,
+      speech,
     };
   }
 
   if (nextAction === "CLARIFY_UNSUPPORTED") {
     const chips = filters ? chipsForSlotAction(resolveSlotAction(filters, listMode)) : null;
-    return { nextAction, chips, movers: null, listMeta: null };
+    return { nextAction, chips, movers: null, listMeta: null, speech };
   }
 
   if (nextAction === "SHOW_MOVERS") {
@@ -136,6 +150,7 @@ export function buildUi(params: {
       chips,
       movers,
       listMeta,
+      speech,
     };
   }
 
@@ -151,10 +166,10 @@ export function buildUi(params: {
       });
     }
     chips.push(RESET_CHIP);
-    return { nextAction, chips, movers, listMeta: null };
+    return { nextAction, chips, movers, listMeta: null, speech };
   }
 
-  return { nextAction, chips: null, movers: null, listMeta: null };
+  return { nextAction, chips: null, movers: null, listMeta: null, speech };
 }
 
 /**
