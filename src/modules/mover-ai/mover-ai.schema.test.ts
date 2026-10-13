@@ -261,5 +261,11 @@ describe("postMessageSchema", () => {
   it("clientAction 없이도 허용한다", () => {
     const parsed = postMessageSchema.parse({ message: "서울이요" });
     expect(parsed.clientAction).toBeNull();
+    expect(parsed.locale).toBeUndefined();
+  });
+
+  it("화면 언어는 ko en zh ja만 받는다", () => {
+    expect(postMessageSchema.parse({ message: "서울", locale: "en" }).locale).toBe("en");
+    expect(() => postMessageSchema.parse({ message: "서울", locale: "fr" })).toThrow();
   });
 });

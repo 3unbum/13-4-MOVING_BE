@@ -26,6 +26,51 @@ export type MoverAiSlotAction = Exclude<
 
 export type MoverAiSort = "rating" | "review" | "career" | "confirmed";
 
+/** 화면 언어. 없으면 한국어로 처리합니다. */
+export type MoverAiLocale = "ko" | "en" | "zh" | "ja";
+
+/** 프론트가 고정 문구를 고를 때 쓰는 키. 서버는 한국어 문장을 content에 그대로 저장합니다. */
+export type MoverAiSpeechTemplate =
+  | "welcome"
+  | "askRegion"
+  | "askRegionNext"
+  | "askService"
+  | "askServiceNext"
+  | "askMode"
+  | "askSort"
+  | "showMovers"
+  | "showMoversMore"
+  | "showMoversEmpty"
+  | "recommend"
+  | "recommendOnly"
+  | "noMover"
+  | "clarifyRegion"
+  | "changeFilters"
+  | "resetRegion"
+  | "resetService"
+  | "favoriteCreated"
+  | "favoriteAlready"
+  | "favoritePartial"
+  | "favoriteOne"
+  | "favoriteOneAlready"
+  | "geminiFallback"
+  | "lastMovers";
+
+/** 화면이 말풍선을 조립하는 재료 */
+export interface MoverAiSpeech {
+  source: "template" | "model";
+  template: MoverAiSpeechTemplate | null;
+  /** geminiFallback 뒤에 붙는 질문 */
+  ask: MoverAiSpeechTemplate | null;
+  unsupported: boolean;
+  /** 목록의 마지막 페이지면 마지막 안내를 붙입니다 */
+  closed: boolean;
+  modelReply: string | null;
+  reviewSummary: string | null;
+  reviewSummaryState: "text" | "none" | "failed" | null;
+  favoriteCount: number | null;
+}
+
 export type MoverAiMessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 
 export type MoverAiClientActionType =
@@ -55,6 +100,8 @@ export interface MoverAiUi {
   chips: MoverAiChip[] | null;
   movers: MoverListItemResponse[] | null;
   listMeta: { nextCursor: string | null; hasNext: boolean } | null;
+  /** 없으면 저장된 content를 그대로 보여 줍니다 */
+  speech: MoverAiSpeech | null;
 }
 
 export interface MoverAiMessageView {
@@ -99,6 +146,9 @@ export interface MoverAiAssistantPayload {
   filters: MoverAiFilters;
   nextAction: MoverAiNextAction;
   regionClarify?: MoverAiRegionClarify | null;
+  /** 중의 지역 칩을 화면 언어로 옮긴 이름. 매칭은 한국어 label을 유지합니다. */
+  regionDisplayLabels?: string[] | null;
+  speech?: MoverAiSpeech | null;
   moverIds?: number[];
   listMeta?: { nextCursor: string | null; hasNext: boolean } | null;
   favoriteResult?: MoverAiFavoriteResult;

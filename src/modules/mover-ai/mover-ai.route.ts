@@ -85,6 +85,12 @@ router.use(requireAuth, requireRole("CUSTOMER"));
  *           properties:
  *             nextCursor: { type: string, nullable: true }
  *             hasNext: { type: boolean }
+ *         speech:
+ *           type: object
+ *           nullable: true
+ *           description: |
+ *             화면이 고정 문구를 조립할 때 쓰는 값. 없으면 content를 그대로 보여 줍니다.
+ *             source가 model이면 modelReply를 그대로 보여 줍니다.
  *     MoverAiMessage:
  *       type: object
  *       required: [id, role, content]
@@ -181,6 +187,7 @@ router.get(
  *     description: |
  *       유저당 분당 10건. 칩 클릭은 clientAction으로 보내고, 그때는 Gemini를 호출하지 않습니다.
  *       clientAction이 없으면 문장을 읽어 슬롯을 채웁니다. 규칙으로 읽지 못한 문장만 Gemini에 맡깁니다.
+ *       locale이 ko가 아니면 그 문장을 한국어로 바꾼 뒤 같은 규칙을 탑니다. 화면의 고정 문구는 speech로 고릅니다.
  *       지역·유형·정렬이 모두 채워지면 기사님 3명을 반환합니다.
  *     parameters:
  *       - in: path
@@ -200,6 +207,10 @@ router.get(
  *                 minLength: 1
  *                 maxLength: 1000
  *                 description: 사용자에게 보여줄 말. 칩을 눌러도 비우지 않습니다
+ *               locale:
+ *                 type: string
+ *                 enum: [ko, en, zh, ja]
+ *                 description: 화면 언어. 생략하면 ko. 칩 클릭에도 리뷰 요약 언어로 사용합니다
  *               clientAction:
  *                 nullable: true
  *                 description: 생략하거나 null이면 자유 입력. 칩 클릭이면 아래 중 하나

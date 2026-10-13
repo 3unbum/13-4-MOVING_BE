@@ -5,7 +5,12 @@ import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { favoriteService } from "../favorite/favorite.service";
 import type { MoverListItemResponse } from "../mover/mover.type";
 import { moverService } from "../mover/mover.service";
-import { callMoverAiGemini, summarizeReviewComments } from "./mover-ai.gemini";
+import {
+  callMoverAiGemini,
+  summarizeReviewComments,
+  translatePlaceLabels,
+  translateToKorean,
+} from "./mover-ai.gemini";
 import { inferFilterResetIntent } from "./mover-ai.intent";
 import {
   buildClarifyRegionReply,
@@ -22,10 +27,13 @@ import type {
   MoverAiFavoriteResult,
   MoverAiFilters,
   MoverAiListMode,
+  MoverAiLocale,
   MoverAiMessageView,
   MoverAiNextAction,
   MoverAiSlotAction,
   MoverAiSort,
+  MoverAiSpeech,
+  MoverAiSpeechTemplate,
   PostMessageResult,
 } from "./mover-ai.type";
 import { buildUi, resolveNextAction, resolveSlotAction, WELCOME_MESSAGE } from "./mover-ai.ui";
@@ -67,6 +75,59 @@ const UNSUPPORTED_REPLY = "해당 질문엔 응답이 불가능해요😂";
 const CHANGE_FILTERS_REPLY = "조건을 다시 설정해볼까요?\n이사 가실 지역과 이사 유형을 알려주세요☺️";
 const GEMINI_FALLBACK_REPLY =
   "잠시 응답이 지연됐어요. 이사 가실 지역과 이사 유형을 다시 알려주시면 찾아드릴게요☺️";
+
+function templateSpeech(
+  template: MoverAiSpeechTemplate,
+  extra: Partial<MoverAiSpeech> = {}
+): MoverAiSpeech {
+  return {
+    source: "template",
+    template,
+    ask: null,
+    unsupported: false,
+    closed: false,
+    modelReply: null,
+    reviewSummary: null,
+    reviewSummaryState: null,
+    favoriteCount: null,
+    ...extra,
+  };
+}
+
+/** 비어 있는 슬롯에 맞는 화면 문구 키입니다. content용 문장과는 따로 둡니다. */
+function askTemplate(
+  slotAction: MoverAiSlotAction,
+  filters: MoverAiFilters
+): MoverAiSpeechTemplate {
+  if (slotAction === "ASK_REGION") return filters.service ? "askRegionNext" : "askRegion";
+  if (slotAction === "ASK_SERVICE") return filters.region ? "askServiceNext" : "askService";
+  if (slotAction === "ASK_MODE") return "askMode";
+  if (slotAction === "ASK_SORT") return "askSort";
+  return "showMovers";
+}
+
+function showMoversSpeech(moverCount: number, hasNext: boolean, baseReply?: string): MoverAiSpeech {
+  const unsupported = Boolean(baseReply?.startsWith(UNSUPPORTED_REPLY));
+  if (moverCount === 0) return templateSpeech("showMoversEmpty", { unsupported });
+  const more = Boolean(baseReply?.includes(SHOW_MORE_REPLY));
+  return templateSpeech(more ? "showMoversMore" : "showMovers", {
+    unsupported,
+    closed: !hasNext,
+  });
+}
+
+function favoriteSpeech(
+  createdCount: number,
+  skippedCount: number,
+  moverCount: number
+): MoverAiSpeech {
+  if (moverCount === 1) {
+    return templateSpeech(createdCount === 0 ? "favoriteOneAlready" : "favoriteOne");
+  }
+  if (createdCount === 0) return templateSpeech("favoriteAlready");
+  if (skippedCount > 0) return templateSpeech("favoritePartial", { favoriteCount: createdCount });
+  return templateSpeech("favoriteCreated", { favoriteCount: createdCount });
+}
 
 /** 비어 있는 슬롯에 맞춰 다음 질문 문구를 만듭니다 */
 function buildAskReply(
@@ -188,12 +249,14 @@ async function persistAssistant(params: {
   content: string;
   filters: MoverAiFilters;
   nextAction: MoverAiNextAction;
-  payload?: Omit<MoverAiAssistantPayload, "filters" | "nextAction">;
+  speech: MoverAiSpeech;
+  payload?: Omit<MoverAiAssistantPayload, "filters" | "nextAction" | "speech">;
   movers?: MoverListItemResponse[] | null;
 }): Promise<MoverAiMessageView> {
   const stored: MoverAiAssistantPayload = {
     filters: params.filters,
     nextAction: params.nextAction,
+    speech: params.speech,
     ...params.payload,
   };
 
@@ -214,8 +277,10 @@ async function persistAssistant(params: {
       movers: params.movers ?? null,
       listMeta: params.payload?.listMeta ?? null,
       regionClarify: params.payload?.regionClarify ?? null,
+      regionDisplayLabels: params.payload?.regionDisplayLabels ?? null,
       candidateCount: params.payload?.candidateCount ?? null,
       listMode: params.payload?.listMode ?? null,
+      speech: params.speech,
     }),
   };
 }
@@ -240,6 +305,7 @@ async function respondShowMovers(params: {
     content,
     filters: params.filters,
     nextAction: "SHOW_MOVERS",
+    speech: showMoversSpeech(list.data.length, list.hasNext, params.baseReply),
     movers: list.data,
     payload: {
       listMode: "browse",
@@ -257,6 +323,7 @@ async function respondChangeAllFilters(sessionId: string): Promise<PostMessageRe
     content: CHANGE_FILTERS_REPLY,
     filters: EMPTY_FILTERS,
     nextAction: "ASK_REGION",
+    speech: templateSpeech("changeFilters"),
   });
   return { sessionId, assistantMessage, filters: EMPTY_FILTERS };
 }
@@ -275,6 +342,7 @@ async function respondPartialFilterReset(
       content: "알겠어요. 이사 가실 지역을 다시 알려주세요.",
       filters: nextFilters,
       nextAction: "ASK_REGION",
+      speech: templateSpeech("resetRegion"),
     });
     return { sessionId, assistantMessage, filters: nextFilters };
   }
@@ -286,6 +354,7 @@ async function respondPartialFilterReset(
     content: "알겠어요. 이사 유형을 다시 알려주세요.",
     filters: nextFilters,
     nextAction: "ASK_SERVICE",
+    speech: templateSpeech("resetService"),
   });
   return { sessionId, assistantMessage, filters: nextFilters };
 }
@@ -319,7 +388,8 @@ async function respondShowRecommendation(
   filters: MoverAiFilters,
   knownCandidates?: RankCandidate[],
   lead?: string,
-  pinnedMoverId?: number
+  pinnedMoverId?: number,
+  locale: MoverAiLocale = "ko"
 ): Promise<PostMessageResult> {
   if (!filters.region || !filters.service) {
     throw AppError.badRequest(ERROR_CODES.VALIDATION_ERROR, "검색 조건이 아직 완성되지 않았습니다");
@@ -345,6 +415,7 @@ async function respondShowRecommendation(
       content: "이 조건에 맞는 기사님이 아직 없어요.\n지역이나 이사 유형을 바꿔 볼까요?",
       filters,
       nextAction: "ASK_MODE",
+      speech: templateSpeech("noMover"),
       payload: { listMode: null, candidateCount: 0 },
     });
     return { sessionId, assistantMessage, filters };
@@ -358,7 +429,7 @@ async function respondShowRecommendation(
     .map((row) => row.comment?.trim() ?? "")
     .filter((comment) => comment.length > 0)
     .map((comment) => comment.slice(0, 200));
-  const reviewSummary = await summarizeReviewComments(comments);
+  const reviewSummary = await summarizeReviewComments(comments, locale);
   const onlyOne = candidates.length === 1;
   const reason = buildRecommendReason(best, onlyOne);
   const intro = onlyOne
@@ -377,6 +448,11 @@ async function respondShowRecommendation(
     content: lead ? `${lead}\n${body}` : body,
     filters,
     nextAction: "SHOW_RECOMMENDATION",
+    speech: templateSpeech(onlyOne ? "recommendOnly" : "recommend", {
+      unsupported: Boolean(lead),
+      reviewSummary,
+      reviewSummaryState: reviewSummary ? "text" : comments.length === 0 ? "none" : "failed",
+    }),
     movers: cards,
     payload: {
       listMode: "recommend",
@@ -397,10 +473,11 @@ async function respondShowRecommendation(
 async function respondBySlots(
   sessionId: string,
   filters: MoverAiFilters,
-  listMode: MoverAiListMode | null = null
+  listMode: MoverAiListMode | null = null,
+  locale: MoverAiLocale = "ko"
 ): Promise<PostMessageResult> {
   if (listMode === "recommend" && filters.region && filters.service && !filters.sort) {
-    return respondShowRecommendation(sessionId, filters);
+    return respondShowRecommendation(sessionId, filters, undefined, undefined, undefined, locale);
   }
 
   const slotAction = resolveSlotAction(filters, listMode);
@@ -418,7 +495,14 @@ async function respondBySlots(
   if (slotAction === "ASK_MODE" && filters.region && filters.service) {
     const candidates = await moverService.listRankCandidates(filters.region, filters.service);
     if (candidates.length <= 1) {
-      return respondShowRecommendation(sessionId, filters, candidates);
+      return respondShowRecommendation(
+        sessionId,
+        filters,
+        candidates,
+        undefined,
+        undefined,
+        locale
+      );
     }
   }
 
@@ -428,6 +512,7 @@ async function respondBySlots(
     content: buildAskReply(slotAction, filters),
     filters,
     nextAction: slotAction,
+    speech: templateSpeech(askTemplate(slotAction, filters)),
     payload: slotAction === "ASK_SORT" ? { listMode: "browse" } : { listMode },
   });
   return { sessionId, assistantMessage, filters };
@@ -449,6 +534,7 @@ async function handleShowMore(
       content: lastMoversLine(0),
       filters,
       nextAction: "SHOW_MOVERS",
+      speech: templateSpeech("lastMovers"),
       movers: [],
       payload: {
         moverIds: [],
@@ -502,6 +588,7 @@ async function handleFavoriteAll(
     content: buildFavoriteAllContent(createdCount, skippedCount, moverIds.length),
     filters,
     nextAction: "SHOW_MOVERS",
+    speech: favoriteSpeech(createdCount, skippedCount, moverIds.length),
     payload: {
       favoriteResult,
       listMode,
@@ -520,16 +607,17 @@ async function handleClientAction(params: {
   cursor: string | null;
   listMode: MoverAiListMode | null;
   action: ClientActionDto;
+  locale: MoverAiLocale;
 }): Promise<PostMessageResult> {
-  const { sessionId, userId, filters, cursor, listMode, action } = params;
+  const { sessionId, userId, filters, cursor, listMode, action, locale } = params;
 
   switch (action.type) {
     case "SELECT_SERVICE":
-      return respondBySlots(sessionId, { ...filters, service: action.value });
+      return respondBySlots(sessionId, { ...filters, service: action.value }, null, locale);
     case "SELECT_SORT":
-      return respondBySlots(sessionId, { ...filters, sort: action.value }, "browse");
+      return respondBySlots(sessionId, { ...filters, sort: action.value }, "browse", locale);
     case "SELECT_REGION":
-      return respondBySlots(sessionId, { ...filters, region: action.value });
+      return respondBySlots(sessionId, { ...filters, region: action.value }, null, locale);
     case "SELECT_MODE":
       if (!filters.region || !filters.service) {
         throw AppError.badRequest(
@@ -537,8 +625,17 @@ async function handleClientAction(params: {
           "검색 조건이 아직 완성되지 않았습니다"
         );
       }
-      if (action.value === "recommend") return respondShowRecommendation(sessionId, filters);
-      return respondBySlots(sessionId, filters, "browse");
+      if (action.value === "recommend") {
+        return respondShowRecommendation(
+          sessionId,
+          filters,
+          undefined,
+          undefined,
+          undefined,
+          locale
+        );
+      }
+      return respondBySlots(sessionId, filters, "browse", locale);
     case "SHOW_MORE":
       return handleShowMore(sessionId, filters, cursor);
     case "CHANGE_FILTERS":
@@ -555,6 +652,7 @@ export const moverAiService = {
     const welcomePayload: MoverAiAssistantPayload = {
       filters: EMPTY_FILTERS,
       nextAction: "ASK_REGION",
+      speech: templateSpeech("welcome"),
     };
     const welcome = await moverAiRepository.createMessage({
       sessionId: session.id,
@@ -570,7 +668,7 @@ export const moverAiService = {
           id: welcome.id,
           role: "ASSISTANT",
           content: WELCOME_MESSAGE,
-          ui: buildUi({ nextAction: "ASK_REGION" }),
+          ui: buildUi({ nextAction: "ASK_REGION", speech: welcomePayload.speech }),
         },
       ],
     };
@@ -617,8 +715,10 @@ export const moverAiService = {
           movers: movers && movers.length > 0 ? movers : null,
           listMeta: payload?.favoriteResult ? null : (payload?.listMeta ?? null),
           regionClarify: payload?.regionClarify ?? null,
+          regionDisplayLabels: payload?.regionDisplayLabels ?? null,
           candidateCount: payload?.candidateCount ?? null,
           listMode: payload?.listMode ?? null,
+          speech: payload?.speech ?? null,
         }),
       };
     });
@@ -634,6 +734,7 @@ export const moverAiService = {
   ): Promise<PostMessageResult> {
     const session = await loadOwnedSession(sessionId, userId);
     const filters = toFilters(session);
+    const locale = dto.locale ?? "ko";
 
     // 이번 유저 메시지는 프롬프트에 따로 넣으므로, 저장 전에 이력을 읽어 중복을 막습니다
     const history = dto.clientAction
@@ -659,24 +760,34 @@ export const moverAiService = {
         cursor: session.cursor,
         listMode,
         action: dto.clientAction,
+        locale,
       });
     }
 
-    const regionResult = resolveRegionFromMessage(dto.message);
-    const explicitService = inferExplicitService(dto.message);
-    const explicitSort = inferExplicitSort(dto.message);
-    const explicitMode = inferExplicitMode(dto.message);
-    const resetIntent = inferFilterResetIntent(dto.message);
+    // 한국어가 아니면 문장 전체를 한국어로 바꾼 뒤 기존 규칙을 탑니다. 저장하는 말은 입력 원문입니다.
+    const ruleMessage =
+      locale === "ko" ? dto.message : ((await translateToKorean(dto.message)) ?? dto.message);
+
+    const regionResult = resolveRegionFromMessage(ruleMessage);
+    const explicitService = inferExplicitService(ruleMessage);
+    const explicitSort = inferExplicitSort(ruleMessage);
+    const explicitMode = inferExplicitMode(ruleMessage);
+    const resetIntent = inferFilterResetIntent(ruleMessage);
 
     // CLARIFY_REGION 직후 — 칩 대신 말로 고른 경우 후보와 매칭
     if (latestAssistant?.nextAction === "CLARIFY_REGION" && latestAssistant.regionClarify) {
-      const chosen = matchClarifyRegionChoice(dto.message, latestAssistant.regionClarify);
+      const chosen = matchClarifyRegionChoice(ruleMessage, latestAssistant.regionClarify);
       if (chosen) {
-        return respondBySlots(sessionId, {
-          region: chosen,
-          service: explicitService ?? filters.service,
-          sort: explicitSort ?? filters.sort,
-        });
+        return respondBySlots(
+          sessionId,
+          {
+            region: chosen,
+            service: explicitService ?? filters.service,
+            sort: explicitSort ?? filters.sort,
+          },
+          null,
+          locale
+        );
       }
     }
 
@@ -691,12 +802,20 @@ export const moverAiService = {
         ...nextFilters,
         cursor: null,
       });
+      const regionDisplayLabels =
+        locale === "ko"
+          ? null
+          : await translatePlaceLabels(
+              regionResult.clarify.options.map((option) => option.label),
+              locale
+            );
       const assistantMessage = await persistAssistant({
         sessionId,
         content: buildClarifyRegionReply(regionResult.clarify),
         filters: nextFilters,
         nextAction: "CLARIFY_REGION",
-        payload: { regionClarify: regionResult.clarify },
+        speech: templateSpeech("clarifyRegion"),
+        payload: { regionClarify: regionResult.clarify, regionDisplayLabels },
       });
       return { sessionId, assistantMessage, filters: nextFilters };
     }
@@ -721,7 +840,12 @@ export const moverAiService = {
         if (resetIntent === "ALL") return respondChangeAllFilters(sessionId);
         return respondPartialFilterReset(sessionId, filters, resetIntent);
       }
-      return respondBySlots(sessionId, nextFilters, carryListMode(latestAssistant, nextFilters));
+      return respondBySlots(
+        sessionId,
+        nextFilters,
+        carryListMode(latestAssistant, nextFilters),
+        locale
+      );
     }
 
     // 지명·유형·정렬이 명확하면 Gemini 없이 BE 고정 흐름
@@ -731,12 +855,26 @@ export const moverAiService = {
         service: explicitService ?? filters.service,
         sort: explicitSort ?? filters.sort,
       };
-      return respondBySlots(sessionId, nextFilters, carryListMode(latestAssistant, nextFilters));
+      return respondBySlots(
+        sessionId,
+        nextFilters,
+        carryListMode(latestAssistant, nextFilters),
+        locale
+      );
     }
 
     if (explicitMode && filters.region && filters.service) {
-      if (explicitMode === "recommend") return respondShowRecommendation(sessionId, filters);
-      return respondBySlots(sessionId, filters, "browse");
+      if (explicitMode === "recommend") {
+        return respondShowRecommendation(
+          sessionId,
+          filters,
+          undefined,
+          undefined,
+          undefined,
+          locale
+        );
+      }
+      return respondBySlots(sessionId, filters, "browse", locale);
     }
 
     let gemini;
@@ -744,7 +882,8 @@ export const moverAiService = {
       gemini = await callMoverAiGemini({
         currentFilters: filters,
         history: history.map((m) => ({ role: m.role, content: m.content })),
-        userMessage: dto.message,
+        userMessage: ruleMessage,
+        locale,
       });
     } catch {
       // Gemini 실패해도 사용자 메시지 뒤에 고정 안내를 남겨 대화가 끊기지 않게
@@ -763,6 +902,9 @@ export const moverAiService = {
         content,
         filters,
         nextAction,
+        speech: templateSpeech("geminiFallback", {
+          ask: slotAction === "SHOW_MOVERS" ? null : askTemplate(slotAction, filters),
+        }),
         payload: slotAction === "SHOW_MOVERS" ? undefined : { listMode },
       });
       return { sessionId, assistantMessage, filters };
@@ -800,7 +942,8 @@ export const moverAiService = {
           filters,
           undefined,
           lead,
-          latestAssistant?.recommendation?.moverId
+          latestAssistant?.recommendation?.moverId,
+          locale
         );
       }
       const assistantMessage = await respondShowMovers({
@@ -821,7 +964,7 @@ export const moverAiService = {
           : resolveNextAction(nextFilters, gemini.nextAction, carriedMode);
 
     if (!unsupported && gemini.nextAction !== "CLARIFY_REGION") {
-      return respondBySlots(sessionId, nextFilters, carriedMode);
+      return respondBySlots(sessionId, nextFilters, carriedMode, locale);
     }
 
     const filtersChanged =
@@ -836,11 +979,29 @@ export const moverAiService = {
     const slotAction = resolveSlotAction(nextFilters, carriedMode);
     const content = unsupported ? buildUnsupportedContent(slotAction, nextFilters) : gemini.reply;
 
+    const ask = slotAction === "SHOW_MOVERS" ? null : askTemplate(slotAction, nextFilters);
+    // 목록을 보는 중이면 거절 문구만, 그 외에는 거절 뒤에 현재 질문을 이어 붙입니다.
+    const modelSpeech: MoverAiSpeech = unsupported
+      ? ask
+        ? templateSpeech(ask, { unsupported: true })
+        : templateSpeech("askRegion", { unsupported: true, template: null })
+      : {
+          source: "model",
+          template: null,
+          ask: null,
+          unsupported: false,
+          closed: false,
+          modelReply: gemini.reply,
+          reviewSummary: null,
+          reviewSummaryState: null,
+          favoriteCount: null,
+        };
     const assistantMessage = await persistAssistant({
       sessionId,
       content,
       filters: nextFilters,
       nextAction,
+      speech: modelSpeech,
       payload: { listMode: carriedMode },
     });
 
