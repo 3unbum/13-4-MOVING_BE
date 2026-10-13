@@ -61,10 +61,13 @@ export const clientActionSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+export const moverAiLocaleSchema = z.enum(["ko", "en", "zh", "ja"]);
+
 export const postMessageSchema = z
   .object({
     message: z.string().trim().min(1, "message는 비울 수 없습니다").max(1000),
     clientAction: clientActionSchema.nullable().optional().default(null),
+    locale: moverAiLocaleSchema.optional(),
   })
   .strict();
 
