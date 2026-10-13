@@ -4,7 +4,7 @@ import { AppError } from "../../common/errors/AppError";
 import { ERROR_CODES } from "../../common/errors/errorCodes";
 import { env } from "../../config/env";
 import { geminiMoverAiResultSchema } from "./mover-ai.schema";
-import type { GeminiMoverAiResult, MoverAiFilters } from "./mover-ai.type";
+import type { GeminiMoverAiResult, MoverAiFilters, MoverAiLocale } from "./mover-ai.type";
 
 const REGION_ENUM = [null, ...Object.values(RegionType)];
 const SERVICE_ENUM = [null, ...Object.values(ServiceType)];
@@ -110,13 +110,14 @@ async function generateOnce(
   ai: GoogleGenAI,
   model: string,
   userPrompt: string,
-  timeoutMs: number
+  timeoutMs: number,
+  systemInstruction: string
 ): Promise<string> {
   const response = await ai.models.generateContent({
     model,
     contents: userPrompt,
     config: {
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
       temperature: 0.2,
@@ -127,9 +128,32 @@ async function generateOnce(
 }
 
 /** 동일 모델에서 재시도 후, 실패 시 폴백 모델로 한 번 더 시도합니다. */
+const LOCALE_NAME: Record<Exclude<MoverAiLocale, "ko">, string> = {
+  en: "English",
+  zh: "Chinese (Simplified)",
+  ja: "Japanese",
+};
+
+/** 리뷰가 한국어여도 요약문 언어를 고정하기 위한 지시 */
+const REVIEW_SUMMARY_LOCALE: Record<Exclude<MoverAiLocale, "ko">, string> = {
+  en: "English",
+  zh: "Simplified Chinese (简体中文)",
+  ja: "Japanese (日本語)",
+};
+
+/** 슬롯 판단은 한국어 규칙을 유지하고, reply만 화면 언어로 바꿉니다. */
+function systemPromptFor(locale: MoverAiLocale): string {
+  if (locale === "ko") return SYSTEM_PROMPT;
+  return SYSTEM_PROMPT.replace(
+    "2. reply는 2문장 이내 한국어. UI 칩 문구 금지.",
+    `2. reply는 2문장 이내 ${LOCALE_NAME[locale]}로 작성. UI 칩 문구 금지. enum 값은 바꾸지 마세요.`
+  );
+}
+
 async function generateWithRetryAndFallback(
   ai: GoogleGenAI,
-  userPrompt: string
+  userPrompt: string,
+  systemInstruction: string = SYSTEM_PROMPT
 ): Promise<{ rawText: string; model: string }> {
   const models = [env.GEMINI_MODEL, env.GEMINI_FALLBACK_MODEL].filter(
     (model, index, all) => model.length > 0 && all.indexOf(model) === index
@@ -148,7 +172,8 @@ async function generateWithRetryAndFallback(
           ai,
           model,
           userPrompt,
-          Math.min(CALL_TIMEOUT_MS, remaining)
+          Math.min(CALL_TIMEOUT_MS, remaining),
+          systemInstruction
         );
         return { rawText, model };
       } catch (error) {
@@ -171,6 +196,7 @@ export async function callMoverAiGemini(params: {
   currentFilters: MoverAiFilters;
   history: { role: string; content: string }[];
   userMessage: string;
+  locale?: MoverAiLocale;
 }): Promise<GeminiMoverAiResult> {
   assertApiKey();
 
@@ -187,30 +213,123 @@ ${historyText || "(없음)"}
 ## 유저 메시지
 ${params.userMessage}`;
 
-  const { rawText } = await generateWithRetryAndFallback(ai, userPrompt);
+  const { rawText } = await generateWithRetryAndFallback(
+    ai,
+    userPrompt,
+    systemPromptFor(params.locale ?? "ko")
+  );
   return parseAndValidate(rawText);
 }
 
 const REVIEW_SUMMARY_PROMPT = `이사 기사님의 확정 리뷰만 보고 두 문장 이내 한국어로 요약하세요.
 주어진 문장에 없는 평점, 사건, 이름은 지어내지 마세요. 요약문만 출력하세요.`;
 
+function reviewSummaryPrompt(locale: MoverAiLocale): string {
+  if (locale === "ko") return REVIEW_SUMMARY_PROMPT;
+  const language = REVIEW_SUMMARY_LOCALE[locale];
+  return `You summarize confirmed mover reviews for a moving app.
+Write the entire summary in ${language} only.
+The source reviews are Korean. Translate the meaning into ${language}.
+Do not output Korean Hangul at all.
+Do not invent ratings, events, or names that are not in the text.
+At most two sentences. Output only the summary.`;
+}
+
 /** 확정 리뷰 본문만 받아 짧은 요약을 만듭니다. 실패하면 null을 반환해 추천 사유만 남깁니다. */
-export async function summarizeReviewComments(comments: string[]): Promise<string | null> {
+export async function summarizeReviewComments(
+  comments: string[],
+  locale: MoverAiLocale = "ko"
+): Promise<string | null> {
   if (!env.GEMINI_API_KEY || comments.length === 0) return null;
 
   try {
     const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+    const numbered = comments.map((comment, index) => `${index + 1}. ${comment}`).join("\n");
+    const language = locale === "ko" ? "한국어" : REVIEW_SUMMARY_LOCALE[locale];
+    const contents =
+      locale === "ko"
+        ? numbered
+        : `Source language: Korean\nTarget language: ${language}\nWrite the summary in ${language} only. Do not use Korean.\n\nReviews:\n${numbered}`;
     const response = await ai.models.generateContent({
       model: env.GEMINI_MODEL,
-      contents: comments.map((comment, index) => `${index + 1}. ${comment}`).join("\n"),
+      contents,
       config: {
-        systemInstruction: REVIEW_SUMMARY_PROMPT,
+        systemInstruction: reviewSummaryPrompt(locale),
         temperature: 0.2,
         abortSignal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       },
     });
     const text = response.text?.trim();
     return text ? text.slice(0, 500) : null;
+  } catch {
+    return null;
+  }
+}
+
+const TRANSLATE_PROMPT = `다음 문장을 한국어로만 번역하세요.
+지명은 한국어 지명으로 옮기세요. 어느 시·도인지는 정하지 마세요.
+광주, 죽전처럼 여러 지역에 있는 이름은 그 이름만 적으세요.
+설명 없이 번역문만 출력하세요.`;
+
+/** 한국어가 아닌 입력을 기존 규칙에 넣기 위해 한국어로 바꿉니다. 실패하면 null입니다. */
+export async function translateToKorean(message: string): Promise<string | null> {
+  if (!env.GEMINI_API_KEY) return null;
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: env.GEMINI_MODEL,
+      contents: message,
+      config: {
+        systemInstruction: TRANSLATE_PROMPT,
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      },
+    });
+    const text = response.text?.trim();
+    return text ? text.slice(0, 1000) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseLabelArray(raw: string, length: number): string[] | null {
+  const trimmed = raw
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/```$/, "");
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!Array.isArray(parsed) || parsed.length !== length) return null;
+    if (!parsed.every((item) => typeof item === "string" && item.trim().length > 0)) return null;
+    return parsed.map((item) => (item as string).trim());
+  } catch {
+    return null;
+  }
+}
+
+/** 중의 지역 후보 이름만 화면 언어로 옮깁니다. 순서가 다르면 쓰지 않습니다. */
+export async function translatePlaceLabels(
+  labels: string[],
+  locale: MoverAiLocale
+): Promise<string[] | null> {
+  if (!env.GEMINI_API_KEY || labels.length === 0 || locale === "ko") return null;
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: env.GEMINI_MODEL,
+      contents: JSON.stringify(labels),
+      config: {
+        systemInstruction: `Translate each Korean place name into ${LOCALE_NAME[locale]}.
+Return a JSON array of strings with the same length and order.
+Do not choose a province or add explanations.`,
+        temperature: 0,
+        abortSignal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      },
+    });
+    const text = response.text?.trim();
+    return text ? parseLabelArray(text, labels.length) : null;
   } catch {
     return null;
   }
