@@ -6,7 +6,7 @@
 
 ### 견적 요청부터 확정 · 결제까지, 이사 매칭의 규칙을 책임지는 API 서버
 
-[**🌐 서비스 바로가기**](https://www.letsmoving.site) · [**🎬 시연 영상**](시연영상_링크) · [**🖥 Frontend 저장소**](https://github.com/3unbum/13-4-MOVING_FE)
+[**🌐 서비스 바로가기**](https://www.letsmoving.site) · [**🎬 시연 영상**](https://github.com/3unbum/13-4-MOVING_FE#-기능-구현-영상--시연-계정) · [**🖥 Frontend 저장소**](https://github.com/3unbum/13-4-MOVING_FE)
 
 코드잇 스프린트 13기 · 파트4 고급 프로젝트 · 4팀
 
