@@ -23,8 +23,9 @@
 5. [핵심 규칙 · 상태 흐름](#-핵심-규칙--상태-흐름)
 6. [API 개요](#-api-개요)
 7. [팀 소개 · 주요 링크](#-팀-소개--주요-링크)
-8. [보안](#-보안)
-9. [트러블 슈팅](#-트러블-슈팅)
+8. [협업 방식](#-협업-방식)
+9. [보안](#-보안)
+10. [트러블 슈팅](#-트러블-슈팅)
 
 <br />
 
@@ -237,24 +238,52 @@ stateDiagram-v2
 | **문치호** | · 공통 컴포넌트(Modal / Pop-up, Tab)<br />· 찜한 기사님 페이지<br />· 작성 가능한 리뷰 · 내가 작성한 리뷰<br />· 마이페이지 기사님 리뷰 영역 | · 찜한 기사님 API(찜하기 · 해제 · 목록)<br />· 이사 리뷰 API(작성 가능 · 내 리뷰 · 기사님 리뷰)<br />· 평점 재계산 로직 | [@MunChiho](https://github.com/MunChiho) |
 | **김은진** | · 공통 컴포넌트(Dropdown / Filter / Sort, GNB)<br />· 기사님 찾기(회원 / 비회원)<br />· 기사님 상세(회원 / 비회원)<br />· AI 챗봇 기사님 찾기(챗봇 모달 · 대화 상태 훅) | · 기사님 목록 API(검색 · 필터 · 정렬 · 무한 스크롤)<br />· 기사님 상세 조회 API<br />· 기사님 찜하기 API(찜하기 · 해제)<br />· 정렬 성능 개선(반정규화 컬럼 + 인덱스)<br />· 알림 API 초안<br />· AI 챗봇 기사님 추천 API(Gemini) | [@Eznnni](https://github.com/Eznnni) |
 
-<details>
-<summary><b>🤝 협업 방식</b></summary>
-
-<br />
-
-- `main` ← `dev` ← `{type}/{작업명}-{이슈번호}` 브랜치 전략을 쓰고, 직접 push 대신 PR로만 병합합니다. (`dev` 승인 2명 · `main` 승인 1명, Squash and Merge)
-- 커밋은 `{type}: {내용}` 형식이며 husky + commitlint가 검사합니다. 이슈 템플릿 5종을 쓰고, PR에는 `close #번호`로 이슈를 연결합니다.
-- PR을 열면 GitHub Actions가 타입 체크 · 린트 · 테스트를 돌리고, 팀원 리뷰와 함께 AI 코드 리뷰(CodeRabbit)를 받습니다.
-- 코드 리뷰는 24시간 안에 마치고, 4시간 동안 해결되지 않는 문제는 팀에 공유합니다. 데일리 스크럼은 전날 퇴실 전에 최신화합니다.
-
-</details>
-
 ### 주요 링크
 
 - 📒 [팀 Notion](https://app.notion.com/p/bum0107/4f62c0a94b6182509d1281654aab75d0)
 - 📋 [요구사항 분석 · Task List](https://app.notion.com/p/bum0107/3cd2c0a94b61800b8a1cf0912131c2f0)
 - 📘 [API 명세](https://app.notion.com/p/bum0107/API-f542c0a94b618394b54e81bc11e29240) · Swagger `/api-docs` (개발 환경)
 - 🖥 [Frontend 저장소](https://github.com/3unbum/13-4-MOVING_FE)
+
+<br />
+
+## 🤝 협업 방식
+
+### 브랜치 전략
+
+```text
+main            운영 배포
+ └── dev        개발 통합 (기본 브랜치)
+      └── {type}/{작업명}-{이슈번호}    작업 브랜치
+```
+
+- 직접 push 없이 PR로만 병합합니다.
+- `dev`는 승인 2명, `main`은 승인 1명이 필요하며, Squash and Merge로 병합합니다.
+
+### 작업 흐름
+
+`이슈 생성` → `브랜치 생성` → `커밋` → `PR 생성` → `자동 검사 · 코드 리뷰` → `병합`
+
+- 이슈는 템플릿 5종(feat · fix · chore · refactor · test)으로 만들고, PR에는 `close #번호`로 이슈를 연결합니다.
+- PR을 열면 GitHub Actions가 타입 체크 · 린트 · 테스트를 실행하고, 팀원 리뷰와 함께 AI 코드 리뷰(CodeRabbit)를 받습니다. `main`에 병합되면 배포 워크플로가 이어집니다.
+
+### 커밋 컨벤션
+
+커밋은 `{type}: {내용}` 형식이며, husky + commitlint가 형식을 검사합니다.
+
+| 타입 | 설명 |
+| :-- | :-- |
+| `feat` | 새로운 기능 추가 |
+| `fix` | 버그 수정 |
+| `chore` | 빌드 · 설정 변경 |
+| `test` | 테스트 코드 |
+| `refactor` | 코드 리팩토링 |
+
+### 팀 규칙
+
+- 코드 리뷰는 24시간 안에 마칩니다.
+- 4시간 동안 해결되지 않는 문제는 팀에 공유합니다.
+- 데일리 스크럼은 전날 퇴실 전에 최신화합니다.
 
 <br />
 
