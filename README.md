@@ -6,30 +6,24 @@
 
 ### 견적 요청부터 확정 · 결제까지, 이사 매칭의 규칙을 책임지는 API 서버
 
-[**🌐 서비스 바로가기**](https://www.letsmoving.site) · [**🎬 시연 영상**](https://github.com/3unbum/13-4-MOVING_FE#-기능-구현-영상--시연-계정) · [**🖥 Frontend 저장소**](https://github.com/3unbum/13-4-MOVING_FE)
-
-코드잇 스프린트 13기 · 파트4 고급 프로젝트 · 4팀
+[**서비스 바로가기**](https://www.letsmoving.site) · [**시연 영상**](https://github.com/3unbum/13-4-MOVING_FE#기능-구현-영상--시연-계정) · [**Frontend 저장소**](https://github.com/3unbum/13-4-MOVING_FE)
 
 </div>
 
-<br />
+## 목차
 
-## 📑 목차
+1. [프로젝트 소개](#프로젝트-소개)
+2. [주요 기능](#주요-기능)
+3. [시스템 아키텍처](#시스템-아키텍처)
+4. [기술 스택 · 프로젝트 구조](#기술-스택--프로젝트-구조)
+5. [핵심 규칙 · 상태 흐름](#핵심-규칙--상태-흐름)
+6. [API 개요](#api-개요)
+7. [팀 소개 · 주요 링크](#팀-소개--주요-링크)
+8. [협업 방식](#협업-방식)
+9. [보안](#보안)
+10. [트러블 슈팅](#트러블-슈팅)
 
-1. [프로젝트 소개](#-프로젝트-소개)
-2. [주요 기능](#-주요-기능)
-3. [시스템 아키텍처](#-시스템-아키텍처)
-4. [기술 스택 · 프로젝트 구조](#-기술-스택--프로젝트-구조)
-5. [핵심 규칙 · 상태 흐름](#-핵심-규칙--상태-흐름)
-6. [API 개요](#-api-개요)
-7. [팀 소개 · 주요 링크](#-팀-소개--주요-링크)
-8. [협업 방식](#-협업-방식)
-9. [보안](#-보안)
-10. [트러블 슈팅](#-트러블-슈팅)
-
-<br />
-
-## 💡 프로젝트 소개
+## 프로젝트 소개
 
 이사 시장에는 무분별한 가격 책정과 무책임한 서비스로 정보의 투명성과 신뢰도가 낮다는 문제가 있습니다. **무빙**은 이사 소비자와 이사 전문가(기사님)를 이어 주는 견적 매칭 서비스입니다. 소비자가 이사 정보를 한 번 입력하면 기사님들이 견적을 보내고, 소비자는 견적가와 후기를 비교해 고른 뒤 결제와 후기 작성까지 한 서비스 안에서 마칩니다.
 
@@ -39,12 +33,22 @@
 - **실시간 알림은 커밋 이후에만 보냅니다** — SSE 알림을 트랜잭션이 커밋된 뒤에 전송해, 롤백된 알림이 화면에 뜨지 않습니다.
 - **Prisma 스키마 21개 모델 · 10개 Enum**, **Jest 테스트 48개 파일**로 규칙과 경계 조건을 검증합니다.
 
-<br />
+## 주요 기능
 
-## ✨ 주요 기능
+| 기능 | 설명 |
+| :-- | :-- |
+| **인증 · 계정** | 역할별 가입 · 로그인, 구글 · 네이버 · 카카오 소셜 로그인, 이메일 인증번호 |
+| **프로필** | 프로필 등록 게이트, 이메일 인증 후 계정 정보 수정, 이미지 S3 업로드 |
+| **견적 요청** | 유저당 활성 요청 1건, 기사님 직접 지정 요청 |
+| **견적 · 결제** | 견적 발송 · 반려 · 확정(요청당 8건 상한), 토스페이먼츠 결제를 서버가 재검증 |
+| **기사님 목록 · 찜** | 검색 · 필터 · 정렬, 커서 기반 무한 스크롤 |
+| **리뷰** | 잔금 결제 후 작성(사진 최대 3장), 평점 · 리뷰 수 재계산 |
+| **실시간 알림** | 13가지 유형을 SSE로 전달, 트랜잭션 커밋 이후에만 전송 |
+| **채팅** | 견적 확정 시 방 생성, 방 목록 · 메시지 |
+| **AI 기사님 추천** | Gemini는 조건만 수집하고 기사님 목록은 서버가 DB에서 조회 |
 
 <details>
-<summary><b>기능과 구현 포인트 보기</b></summary>
+<summary><b>구현 포인트 자세히 보기</b></summary>
 
 | 기능 | 구현 포인트 |
 | :-- | :-- |
@@ -60,54 +64,23 @@
 
 </details>
 
-<br />
-
-## 🏗 시스템 아키텍처
+## 시스템 아키텍처
 
 <a href="docs/architecture.png"><img src="docs/architecture.png" alt="무빙 시스템 아키텍처" width="100%" /></a>
 
-<br />
+## 기술 스택 · 프로젝트 구조
 
-## 🧰 기술 스택 · 프로젝트 구조
-
-### Language
-
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
-
-### Framework & Libraries
-
-![Express](https://img.shields.io/badge/Express-404040?style=flat-square&logo=express&logoColor=white)
-![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-square&logo=prisma&logoColor=white)
-![Zod](https://img.shields.io/badge/Zod-3E67B1?style=flat-square&logo=zod&logoColor=white)
-![Jest](https://img.shields.io/badge/Jest-C21325?style=flat-square&logo=jest&logoColor=white)
-
-### Hosting & Deployment
-
-![AWS EC2](https://img.shields.io/badge/AWS_EC2-FF9900?style=flat-square)
-![PM2](https://img.shields.io/badge/PM2-2B037A?style=flat-square&logo=pm2&logoColor=white)
-
-### Storage & Database
-
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
-![Amazon S3](https://img.shields.io/badge/Amazon_S3-569A31?style=flat-square)
-![Amazon CloudFront](https://img.shields.io/badge/Amazon_CloudFront-8C4FFF?style=flat-square)
-
-### CI/CD · Version Control
-
-![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)
-![Git](https://img.shields.io/badge/Git-F05032?style=flat-square&logo=git&logoColor=white)
-![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white)
-
-### External Services
-
-![Toss Payments](https://img.shields.io/badge/Toss_Payments-0064FF?style=flat-square)
-![Gemini](https://img.shields.io/badge/Gemini-8E75B2?style=flat-square&logo=googlegemini&logoColor=white)
-![Cloudflare Turnstile](https://img.shields.io/badge/Cloudflare_Turnstile-F38020?style=flat-square&logo=cloudflare&logoColor=white)
-![Gmail](https://img.shields.io/badge/Gmail-EA4335?style=flat-square&logo=gmail&logoColor=white)
-![Sentry](https://img.shields.io/badge/Sentry-362D59?style=flat-square&logo=sentry&logoColor=white)
+| 구분 | 스택 |
+| :-- | :-- |
+| **Language** | ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white) |
+| **Framework & Libraries** | ![Express](https://img.shields.io/badge/Express-404040?style=flat-square&logo=express&logoColor=white) ![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-square&logo=prisma&logoColor=white) ![Zod](https://img.shields.io/badge/Zod-3E67B1?style=flat-square&logo=zod&logoColor=white) ![Jest](https://img.shields.io/badge/Jest-C21325?style=flat-square&logo=jest&logoColor=white) |
+| **Hosting & Deployment** | ![AWS EC2](https://img.shields.io/badge/AWS_EC2-FF9900?style=flat-square) ![PM2](https://img.shields.io/badge/PM2-2B037A?style=flat-square&logo=pm2&logoColor=white) |
+| **Storage & Database** | ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white) ![Amazon S3](https://img.shields.io/badge/Amazon_S3-569A31?style=flat-square) ![Amazon CloudFront](https://img.shields.io/badge/Amazon_CloudFront-8C4FFF?style=flat-square) |
+| **CI/CD · Version Control** | ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white) ![Git](https://img.shields.io/badge/Git-F05032?style=flat-square&logo=git&logoColor=white) ![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white) |
+| **External Services** | ![Toss Payments](https://img.shields.io/badge/Toss_Payments-0064FF?style=flat-square) ![Gemini](https://img.shields.io/badge/Gemini-8E75B2?style=flat-square&logo=googlegemini&logoColor=white) ![Cloudflare Turnstile](https://img.shields.io/badge/Cloudflare_Turnstile-F38020?style=flat-square&logo=cloudflare&logoColor=white) ![Gmail](https://img.shields.io/badge/Gmail-EA4335?style=flat-square&logo=gmail&logoColor=white) ![Sentry](https://img.shields.io/badge/Sentry-362D59?style=flat-square&logo=sentry&logoColor=white) |
 
 <details>
-<summary><b>📁 프로젝트 구조</b></summary>
+<summary><b>프로젝트 구조</b></summary>
 
 <br />
 
@@ -135,7 +108,7 @@ tests/                         # 테스트 공용 설정 · 헬퍼
 </details>
 
 <details>
-<summary><b>🚀 로컬 실행 방법</b></summary>
+<summary><b>로컬 실행 방법</b></summary>
 
 <br />
 
@@ -156,9 +129,7 @@ npm run dev                 # 개발 서버
 
 </details>
 
-<br />
-
-## 🧭 핵심 규칙 · 상태 흐름
+## 핵심 규칙 · 상태 흐름
 
 | 규칙 | 내용 |
 | :-- | :-- |
@@ -205,9 +176,7 @@ stateDiagram-v2
 
 모두 `node-cron`으로 한국 시간 기준에 실행하며, 여러 번 실행해도 결과가 같도록 조건부 갱신으로 처리합니다.
 
-<br />
-
-## 📡 API 개요
+## API 개요
 
 모든 경로 앞에는 `/api`가 붙습니다.
 
@@ -225,69 +194,39 @@ stateDiagram-v2
 | **알림** | `/notifications/*` | 목록 · 실시간 스트림(SSE) · 읽음 처리 · 삭제 |
 | **채팅** | `/chat-rooms/*` | 방 목록 · 메시지 · 이미지 · 읽음 처리 |
 
-<br />
+## 팀 소개 · 주요 링크
 
-## 👥 팀 소개 · 주요 링크
-
-| 이름&emsp;&emsp; | 프론트엔드 | 백엔드 | GitHub |
+| 이름 | 프론트엔드 | 백엔드 | GitHub |
 | :-- | :-- | :-- | :-- |
-| **이은범**<br />팀장 | · 공통 컴포넌트 Card-list(10종)<br />· 내 견적 관리 페이지(확정 견적 · 반려 견적 요청)<br />· 받은 요청 페이지(목록 · 견적 · 반려하기) | · Prisma 스키마 설계 · 마이그레이션<br />· 견적 요청 생성 · 조회 API<br />· 지정 견적 요청 API<br />· 이사일 경과 처리 배치<br />· 프로젝트 초기 구조 설계<br />· TypeScript 6 · Prisma 7 업그레이드 | [@3unbum](https://github.com/3unbum) |
-| **송현규**<br />부팀장 | · 프론트엔드 초기 세팅(라우트 구조 · 라우팅 가드 · Provider · 디자인 토큰)<br />· 공통 컴포넌트(카드 배지 · 프로필 · 헤더 · 진행바, Chip)<br />· 견적 요청 페이지<br />· 랜딩 페이지<br />· 앱 로고 영문 변경<br />· 결제 플로우 UI<br />· 고객 · 기사 채팅방 UI | · 견적서 API(제시 · 확정 · 조회)<br />· 기사님 견적 관리 API(받은 요청 목록 · 반려)<br />· 견적 상한 검증(일반 5건 · 지정 3건)<br />· 고객 · 기사 채팅 API | [@singsangsong28](https://github.com/singsangsong28) |
-| **김민수** | · AuthProvider · API 클라이언트 설정<br />· 공통 컴포넌트(Input, Button, ModalButton)<br />· 로그인 · 회원가입(소셜 로그인 포함)<br />· 아이디 · 비밀번호 찾기<br />· 회원 탈퇴<br />· 마이페이지 내 프로필(기사님) | · 회원가입 · 로그인 · 로그아웃(역할 분리)<br />· JWT 발급 · 갱신(쿠키), 비밀번호 해싱<br />· 인증 · 인가 미들웨어<br />· OAuth 소셜 로그인(구글 · 네이버 · 카카오)<br />· 내 계정 조회(GET /auth/me)<br />· 이메일 인증<br />· 아이디 찾기 · 비밀번호 재설정<br />· 로그인 시도 · 인증번호 발송 횟수 제한<br />· 회원 탈퇴 · 탈퇴 후 데이터 처리 | [@HoneyLatlll](https://github.com/HoneyLatlll) |
-| **조서현** | · 공통 컴포넌트(Date picker, Pagination)<br />· 프로필 등록(일반 유저 · 기사님)<br />· 프로필 수정(일반 유저)<br />· 마이페이지 프로필 · 기본정보 수정(기사님)<br />· 프로필 수정 이메일 인증 게이트<br />· 프로필 이미지 변경 · 삭제, 소셜 계정 비밀번호 필드 숨김 | · 프로필 등록 API<br />· 프로필 조회 · 수정 API<br />· 프로필 이미지 업로드(multer-s3)<br />· 프로필 등록 게이트 미들웨어<br />· 프로필 수정 이메일 인증(30분 유지, 발송 횟수 제한)<br />· 계정 정보 수정 시 서버 측 인증 검증, 이미지 삭제 | [@sxohyuni](https://github.com/sxohyuni) |
-| **문치호** | · 공통 컴포넌트(Modal / Pop-up, Tab)<br />· 찜한 기사님 페이지<br />· 작성 가능한 리뷰 · 내가 작성한 리뷰<br />· 마이페이지 기사님 리뷰 영역 | · 찜한 기사님 API(찜하기 · 해제 · 목록)<br />· 이사 리뷰 API(작성 가능 · 내 리뷰 · 기사님 리뷰)<br />· 평점 재계산 로직 | [@MunChiho](https://github.com/MunChiho) |
-| **김은진** | · 공통 컴포넌트(Dropdown / Filter / Sort, GNB)<br />· 기사님 찾기(회원 / 비회원)<br />· 기사님 상세(회원 / 비회원)<br />· AI 챗봇 기사님 찾기(챗봇 모달 · 대화 상태 훅) | · 기사님 목록 API(검색 · 필터 · 정렬 · 무한 스크롤)<br />· 기사님 상세 조회 API<br />· 기사님 찜하기 API(찜하기 · 해제)<br />· 정렬 성능 개선(반정규화 컬럼 + 인덱스)<br />· 알림 API 초안<br />· AI 챗봇 기사님 추천 API(Gemini) | [@Eznnni](https://github.com/Eznnni) |
+| **이은범** (팀장) | Card-list 공통 컴포넌트 · 내 견적 관리 · 받은 요청 | DB 스키마 설계 · 견적 요청 API · 이사일 경과 배치 | [@3unbum](https://github.com/3unbum) |
+| **송현규** (부팀장) | 초기 세팅(라우팅 가드 · Provider) · 견적 요청 · 랜딩 · 결제 · 채팅 UI | 견적서 API · 기사님 견적 관리 API · 채팅 API | [@singsangsong28](https://github.com/singsangsong28) |
+| **김민수** | AuthProvider · 로그인 · 회원가입 · 계정 찾기 · 회원 탈퇴 | JWT 인증 · 인가 · OAuth 소셜 로그인 · 이메일 인증 | [@HoneyLatlll](https://github.com/HoneyLatlll) |
+| **조서현** | Date picker · Pagination · 프로필 등록 · 수정 · 이메일 인증 게이트 | 프로필 API · 이미지 업로드(S3) · 프로필 수정 이메일 인증 | [@sxohyuni](https://github.com/sxohyuni) |
+| **문치호** | Modal · Tab · 찜한 기사님 · 리뷰 | 찜 API · 리뷰 API · 평점 재계산 | [@MunChiho](https://github.com/MunChiho) |
+| **김은진** | Dropdown · GNB · 기사님 찾기 · 상세 · AI 챗봇 | 기사님 목록 · 상세 API · 정렬 성능 개선 · AI 추천 API(Gemini) | [@Eznnni](https://github.com/Eznnni) |
+
+상세 담당 업무는 [팀원 소개 및 R&R](https://app.notion.com/p/bum0107/R-R-1fa2c0a94b6182a7a639012465fb2f82)에 정리되어 있습니다.
 
 ### 주요 링크
 
-- 📒 [팀 Notion](https://app.notion.com/p/bum0107/4f62c0a94b6182509d1281654aab75d0)
-- 📋 [요구사항 분석 · Task List](https://app.notion.com/p/bum0107/3cd2c0a94b61800b8a1cf0912131c2f0)
-- 📘 [API 명세](https://app.notion.com/p/bum0107/API-f542c0a94b618394b54e81bc11e29240) · Swagger `/api-docs` (개발 환경)
-- 🖥 [Frontend 저장소](https://github.com/3unbum/13-4-MOVING_FE)
+- [팀 Notion](https://app.notion.com/p/bum0107/4f62c0a94b6182509d1281654aab75d0)
+- [요구사항 분석 · Task List](https://app.notion.com/p/bum0107/3cd2c0a94b61800b8a1cf0912131c2f0)
+- [API 명세](https://app.notion.com/p/bum0107/API-f542c0a94b618394b54e81bc11e29240) · Swagger `/api-docs` (개발 환경)
+- [Frontend 저장소](https://github.com/3unbum/13-4-MOVING_FE)
 
-<br />
+## 협업 방식
 
-## 🤝 협업 방식
-
-### 브랜치 전략
-
-```text
-main            운영 배포
- └── dev        개발 통합 (기본 브랜치)
-      └── {type}/{작업명}-{이슈번호}    작업 브랜치
-```
-
-- 직접 push 없이 PR로만 병합합니다.
-- `dev`는 승인 2명, `main`은 승인 1명이 필요하며, Squash and Merge로 병합합니다.
-
-### 작업 흐름
-
-`이슈 생성` → `브랜치 생성` → `커밋` → `PR 생성` → `자동 검사 · 코드 리뷰` → `병합`
-
-- 이슈는 템플릿 5종(feat · fix · chore · refactor · test)으로 만들고, PR에는 `close #번호`로 이슈를 연결합니다.
-- PR을 열면 GitHub Actions가 타입 체크 · 린트 · 테스트를 실행하고, 팀원 리뷰와 함께 AI 코드 리뷰(CodeRabbit)를 받습니다. `main`에 병합되면 배포 워크플로가 이어집니다.
-
-### 커밋 컨벤션
-
-커밋은 `{type}: {내용}` 형식이며, husky + commitlint가 형식을 검사합니다.
-
-| 타입 | 설명 |
+| 구분 | 내용 |
 | :-- | :-- |
-| `feat` | 새로운 기능 추가 |
-| `fix` | 버그 수정 |
-| `chore` | 빌드 · 설정 변경 |
-| `test` | 테스트 코드 |
-| `refactor` | 코드 리팩토링 |
+| **브랜치** | `main`(운영 배포) ← `dev`(개발 통합, 기본 브랜치) ← `{type}/{작업명}-{이슈번호}`(작업) |
+| **병합 규칙** | 직접 push 없이 PR로만 병합 · `dev` 승인 2명, `main` 승인 1명 · Squash and Merge |
+| **작업 흐름** | 이슈 생성 → 브랜치 생성 → 커밋 → PR 생성 → 자동 검사 · 코드 리뷰 → 병합 |
+| **이슈 · PR** | 이슈 템플릿 5종(feat · fix · chore · refactor · test), PR에 `close #번호`로 이슈 연결 |
+| **자동화** | PR을 열면 GitHub Actions가 타입 체크 · 린트 · 테스트를 실행, 팀원 리뷰와 AI 코드 리뷰(CodeRabbit) · `main` 병합 시 배포 워크플로 실행 |
+| **커밋** | `{type}: {내용}` 형식을 husky + commitlint가 검사 · `feat` 기능 추가 · `fix` 버그 수정 · `chore` 빌드 · 설정 · `test` 테스트 · `refactor` 리팩토링 |
+| **팀 규칙** | 코드 리뷰 24시간 안에 · 4시간 막힌 문제는 팀에 공유 · 데일리 스크럼은 전날 퇴실 전 최신화 |
 
-### 팀 규칙
-
-- 코드 리뷰는 24시간 안에 마칩니다.
-- 4시간 동안 해결되지 않는 문제는 팀에 공유합니다.
-- 데일리 스크럼은 전날 퇴실 전에 최신화합니다.
-
-<br />
-
-## 🔒 보안
+## 보안
 
 <details>
 <summary><b>보안 적용 내용 보기</b></summary>
@@ -308,9 +247,7 @@ main            운영 배포
 
 </details>
 
-<br />
-
-## 🔍 트러블 슈팅
+## 트러블 슈팅
 
 <details>
 <summary><b>[CI/CD] EC2 빌드 중 OOM 문제와 러너 빌드 전환</b></summary>
